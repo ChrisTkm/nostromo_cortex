@@ -1,0 +1,21 @@
+{
+  "name": "@cortex/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@cortex/core": "workspace:*",
+    "@cortex/telemetry": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0"
+  }
+}

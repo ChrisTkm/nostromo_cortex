@@ -1,0 +1,196 @@
+{
+  "name": "cortex",
+  "displayName": "Cortex",
+  "publisher": "cortex-local",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "files": [
+    "dist/**",
+    "media/**",
+    "package.json",
+    "LICENSE.txt"
+  ],
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:cortex.overview",
+    "onCommand:cortex.openGraph"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "cortex.refresh",
+        "title": "Cortex: Refresh tasks"
+      },
+      {
+        "command": "cortex.openGraph",
+        "title": "Cortex: Open PERT graph"
+      },
+      {
+        "command": "cortex.setSearchQuery",
+        "title": "Cortex: Set search query"
+      },
+      {
+        "command": "cortex.setTagFilter",
+        "title": "Cortex: Set tag filter"
+      },
+      {
+        "command": "cortex.setProjectFilter",
+        "title": "Cortex: Set project filter"
+      },
+      {
+        "command": "cortex.setGroupFilter",
+        "title": "Cortex: Set group filter"
+      },
+      {
+        "command": "cortex.selectDatabase",
+        "title": "Cortex: Select Mongo database"
+      },
+      {
+        "command": "cortex.bootstrapDatabase",
+        "title": "Cortex: Create sample local database"
+      },
+      {
+        "command": "cortex.editTask",
+        "title": "Cortex: Edit task"
+      },
+      {
+        "command": "cortex.clearFilters",
+        "title": "Cortex: Clear filters"
+      },
+      {
+        "command": "cortex.listCycles",
+        "title": "Cortex: List dependency cycles"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cortex",
+          "title": "Cortex",
+          "icon": "media/cortex.svg"
+        }
+      ]
+    },
+    "views": {
+      "cortex": [
+        {
+          "id": "cortex.overview",
+          "name": "Task Navigator"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "cortex.refresh",
+          "when": "view == cortex.overview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cortex.setSearchQuery",
+          "when": "view == cortex.overview",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cortex.setTagFilter",
+          "when": "view == cortex.overview",
+          "group": "navigation@3"
+        },
+        {
+          "command": "cortex.setProjectFilter",
+          "when": "view == cortex.overview",
+          "group": "navigation@4"
+        },
+        {
+          "command": "cortex.setGroupFilter",
+          "when": "view == cortex.overview",
+          "group": "navigation@5"
+        },
+        {
+          "command": "cortex.selectDatabase",
+          "when": "view == cortex.overview",
+          "group": "navigation@6"
+        },
+        {
+          "command": "cortex.bootstrapDatabase",
+          "when": "view == cortex.overview",
+          "group": "navigation@7"
+        },
+        {
+          "command": "cortex.clearFilters",
+          "when": "view == cortex.overview",
+          "group": "navigation@8"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "cortex.editTask",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "inline@1"
+        },
+        {
+          "command": "cortex.openGraph",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "inline@2"
+        },
+        {
+          "command": "cortex.listCycles",
+          "when": "view == cortex.overview",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Cortex",
+      "properties": {
+        "cortex.mongoUrl": {
+          "type": "string",
+          "default": "mongodb://localhost:27017",
+          "description": "MongoDB connection string used by the extension host."
+        },
+        "cortex.mongoDbName": {
+          "type": "string",
+          "default": "cortex",
+          "description": "Mongo database name used for task storage."
+        },
+        "cortex.mongoTasksCollection": {
+          "type": "string",
+          "default": "tasks",
+          "description": "Mongo collection name used for tasks."
+        },
+        "cortex.telemetryBackend": {
+          "type": "string",
+          "enum": ["sqlite", "jsonl"],
+          "default": "sqlite",
+          "description": "Telemetry storage backend."
+        },
+        "cortex.telemetrySqlitePath": {
+          "type": "string",
+          "default": "./data/telemetry/cortex-telemetry.db",
+          "description": "Local SQLite path for telemetry."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "dev": "node esbuild.mjs --watch",
+    "build": "node esbuild.mjs",
+    "lint": "eslint src --ext .ts",
+    "package:vsix": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "dependencies": {
+    "@cortex/core": "workspace:*",
+    "@cortex/telemetry": "workspace:*",
+    "cytoscape": "^3.31.2",
+    "cytoscape-dagre": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.100.0",
+    "esbuild": "^0.25.2"
+  }
+}

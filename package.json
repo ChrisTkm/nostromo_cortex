@@ -1,0 +1,37 @@
+{
+  "name": "cortex",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev": "concurrently -k \"corepack pnpm --filter @cortex/core dev\" \"corepack pnpm --filter @cortex/telemetry dev\" \"corepack pnpm --filter @cortex/mcp-server dev\" \"corepack pnpm --filter @cortex/vscode-extension dev\"",
+    "build": "corepack pnpm -r build",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "seed": "tsx scripts/seed-mongo.ts",
+    "check:cycles": "tsx scripts/check-cycles.ts",
+    "inspect:snapshot": "tsx scripts/inspect-snapshot.ts",
+    "inspect:telemetry:runs": "tsx scripts/inspect-telemetry.ts recent",
+    "inspect:telemetry:failures": "tsx scripts/inspect-telemetry.ts failures",
+    "inspect:cost": "tsx scripts/inspect-telemetry.ts cost",
+    "mongo:up": "docker compose up -d mongo",
+    "mongo:down": "docker compose down",
+    "clean": "corepack pnpm -r exec rimraf dist"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.30.0",
+    "@typescript-eslint/parser": "^8.30.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.25.0",
+    "eslint-config-prettier": "^10.1.2",
+    "prettier": "^3.5.3",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}

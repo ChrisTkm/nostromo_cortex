@@ -1,0 +1,4 @@
+UNLICENSED
+
+This extension package is for local/private development of Cortex.
+No license is granted for redistribution or public publication.

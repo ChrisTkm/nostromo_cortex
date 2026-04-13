@@ -1,0 +1,4 @@
+[mcp_servers.cortex]
+command = "node"
+args = ["C:/dev/Cortex/apps/mcp-server/dist/index.js"]
+env = { MONGO_URL = "mongodb://localhost:27017", MONGO_DB_NAME = "nostromo_cortex", MONGO_TASKS_COLLECTION = "tasks", TELEMETRY_BACKEND = "sqlite", TELEMETRY_SQLITE_PATH = "C:/dev/Cortex/data/telemetry/cortex-telemetry.db" }
