@@ -1,10 +1,12 @@
 import esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");
+const minify = !watch;
 
 const shared = {
   bundle: true,
-  sourcemap: true,
+  sourcemap: minify ? "linked" : true,
+  minify,
   format: "esm",
   platform: "node",
   target: "node20"
@@ -12,7 +14,8 @@ const shared = {
 
 const browserBundle = {
   bundle: true,
-  sourcemap: true,
+  sourcemap: minify ? "linked" : true,
+  minify,
   format: "iife",
   platform: "browser",
   target: "es2022",
