@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildGraphSnapshot,
@@ -11,6 +11,9 @@ import {
   normalizeTaskDocument,
   normalizeTasks,
   sampleTasks,
+  MongoActionPlanStore,
+  MongoTaskStore,
+  SharedMongoClient,
   stableStringify
 } from "./index.js";
 
@@ -273,3 +276,86 @@ describe("graph algorithms", () => {
     expect(estimate.path).toEqual(["S1", "S2", "S2.1", "S5b"]);
   });
 });
+
+describe("shared mongo client support", () => {
+  it("keeps task store close a no-op when using a shared client", async () => {
+    const sharedClient = createSharedClient([
+      {
+        ...sampleTasks[0]!,
+        _id: "task-1"
+      }
+    ]) as unknown as SharedMongoClient;
+
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    const tasks = await store.listTasks();
+
+    expect(tasks.map((task) => task.code)).toEqual([sampleTasks[0]!.code]);
+    expect(sharedClient.connect).toHaveBeenCalledTimes(1);
+    expect(sharedClient.close).not.toHaveBeenCalled();
+
+    await store.close();
+    expect(sharedClient.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps action plan store close a no-op when using a shared client", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "PLAN-1",
+        title: "Shared plan",
+        description: "A shared plan",
+        goal: "Keep close a no-op",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 1,
+          pending: 1,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0
+        }
+      }
+    ]) as unknown as SharedMongoClient;
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient
+    });
+
+    const plans = await store.listPlans();
+
+    expect(plans.map((plan) => plan.code)).toEqual(["PLAN-1"]);
+    expect(sharedClient.connect).toHaveBeenCalledTimes(1);
+    expect(sharedClient.close).not.toHaveBeenCalled();
+
+    await store.close();
+    expect(sharedClient.close).not.toHaveBeenCalled();
+  });
+});
+
+function createSharedClient(items: unknown[]) {
+  const toArray = vi.fn().mockResolvedValue(items);
+  const find = vi.fn(() => ({
+    toArray
+  }));
+  const collection = vi.fn(() => ({
+    find
+  }));
+  const db = vi.fn(() => ({
+    collection
+  }));
+
+  return {
+    connect: vi.fn().mockResolvedValue(undefined),
+    db,
+    close: vi.fn().mockResolvedValue(undefined)
+  };
+}

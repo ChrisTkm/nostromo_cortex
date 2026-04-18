@@ -7,19 +7,46 @@ export interface MongoTaskStoreOptions {
   mongoUrl: string;
   dbName: string;
   collectionName: string;
+  sharedClient?: SharedMongoClient;
 }
 
 export interface MongoActionPlanStoreOptions {
   mongoUrl: string;
   dbName: string;
   collectionName: string;
+  sharedClient?: SharedMongoClient;
+}
+
+type MongoClientLike = Pick<MongoClient, "connect" | "db" | "close">;
+
+export class SharedMongoClient {
+  readonly mongoUrl: string;
+
+  private readonly client: MongoClient;
+
+  constructor(mongoUrl: string) {
+    this.mongoUrl = mongoUrl;
+    this.client = new MongoClient(mongoUrl);
+  }
+
+  async connect(): Promise<MongoClient> {
+    return this.client.connect();
+  }
+
+  db(name?: string) {
+    return this.client.db(name);
+  }
+
+  async close(): Promise<void> {
+    await this.client.close();
+  }
 }
 
 export class MongoTaskStore implements TaskStore {
-  private readonly client: MongoClient;
+  private readonly client: MongoClientLike;
 
   constructor(private readonly options: MongoTaskStoreOptions) {
-    this.client = new MongoClient(options.mongoUrl);
+    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
   }
 
   private async collection() {
@@ -102,15 +129,17 @@ export class MongoTaskStore implements TaskStore {
   }
 
   async close(): Promise<void> {
-    await this.client.close();
+    if (!this.options.sharedClient) {
+      await this.client.close();
+    }
   }
 }
 
 export class MongoActionPlanStore {
-  private readonly client: MongoClient;
+  private readonly client: MongoClientLike;
 
   constructor(private readonly options: MongoActionPlanStoreOptions) {
-    this.client = new MongoClient(options.mongoUrl);
+    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
   }
 
   private async collection() {
@@ -140,7 +169,9 @@ export class MongoActionPlanStore {
   }
 
   async close(): Promise<void> {
-    await this.client.close();
+    if (!this.options.sharedClient) {
+      await this.client.close();
+    }
   }
 }
 

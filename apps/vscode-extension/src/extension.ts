@@ -7,7 +7,7 @@ import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
-type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string };
+type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type FilterCatalog = {
   projects: string[];
@@ -17,6 +17,8 @@ type FilterCatalog = {
   severities: string[];
 };
 
+let activeService: ExtensionTaskService | undefined;
+
 function nonce() {
   return Math.random().toString(36).slice(2);
 }
@@ -24,11 +26,14 @@ function nonce() {
 export async function activate(context: vscode.ExtensionContext) {
   console.log("[cortex] activate() called");
   const service = new ExtensionTaskService(context);
+  activeService = service;
   try {
     await service.initialize();
     console.log("[cortex] service.initialize() ok");
   } catch (err) {
     console.error("[cortex] service.initialize() FAILED", err);
+    await service.dispose();
+    activeService = undefined;
     throw err;
   }
 
@@ -41,25 +46,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let graphPanel: vscode.WebviewPanel | undefined;
 
-async function postSnapshot(selectedTaskCode?: string) {
+  async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
       return;
     }
 
     const persistedState = service.getFilterState();
     console.log("[cortex] postSnapshot — filterState:", JSON.stringify(persistedState));
-    const allTasks = await service.loadTasks();
-    const plans = await service.loadPlans();
-    console.log("[cortex] postSnapshot — tasks:", allTasks.length, "plans:", plans.length);
-    const availablePlanCodes = new Set(plans.map((plan) => plan.code));
-    const selectedPlanCode = resolveSelectedPlanCode(allTasks, persistedState, availablePlanCodes, selectedTaskCode);
+    const bundle = await service.loadBundle();
+    console.log("[cortex] postSnapshot — tasks:", bundle.tasks.length, "plans:", bundle.plans.length);
+    const availablePlanCodes = new Set(bundle.plans.map((plan) => plan.code));
+    const selectedPlanCode = resolveSelectedPlanCode(bundle.tasks, persistedState, availablePlanCodes, selectedTaskCode);
+    const selectedPlan = selectedPlanCode ? bundle.plans.find((plan) => plan.code === selectedPlanCode) ?? null : null;
     const catalog = buildFilterCatalog(
-      selectedPlanCode ? allTasks.filter((task) => task.planCode === selectedPlanCode) : allTasks
+      selectedPlanCode ? bundle.tasks.filter((task) => task.planCode === selectedPlanCode) : bundle.tasks
     );
     const state = sanitizeFilterState(
       {
         ...persistedState,
-        selectedPlanCode
+        ...(selectedPlanCode ? { selectedPlanCode } : {})
       },
       catalog,
       availablePlanCodes
@@ -70,16 +75,16 @@ async function postSnapshot(selectedTaskCode?: string) {
 
     const snapshotFilter = buildSnapshotFilter(state);
     console.log("[cortex] postSnapshot — snapshotFilter:", JSON.stringify(snapshotFilter));
-    const snapshot = await service.loadSnapshot(snapshotFilter);
+    const snapshot = await service.loadSnapshot(snapshotFilter, bundle, selectedPlan);
     console.log("[cortex] postSnapshot — snapshot nodes:", snapshot.nodes.length, "edges:", snapshot.edges.length);
 
     const payload = {
       type: "snapshot",
       snapshot,
-      plans,
-      planTasks: buildPlanTasks(plans, allTasks),
+      plans: bundle.plans,
+      planTasks: buildPlanTasks(bundle.plans, bundle.tasks),
       totals: {
-        totalTaskCount: allTasks.length
+        totalTaskCount: bundle.tasks.length
       },
       state: {
         orientation: state.graphOrientation,
@@ -127,7 +132,6 @@ async function postSnapshot(selectedTaskCode?: string) {
           if (typeof message.code === "string" && message.code.trim()) {
             await service.updateFilterState({
               selectedPlanCode: message.code.trim(),
-              selectedTaskCode: undefined,
               selectedProjects: []
             });
             await refreshView();
@@ -286,7 +290,7 @@ async function postSnapshot(selectedTaskCode?: string) {
     vscode.commands.registerCommand("cortex.selectPlan", async () => {
       const plans = await service.loadPlans();
       const items: PlanQuickPickItem[] = [
-        { label: "$(close) Clear plan filter", planCode: undefined },
+        { label: "$(close) Clear plan filter" },
         ...plans.map((plan) => ({
           label: plan.code,
           description: plan.title,
@@ -398,7 +402,10 @@ async function postSnapshot(selectedTaskCode?: string) {
   }
 }
 
-export function deactivate() {}
+export async function deactivate() {
+  await activeService?.dispose();
+  activeService = undefined;
+}
 
 function buildSnapshotFilter(state: ReturnType<ExtensionTaskService["getFilterState"]>): TaskFilter {
   return {
@@ -431,11 +438,12 @@ function buildPlanTasks(plans: readonly { code: string }[], tasks: readonly Task
   }>> = {};
 
   for (const task of tasks) {
-    if (!task.planCode || !knownPlans.has(task.planCode)) {
+    const planCode = task.planCode;
+    if (!planCode || !knownPlans.has(planCode)) {
       continue;
     }
-    grouped[task.planCode] ??= [];
-    grouped[task.planCode].push({
+    const bucket = (grouped[planCode] ??= []);
+    bucket.push({
       code: task.code,
       ...(typeof task.durationEstimate === "number" ? { durationEstimate: task.durationEstimate } : {}),
       label: task.shortTask,
@@ -446,7 +454,10 @@ function buildPlanTasks(plans: readonly { code: string }[], tasks: readonly Task
   }
 
   for (const code of Object.keys(grouped)) {
-    grouped[code] = grouped[code].sort((left, right) => left.code.localeCompare(right.code));
+    const bucket = grouped[code];
+    if (bucket) {
+      grouped[code] = bucket.sort((left, right) => left.code.localeCompare(right.code));
+    }
   }
 
   return grouped;
@@ -457,15 +468,20 @@ function sanitizeFilterState(
   catalog: FilterCatalog,
   planCodes: ReadonlySet<string>
 ): ReturnType<ExtensionTaskService["getFilterState"]> {
-  return {
+  const nextState = {
     ...state,
-    ...(state.selectedPlanCode && !planCodes.has(state.selectedPlanCode) ? { selectedPlanCode: undefined } : {}),
     selectedProjects: state.selectedProjects.filter((value) => catalog.projects.includes(value)),
     selectedGroups: state.selectedGroups.filter((value) => catalog.groups.includes(value)),
     selectedTags: state.selectedTags.filter((value) => catalog.tags.includes(value)),
     selectedStatuses: state.selectedStatuses.filter((value) => catalog.statuses.includes(value)),
     selectedSeverities: state.selectedSeverities.filter((value) => catalog.severities.includes(value))
   };
+
+  if (state.selectedPlanCode && !planCodes.has(state.selectedPlanCode)) {
+    delete nextState.selectedPlanCode;
+  }
+
+  return nextState;
 }
 
 function sameFilterState(
@@ -658,23 +674,25 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
       ignoreFocusOut: true
     })) ?? task.detail;
 
-  const status = await vscode.window.showQuickPick([...TASK_STATUSES], {
+  const statusPick = await vscode.window.showQuickPick([...TASK_STATUSES] as TaskDocumentInput["status"][], {
     title: `Status for ${task.code}`,
     placeHolder: task.status,
     ignoreFocusOut: true
   });
-  if (!status) {
+  if (!statusPick) {
     return undefined;
   }
+  const status = statusPick as TaskDocumentInput["status"];
 
-  const severity = await vscode.window.showQuickPick([...TASK_SEVERITIES], {
+  const severityPick = await vscode.window.showQuickPick([...TASK_SEVERITIES] as TaskDocumentInput["severity"][], {
     title: `Severity for ${task.code}`,
     placeHolder: task.severity,
     ignoreFocusOut: true
   });
-  if (!severity) {
+  if (!severityPick) {
     return undefined;
   }
+  const severity = severityPick as TaskDocumentInput["severity"];
 
   const project =
     (await vscode.window.showInputBox({

@@ -5,6 +5,7 @@ import {
   buildGraphSnapshot,
   createMongoTaskStore,
   loadConfig,
+  SharedMongoClient,
   sampleTasks,
   stableStringify,
   type ActionPlanRecord,
@@ -18,11 +19,21 @@ import { TelemetryRecorder } from "../../../packages/telemetry/src/recorder.js";
 
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
+type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
+type ExtensionFilterStatePatch = {
+  [K in keyof ExtensionFilterState]?: ExtensionFilterState[K] | undefined;
+};
+type TaskBundle = {
+  tasks: TaskRecord[];
+  plans: ActionPlanRecord[];
+};
+
 export class ExtensionTaskService {
   readonly logger;
   telemetry!: TelemetryRecorder;
   private readonly telemetryJsonlPath: string;
   private readonly config = vscode.workspace.getConfiguration("cortex");
+  private sharedClient: SharedMongoClient | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
@@ -47,8 +58,14 @@ export class ExtensionTaskService {
     const telemetryStore = new JsonlTelemetryStore(this.telemetryJsonlPath);
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
+    await this.refreshSharedClient();
     // Full reset — bypass updateFilterState merge to clear stale/corrupt values
     await this.context.workspaceState.update("cortex.filterState", DEFAULT_FILTER_STATE);
+  }
+
+  async dispose() {
+    await this.sharedClient?.close();
+    this.sharedClient = undefined;
   }
 
   getFilterState(): ExtensionFilterState {
@@ -67,7 +84,7 @@ export class ExtensionTaskService {
     };
   }
 
-  async updateFilterState(nextState: Partial<ExtensionFilterState>) {
+  async updateFilterState(nextState: ExtensionFilterStatePatch) {
     await this.context.workspaceState.update("cortex.filterState", {
       ...this.getFilterState(),
       ...nextState
@@ -75,30 +92,30 @@ export class ExtensionTaskService {
   }
 
   async loadTasks(): Promise<TaskRecord[]> {
-    const store = this.createStore();
-    try {
-      return await store.listTasks();
-    } finally {
-      await store.close();
-    }
+    return this.withTaskStore(this.getConnectionSettings(), (store) => store.listTasks());
   }
 
   async loadPlans(): Promise<ActionPlanRecord[]> {
-    const planStore = this.createPlanStore();
-    try {
-      return await planStore.listPlans();
-    } finally {
-      await planStore.close();
-    }
+    return this.withPlanStore(this.getConnectionSettings(), (store) => store.listPlans());
   }
 
-  async loadSnapshot(filter?: Parameters<typeof buildGraphSnapshot>[1]) {
-    const tasks = await this.loadTasks();
-    const plan = filter?.planCode ? await this.getPlan(filter.planCode) : null;
-    const snapshot = buildGraphSnapshot(tasks, filter, plan ? { plan } : undefined);
+  async loadBundle(): Promise<TaskBundle> {
+    const [tasks, plans] = await Promise.all([this.loadTasks(), this.loadPlans()]);
+    return { tasks, plans };
+  }
+
+  async loadSnapshot(
+    filter?: Parameters<typeof buildGraphSnapshot>[1],
+    bundle?: TaskBundle,
+    selectedPlan?: ActionPlanRecord | null
+  ) {
+    const sourceBundle = bundle ?? (await this.loadBundle());
+    const plan =
+      selectedPlan ?? (filter?.planCode ? sourceBundle.plans.find((candidate) => candidate.code === filter.planCode) : undefined);
+    const snapshot = buildGraphSnapshot(sourceBundle.tasks, filter, plan ? { plan } : undefined);
     this.logger.debug("loadSnapshot", {
       filter,
-      taskCount: tasks.length,
+      taskCount: sourceBundle.tasks.length,
       visibleNodeCount: snapshot.nodes.length,
       visibleEdgeCount: snapshot.edges.length
     });
@@ -106,76 +123,42 @@ export class ExtensionTaskService {
   }
 
   async getTask(codeOrId: string): Promise<TaskRecord | null> {
-    const store = this.createStore();
-    try {
-      return await store.getTask(codeOrId);
-    } finally {
-      await store.close();
-    }
+    return this.withTaskStore(this.getConnectionSettings(), (store) => store.getTask(codeOrId));
   }
 
   async getPlan(code: string): Promise<ActionPlanRecord | null> {
-    const planStore = this.createPlanStore();
-    try {
-      return await planStore.getPlan(code);
-    } finally {
-      await planStore.close();
-    }
+    return this.withPlanStore(this.getConnectionSettings(), (store) => store.getPlan(code));
   }
 
   async saveTask(task: TaskDocumentInput) {
-    const store = this.createStore();
-    try {
-      return await store.upsertTasks([task]);
-    } finally {
-      await store.close();
-    }
+    return this.withTaskStore(this.getConnectionSettings(), (store) => store.upsertTasks([task]));
   }
 
   async listDatabaseNames() {
-    const store = this.createStore();
-    try {
-      return await store.listDatabaseNames();
-    } finally {
-      await store.close();
-    }
+    return this.withTaskStore(this.getConnectionSettings(), (store) => store.listDatabaseNames());
   }
 
-  async listCollectionNames(overrides?: Partial<ReturnType<ExtensionTaskService["getConnectionSettings"]>>) {
-    const settings = {
-      ...this.getConnectionSettings(),
-      ...overrides
-    };
-    const store = createMongoTaskStore({
-      mongoUrl: settings.mongoUrl,
-      dbName: settings.mongoDbName,
-      collectionName: settings.mongoTasksCollection
-    });
-    try {
-      return await store.listCollectionNames();
-    } finally {
-      await store.close();
-    }
+  async listCollectionNames(overrides?: Partial<ConnectionSettings>) {
+    return this.withTaskStore(
+      {
+        ...this.getConnectionSettings(),
+        ...overrides
+      },
+      (store) => store.listCollectionNames()
+    );
   }
 
-  async inspectCollection(overrides?: Partial<ReturnType<ExtensionTaskService["getConnectionSettings"]>>) {
-    const settings = {
-      ...this.getConnectionSettings(),
-      ...overrides
-    };
-    const store = createMongoTaskStore({
-      mongoUrl: settings.mongoUrl,
-      dbName: settings.mongoDbName,
-      collectionName: settings.mongoTasksCollection
-    });
-    try {
-      return await store.inspectCollection();
-    } finally {
-      await store.close();
-    }
+  async inspectCollection(overrides?: Partial<ConnectionSettings>) {
+    return this.withTaskStore(
+      {
+        ...this.getConnectionSettings(),
+        ...overrides
+      },
+      (store) => store.inspectCollection()
+    );
   }
 
-  async updateConnectionSettings(next: Partial<ReturnType<ExtensionTaskService["getConnectionSettings"]>>) {
+  async updateConnectionSettings(next: Partial<ConnectionSettings>) {
     if (next.mongoUrl) {
       await this.config.update("mongoUrl", next.mongoUrl, vscode.ConfigurationTarget.Workspace);
     }
@@ -185,28 +168,25 @@ export class ExtensionTaskService {
     if (next.mongoTasksCollection) {
       await this.config.update("mongoTasksCollection", next.mongoTasksCollection, vscode.ConfigurationTarget.Workspace);
     }
+
+    if (next.mongoUrl) {
+      await this.refreshSharedClient();
+    }
   }
 
-  async bootstrapSampleDatabase(overrides?: Partial<ReturnType<ExtensionTaskService["getConnectionSettings"]>>) {
+  async bootstrapSampleDatabase(overrides?: Partial<ConnectionSettings>) {
     const settings = {
       ...this.getConnectionSettings(),
       ...overrides
     };
-    const store = createMongoTaskStore({
-      mongoUrl: settings.mongoUrl,
-      dbName: settings.mongoDbName,
-      collectionName: settings.mongoTasksCollection
-    });
-    try {
+    await this.withTaskStore(settings, async (store) => {
       await store.upsertTasks(
         sampleTasks.map((task) => ({
           ...task,
           project: task.project ?? settings.mongoDbName
         }))
       );
-    } finally {
-      await store.close();
-    }
+    });
     await this.updateConnectionSettings(settings);
   }
 
@@ -226,21 +206,62 @@ export class ExtensionTaskService {
     });
   }
 
-  private createStore() {
-    const settings = this.getConnectionSettings();
+  private createStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+    const sharedClient = this.getSharedClient(settings);
     return createMongoTaskStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
-      collectionName: settings.mongoTasksCollection
+      collectionName: settings.mongoTasksCollection,
+      ...(sharedClient ? { sharedClient } : {})
     });
   }
 
-  private createPlanStore() {
-    const settings = this.getConnectionSettings();
+  private createPlanStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+    const sharedClient = this.getSharedClient(settings);
     return createMongoActionPlanStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
-      collectionName: settings.mongoPlansCollection
+      collectionName: settings.mongoPlansCollection,
+      ...(sharedClient ? { sharedClient } : {})
     });
+  }
+
+  private getSharedClient(settings: ConnectionSettings) {
+    if (!this.sharedClient || this.sharedClient.mongoUrl !== settings.mongoUrl) {
+      return undefined;
+    }
+    return this.sharedClient;
+  }
+
+  private async refreshSharedClient() {
+    const settings = this.getConnectionSettings();
+    if (this.sharedClient?.mongoUrl === settings.mongoUrl) {
+      return;
+    }
+
+    await this.sharedClient?.close();
+    this.sharedClient = new SharedMongoClient(settings.mongoUrl);
+    await this.sharedClient.connect();
+  }
+
+  private async withTaskStore<T>(settings: ConnectionSettings, handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>): Promise<T> {
+    const store = this.createStore(settings);
+    try {
+      return await handler(store);
+    } finally {
+      await store.close();
+    }
+  }
+
+  private async withPlanStore<T>(
+    settings: ConnectionSettings,
+    handler: (store: ReturnType<typeof createMongoActionPlanStore>) => Promise<T>
+  ): Promise<T> {
+    const store = this.createPlanStore(settings);
+    try {
+      return await handler(store);
+    } finally {
+      await store.close();
+    }
   }
 }
