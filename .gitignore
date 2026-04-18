@@ -12,4 +12,5 @@ data/
 *.db-shm
 *.db-wal
 *.jsonl
-
+apps/vscode-extension/*.vsix
+apps/vscode-extension/playground-*.mongodb.js

@@ -16,10 +16,8 @@ import {
   type TaskDocumentInput,
   type TaskRecord
 } from "@cortex/core";
+import { createLogger, JsonlTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
 import * as vscode from "vscode";
-import { createLogger } from "../../../packages/telemetry/src/logger.js";
-import { JsonlTelemetryStore } from "../../../packages/telemetry/src/jsonl-store.js";
-import { TelemetryRecorder } from "../../../packages/telemetry/src/recorder.js";
 
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 

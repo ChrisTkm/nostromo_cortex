@@ -138,6 +138,11 @@
           "group": "navigation@3"
         },
         {
+          "command": "cortex.listCycles",
+          "when": "view == cortex.overview",
+          "group": "navigation@4"
+        },
+        {
           "command": "cortex.openNotes",
           "when": "view == cortex.overview",
           "group": "navigation@5"
@@ -153,11 +158,6 @@
           "command": "cortex.openGraph",
           "when": "view == cortex.overview && viewItem == cortex.task",
           "group": "inline@2"
-        },
-        {
-          "command": "cortex.listCycles",
-          "when": "view == cortex.overview",
-          "group": "navigation@10"
         }
       ]
     },

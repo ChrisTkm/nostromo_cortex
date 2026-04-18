@@ -14,6 +14,9 @@ const {
   createMongoTaskStoreMock,
   createMongoActionPlanStoreMock,
   createMongoNoteStoreMock,
+  createLoggerMock,
+  jsonlTelemetryStoreMock,
+  telemetryRecorderMock,
   sharedConnect,
   sharedGet,
   sharedClose,
@@ -58,6 +61,17 @@ const {
       upsertNote: noteUpsertNote,
       deleteNote: noteDeleteNote,
       close: noteClose
+    })),
+    createLoggerMock: vi.fn(() => ({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
+    })),
+    jsonlTelemetryStoreMock: vi.fn().mockImplementation(() => ({})),
+    telemetryRecorderMock: vi.fn().mockImplementation(() => ({
+      initialize: telemetryInitialize,
+      startRun: vi.fn()
     })),
     sharedConnect: vi.fn(),
     sharedGet: vi.fn(),
@@ -112,24 +126,10 @@ vi.mock("vscode", () => ({
   }
 }));
 
-vi.mock("../../../packages/telemetry/src/logger.js", () => ({
-  createLogger: vi.fn(() => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn()
-  }))
-}));
-
-vi.mock("../../../packages/telemetry/src/jsonl-store.js", () => ({
-  JsonlTelemetryStore: vi.fn().mockImplementation(() => ({}))
-}));
-
-vi.mock("../../../packages/telemetry/src/recorder.js", () => ({
-  TelemetryRecorder: vi.fn().mockImplementation(() => ({
-    initialize: telemetryInitialize,
-    startRun: vi.fn()
-  }))
+vi.mock("@cortex/telemetry", () => ({
+  createLogger: createLoggerMock,
+  JsonlTelemetryStore: jsonlTelemetryStoreMock,
+  TelemetryRecorder: telemetryRecorderMock
 }));
 
 import { ExtensionTaskService } from "./service.js";
@@ -173,6 +173,9 @@ describe("ExtensionTaskService.initialize", () => {
 
     await service.initialize();
 
+    expect(createLoggerMock).toHaveBeenCalledTimes(1);
+    expect(jsonlTelemetryStoreMock).toHaveBeenCalledTimes(1);
+    expect(telemetryRecorderMock).toHaveBeenCalledTimes(1);
     expect(sharedConnect).toHaveBeenCalledTimes(1);
     expect(sharedGet).toHaveBeenCalledTimes(1);
     expect(createMongoTaskStoreMock).toHaveBeenCalledTimes(1);
