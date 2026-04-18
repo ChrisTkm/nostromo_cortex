@@ -4,7 +4,7 @@
     {
       "label": "cortex: build extension",
       "type": "shell",
-      "command": "corepack pnpm --filter @cortex/vscode-extension build",
+      "command": "corepack pnpm --filter cortex build",
       "group": "build",
       "presentation": {
         "reveal": "always"

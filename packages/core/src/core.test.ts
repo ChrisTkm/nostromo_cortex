@@ -7,6 +7,7 @@ import {
   getReadyTasks,
   getTaskBlockers,
   getTaskDownstream,
+  normalizeActionPlan,
   normalizeTaskDocument,
   normalizeTasks,
   sampleTasks,
@@ -97,6 +98,73 @@ describe("task normalization", () => {
   });
 });
 
+describe("action plan normalization", () => {
+  it("normalizes valid action plans", () => {
+    const plan = normalizeActionPlan({
+      _id: "plan-1",
+      code: "PLAN-123",
+      title: "Core migration",
+      description: "Move graph context to plans",
+      goal: "Support plan-aware filtering",
+      context: "Imported from /plan",
+      status: "in_progress" as never,
+      project: "cortex",
+      tags: ["core", "graph", "core"],
+      progress: {
+        total: 10,
+        pending: 3,
+        inProgress: 2,
+        blocked: 1,
+        done: 4,
+        failed: 0
+      } as never,
+      currentTaskCode: "S5b",
+      notes: "Keep vscode extension untouched",
+      createdAt: "2026-04-12T00:00:00.000Z",
+      updated_at: "2026-04-12T01:00:00.000Z",
+      completedAt: null
+    } as never);
+
+    expect(plan).toMatchObject({
+      id: "plan-1",
+      code: "PLAN-123",
+      status: "IN_PROGRESS",
+      tags: ["core", "graph"],
+      currentTaskCode: "S5b",
+      progress: {
+        total: 10,
+        pending: 3,
+        in_progress: 2,
+        blocked: 1,
+        done: 4,
+        failed: 0
+      },
+      completedAt: null
+    });
+  });
+
+  it("rejects invalid plan statuses", () => {
+    expect(() =>
+      normalizeActionPlan({
+        code: "PLAN-404",
+        title: "Broken",
+        description: "",
+        goal: "",
+        context: "",
+        status: "queued" as never,
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0
+        }
+      })
+    ).toThrow();
+  });
+});
+
 describe("graph algorithms", () => {
   const tasks = normalizeTasks(sampleTasks);
 
@@ -145,6 +213,52 @@ describe("graph algorithms", () => {
   it("filters snapshots by project and group", () => {
     const snapshot = buildGraphSnapshot(tasks, { project: ["cortex"], group: ["Extension"] });
     expect(snapshot.nodes.map((node) => node.code)).toEqual(["S3", "S5b"]);
+  });
+
+  it("filters snapshots by planCode before graph construction", () => {
+    const planTasks = normalizeTasks([
+      {
+        ...sampleTasks[0]!,
+        code: "PLAN-A",
+        plan_code: "PLAN-X",
+        depends_on: []
+      },
+      {
+        ...sampleTasks[1]!,
+        code: "PLAN-B",
+        plan_code: "PLAN-X",
+        depends_on: ["PLAN-A"]
+      },
+      {
+        ...sampleTasks[2]!,
+        code: "PLAN-C",
+        plan_code: "PLAN-Y",
+        depends_on: ["PLAN-B"]
+      }
+    ]);
+
+    const snapshot = buildGraphSnapshot(planTasks, { planCode: "PLAN-X" }, {
+      plan: normalizeActionPlan({
+        code: "PLAN-X",
+        title: "Plan X",
+        description: "",
+        goal: "",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 2,
+          pending: 2,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0
+        }
+      })
+    });
+
+    expect(snapshot.nodes.map((node) => node.code)).toEqual(["PLAN-A", "PLAN-B"]);
+    expect(snapshot.edges.map((edge) => edge.id)).toEqual(["PLAN-A->PLAN-B"]);
+    expect(snapshot.planContext?.code).toBe("PLAN-X");
   });
 
   it("serializes JSON deterministically", () => {

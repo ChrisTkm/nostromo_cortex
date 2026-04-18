@@ -1,4 +1,5 @@
 import type {
+  ActionPlanRecord,
   CriticalPathResult,
   CycleInfo,
   GraphSnapshot,
@@ -191,13 +192,13 @@ export function buildTaskGraph(tasks: TaskRecord[]): TaskGraph {
 }
 
 export function filterGraph(graph: TaskGraph, filter: TaskFilter = {}): TaskGraphNode[] {
-  const projects = filter.project ? new Set(filter.project) : undefined;
-  const groups = filter.group ? new Set(filter.group) : undefined;
-  const codes = filter.codes ? new Set(filter.codes) : undefined;
-  const statuses = filter.status ? new Set(filter.status) : undefined;
-  const severities = filter.severity ? new Set(filter.severity) : undefined;
-  const agents = filter.agent ? new Set(filter.agent) : undefined;
-  const tags = filter.tags ? new Set(filter.tags) : undefined;
+  const projects = filter.project && filter.project.length > 0 ? new Set(filter.project) : undefined;
+  const groups = filter.group && filter.group.length > 0 ? new Set(filter.group) : undefined;
+  const codes = filter.codes && filter.codes.length > 0 ? new Set(filter.codes) : undefined;
+  const statuses = filter.status && filter.status.length > 0 ? new Set(filter.status) : undefined;
+  const severities = filter.severity && filter.severity.length > 0 ? new Set(filter.severity) : undefined;
+  const agents = filter.agent && filter.agent.length > 0 ? new Set(filter.agent) : undefined;
+  const tags = filter.tags && filter.tags.length > 0 ? new Set(filter.tags) : undefined;
   const search = filter.search?.trim().toLowerCase();
 
   return graph.nodes.filter((node) => {
@@ -276,8 +277,13 @@ export function getTaskDownstream(tasks: TaskRecord[], code: string): TaskRecord
   );
 }
 
-export function buildGraphSnapshot(tasks: TaskRecord[], filter: TaskFilter = {}): GraphSnapshot {
-  const graph = buildTaskGraph(tasks);
+export function buildGraphSnapshot(
+  tasks: TaskRecord[],
+  filter: TaskFilter = {},
+  context?: { plan?: ActionPlanRecord }
+): GraphSnapshot {
+  const graphTasks = filter.planCode ? tasks.filter((task) => task.planCode === filter.planCode) : tasks;
+  const graph = buildTaskGraph(graphTasks);
   const visibleNodes = stableArray(filterGraph(graph, filter), (node) => node.code);
   const visibleCodes = new Set(visibleNodes.map((node) => node.code));
   const edges: SnapshotEdge[] = graph.edges
@@ -297,6 +303,10 @@ export function buildGraphSnapshot(tasks: TaskRecord[], filter: TaskFilter = {})
     ...(typeof node.durationEstimate === "number" ? { durationEstimate: node.durationEstimate } : {}),
     ...(typeof node.orderHint === "number" ? { orderHint: node.orderHint } : {}),
     ...(node.sourceRef ? { sourceRef: node.sourceRef } : {}),
+    ...(node.planCode ? { planCode: node.planCode } : {}),
+    ...(node.prompt ? { prompt: node.prompt } : {}),
+    ...(node.acceptance ? { acceptance: node.acceptance } : {}),
+    ...(node.outOfScope ? { outOfScope: node.outOfScope } : {}),
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     dependsOn: node.dependsOn,
@@ -325,7 +335,8 @@ export function buildGraphSnapshot(tasks: TaskRecord[], filter: TaskFilter = {})
       totalEstimatedDuration: nodes.reduce((total, node) => total + (node.durationEstimate ?? 0), 0),
       readyEstimatedDuration: nodes.filter((node) => node.ready).reduce((total, node) => total + (node.durationEstimate ?? 0), 0)
     },
-    cycles: graph.cycles
+    cycles: graph.cycles,
+    ...(filter.planCode && context?.plan?.code === filter.planCode ? { planContext: context.plan } : {})
   };
 }
 

@@ -24,7 +24,10 @@ const contexts = await Promise.all([
     format: "iife",
     platform: "browser",
     target: "es2022",
-    entryPoints: ["src/webview/index.ts"],
+    // The webview now mounts a React TSX entry but still ships as a single browser bundle.
+    jsx: "automatic",
+    loader: { ".tsx": "tsx" },
+    entryPoints: ["src/webview/index.tsx"],
     outfile: "media/webview.js"
   })
 ]);

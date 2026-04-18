@@ -1,9 +1,15 @@
 import { MongoClient, ObjectId } from "mongodb";
 
-import { normalizeTaskDocument } from "./schema.js";
-import type { TaskDocumentInput, TaskRecord, TaskStore } from "./types.js";
+import { normalizeActionPlan, normalizeTaskDocument } from "./schema.js";
+import type { ActionPlanDocument, ActionPlanRecord, TaskDocumentInput, TaskRecord, TaskStore } from "./types.js";
 
 export interface MongoTaskStoreOptions {
+  mongoUrl: string;
+  dbName: string;
+  collectionName: string;
+}
+
+export interface MongoActionPlanStoreOptions {
   mongoUrl: string;
   dbName: string;
   collectionName: string;
@@ -100,8 +106,50 @@ export class MongoTaskStore implements TaskStore {
   }
 }
 
+export class MongoActionPlanStore {
+  private readonly client: MongoClient;
+
+  constructor(private readonly options: MongoActionPlanStoreOptions) {
+    this.client = new MongoClient(options.mongoUrl);
+  }
+
+  private async collection() {
+    await this.client.connect();
+    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+  }
+
+  async listPlans(): Promise<ActionPlanRecord[]> {
+    const collection = await this.collection();
+    const items = await collection.find({}).toArray();
+    return collectValidActionPlans(items);
+  }
+
+  async getPlan(codeOrId: string): Promise<ActionPlanRecord | null> {
+    const collection = await this.collection();
+    const byCode = await collection.findOne({ code: codeOrId });
+    if (byCode) {
+      return normalizeActionPlan(byCode as ActionPlanDocument);
+    }
+
+    if (ObjectId.isValid(codeOrId)) {
+      const byId = await collection.findOne({ _id: new ObjectId(codeOrId) });
+      return byId ? normalizeActionPlan(byId as ActionPlanDocument) : null;
+    }
+
+    return null;
+  }
+
+  async close(): Promise<void> {
+    await this.client.close();
+  }
+}
+
 export function createMongoTaskStore(options: MongoTaskStoreOptions): MongoTaskStore {
   return new MongoTaskStore(options);
+}
+
+export function createMongoActionPlanStore(options: MongoActionPlanStoreOptions): MongoActionPlanStore {
+  return new MongoActionPlanStore(options);
 }
 
 function collectValidTasks(items: unknown[]): TaskRecord[] {
@@ -125,4 +173,27 @@ function collectValidTasks(items: unknown[]): TaskRecord[] {
     }
   }
   return validTasks;
+}
+
+function collectValidActionPlans(items: unknown[]): ActionPlanRecord[] {
+  const validPlans: ActionPlanRecord[] = [];
+  for (const item of items) {
+    const record = item as ActionPlanDocument & Record<string, unknown>;
+    const looksLikePlan =
+      typeof record.code === "string" ||
+      typeof record.title === "string" ||
+      typeof record.goal === "string" ||
+      typeof record.current_task_code !== "undefined" ||
+      typeof record.currentTaskCode !== "undefined";
+    if (!looksLikePlan) {
+      continue;
+    }
+
+    try {
+      validPlans.push(normalizeActionPlan(record));
+    } catch {
+      continue;
+    }
+  }
+  return validPlans;
 }

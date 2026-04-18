@@ -31,6 +31,10 @@
         "title": "Cortex: Open PERT graph"
       },
       {
+        "command": "cortex.showOptions",
+        "title": "Cortex: Options"
+      },
+      {
         "command": "cortex.setSearchQuery",
         "title": "Cortex: Set search query"
       },
@@ -63,6 +67,10 @@
         "title": "Cortex: Clear filters"
       },
       {
+        "command": "cortex.selectPlan",
+        "title": "Cortex: Select Action Plan"
+      },
+      {
         "command": "cortex.listCycles",
         "title": "Cortex: List dependency cycles"
       }
@@ -92,39 +100,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "cortex.setSearchQuery",
+          "command": "cortex.openGraph",
           "when": "view == cortex.overview",
           "group": "navigation@2"
         },
         {
-          "command": "cortex.setTagFilter",
+          "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@3"
-        },
-        {
-          "command": "cortex.setProjectFilter",
-          "when": "view == cortex.overview",
-          "group": "navigation@4"
-        },
-        {
-          "command": "cortex.setGroupFilter",
-          "when": "view == cortex.overview",
-          "group": "navigation@5"
-        },
-        {
-          "command": "cortex.selectDatabase",
-          "when": "view == cortex.overview",
-          "group": "navigation@6"
-        },
-        {
-          "command": "cortex.bootstrapDatabase",
-          "when": "view == cortex.overview",
-          "group": "navigation@7"
-        },
-        {
-          "command": "cortex.clearFilters",
-          "when": "view == cortex.overview",
-          "group": "navigation@8"
         }
       ],
       "view/item/context": [
@@ -141,7 +124,7 @@
         {
           "command": "cortex.listCycles",
           "when": "view == cortex.overview",
-          "group": "navigation@9"
+          "group": "navigation@10"
         }
       ]
     },
@@ -163,9 +146,17 @@
           "default": "tasks",
           "description": "Mongo collection name used for tasks."
         },
+        "cortex.mongoPlansCollection": {
+          "type": "string",
+          "default": "action_plans",
+          "description": "Colección de action_plans en Mongo"
+        },
         "cortex.telemetryBackend": {
           "type": "string",
-          "enum": ["sqlite", "jsonl"],
+          "enum": [
+            "sqlite",
+            "jsonl"
+          ],
           "default": "sqlite",
           "description": "Telemetry storage backend."
         },
@@ -180,16 +171,20 @@
   "scripts": {
     "dev": "node esbuild.mjs --watch",
     "build": "node esbuild.mjs",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src --ext .ts,.tsx",
     "package:vsix": "vsce package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {
     "@cortex/core": "workspace:*",
     "@cortex/telemetry": "workspace:*",
-    "cytoscape": "^3.31.2",
-    "cytoscape-dagre": "^2.5.0"
+    "@dagrejs/dagre": "^3.0.0",
+    "@xyflow/react": "^12.10.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.100.0",
     "esbuild": "^0.25.2"
   }

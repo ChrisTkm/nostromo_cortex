@@ -1,11 +1,13 @@
 import path from "node:path";
 
 import {
+  createMongoActionPlanStore,
   buildGraphSnapshot,
   createMongoTaskStore,
   loadConfig,
   sampleTasks,
   stableStringify,
+  type ActionPlanRecord,
   type TaskDocumentInput,
   type TaskRecord
 } from "@cortex/core";
@@ -45,6 +47,8 @@ export class ExtensionTaskService {
     const telemetryStore = new JsonlTelemetryStore(this.telemetryJsonlPath);
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
+    // Full reset — bypass updateFilterState merge to clear stale/corrupt values
+    await this.context.workspaceState.update("cortex.filterState", DEFAULT_FILTER_STATE);
   }
 
   getFilterState(): ExtensionFilterState {
@@ -58,7 +62,8 @@ export class ExtensionTaskService {
     return {
       mongoUrl: this.config.get("mongoUrl", "mongodb://localhost:27017"),
       mongoDbName: this.config.get("mongoDbName", "cortex"),
-      mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks")
+      mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
+      mongoPlansCollection: this.config.get("mongoPlansCollection", "action_plans")
     };
   }
 
@@ -78,9 +83,26 @@ export class ExtensionTaskService {
     }
   }
 
+  async loadPlans(): Promise<ActionPlanRecord[]> {
+    const planStore = this.createPlanStore();
+    try {
+      return await planStore.listPlans();
+    } finally {
+      await planStore.close();
+    }
+  }
+
   async loadSnapshot(filter?: Parameters<typeof buildGraphSnapshot>[1]) {
     const tasks = await this.loadTasks();
-    return buildGraphSnapshot(tasks, filter);
+    const plan = filter?.planCode ? await this.getPlan(filter.planCode) : null;
+    const snapshot = buildGraphSnapshot(tasks, filter, plan ? { plan } : undefined);
+    this.logger.debug("loadSnapshot", {
+      filter,
+      taskCount: tasks.length,
+      visibleNodeCount: snapshot.nodes.length,
+      visibleEdgeCount: snapshot.edges.length
+    });
+    return snapshot;
   }
 
   async getTask(codeOrId: string): Promise<TaskRecord | null> {
@@ -89,6 +111,15 @@ export class ExtensionTaskService {
       return await store.getTask(codeOrId);
     } finally {
       await store.close();
+    }
+  }
+
+  async getPlan(code: string): Promise<ActionPlanRecord | null> {
+    const planStore = this.createPlanStore();
+    try {
+      return await planStore.getPlan(code);
+    } finally {
+      await planStore.close();
     }
   }
 
@@ -201,6 +232,15 @@ export class ExtensionTaskService {
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoTasksCollection
+    });
+  }
+
+  private createPlanStore() {
+    const settings = this.getConnectionSettings();
+    return createMongoActionPlanStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoPlansCollection
     });
   }
 }

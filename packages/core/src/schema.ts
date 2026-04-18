@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-import { TASK_SEVERITIES, TASK_STATUSES, type TaskDocumentInput, type TaskRecord } from "./types.js";
+import {
+  PLAN_STATUSES,
+  TASK_SEVERITIES,
+  TASK_STATUSES,
+  type ActionPlanDocument,
+  type ActionPlanRecord,
+  type TaskDocumentInput,
+  type TaskRecord
+} from "./types.js";
 
 function normalizeEnum(value: unknown) {
   return typeof value === "string" ? value.trim().toUpperCase() : value;
@@ -19,6 +27,8 @@ const taskSchema = z.preprocess((input) => {
     duration_estimate: value.duration_estimate ?? value.durationEstimate,
     order_hint: value.order_hint ?? value.orderHint,
     source_ref: value.source_ref ?? value.sourceRef,
+    plan_code: value.plan_code ?? value.planCode,
+    out_of_scope: value.out_of_scope ?? value.outOfScope,
     created_at: value.created_at ?? value.createdAt,
     updated_at: value.updated_at ?? value.updatedAt,
     lane: value.lane ?? value.group,
@@ -40,8 +50,74 @@ const taskSchema = z.preprocess((input) => {
   lane: z.string().optional().nullable(),
   order_hint: z.number().optional().nullable(),
   source_ref: z.string().optional().nullable(),
+  plan_code: z.string().optional().nullable(),
+  prompt: z.string().optional().nullable(),
+  acceptance: z.string().optional().nullable(),
+  out_of_scope: z.string().optional().nullable(),
   created_at: z.union([z.string(), z.date()]).optional(),
   updated_at: z.union([z.string(), z.date()]).optional()
+}));
+
+const planProgressSchema = z.preprocess((input) => {
+  if (!input || typeof input !== "object") {
+    return input;
+  }
+
+  const value = input as Record<string, unknown>;
+  return {
+    total: value.total ?? 0,
+    pending: value.pending ?? 0,
+    in_progress: value.in_progress ?? value.inProgress ?? 0,
+    blocked: value.blocked ?? 0,
+    done: value.done ?? 0,
+    failed: value.failed ?? 0
+  };
+}, z.object({
+  total: z.number().default(0),
+  pending: z.number().default(0),
+  in_progress: z.number().default(0),
+  blocked: z.number().default(0),
+  done: z.number().default(0),
+  failed: z.number().default(0)
+}));
+
+const actionPlanSchema = z.preprocess((input) => {
+  if (!input || typeof input !== "object") {
+    return input;
+  }
+
+  const value = input as Record<string, unknown>;
+  return {
+    ...value,
+    current_task_code: value.current_task_code ?? value.currentTaskCode,
+    created_at: value.created_at ?? value.createdAt,
+    updated_at: value.updated_at ?? value.updatedAt,
+    completed_at: value.completed_at ?? value.completedAt,
+    status: normalizeEnum(value.status)
+  };
+}, z.object({
+  _id: z.unknown().optional(),
+  code: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().default(""),
+  goal: z.string().default(""),
+  context: z.string().default(""),
+  status: z.enum(PLAN_STATUSES),
+  project: z.string().optional().nullable(),
+  tags: z.array(z.string()).default([]),
+  progress: planProgressSchema.default({
+    total: 0,
+    pending: 0,
+    in_progress: 0,
+    blocked: 0,
+    done: 0,
+    failed: 0
+  }),
+  current_task_code: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  created_at: z.union([z.string(), z.date()]).optional(),
+  updated_at: z.union([z.string(), z.date()]).optional(),
+  completed_at: z.union([z.string(), z.date()]).optional().nullable()
 }));
 
 function normalizeIsoDate(value: string | Date | undefined): string {
@@ -69,8 +145,42 @@ export function normalizeTaskDocument(input: TaskDocumentInput): TaskRecord {
     ...(parsed.lane ? { lane: parsed.lane } : {}),
     ...(typeof parsed.order_hint === "number" ? { orderHint: parsed.order_hint } : {}),
     ...(parsed.source_ref ? { sourceRef: parsed.source_ref } : {}),
+    ...(parsed.plan_code ? { planCode: parsed.plan_code } : {}),
+    ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
+    ...(parsed.acceptance ? { acceptance: parsed.acceptance } : {}),
+    ...(parsed.out_of_scope ? { outOfScope: parsed.out_of_scope } : {}),
     createdAt: normalizeIsoDate(parsed.created_at),
     updatedAt: normalizeIsoDate(parsed.updated_at)
+  };
+}
+
+export function normalizeActionPlan(input: ActionPlanDocument): ActionPlanRecord {
+  const parsed = actionPlanSchema.parse(input);
+  return {
+    ...(parsed._id ? { id: String(parsed._id) } : {}),
+    code: parsed.code.trim(),
+    title: parsed.title.trim(),
+    description: parsed.description.trim(),
+    goal: parsed.goal.trim(),
+    context: parsed.context.trim(),
+    status: parsed.status,
+    ...(parsed.project ? { project: parsed.project.trim() } : {}),
+    tags: dedupeSorted(parsed.tags),
+    progress: {
+      total: parsed.progress.total,
+      pending: parsed.progress.pending,
+      in_progress: parsed.progress.in_progress,
+      blocked: parsed.progress.blocked,
+      done: parsed.progress.done,
+      failed: parsed.progress.failed
+    },
+    ...(parsed.current_task_code ? { currentTaskCode: parsed.current_task_code.trim() } : {}),
+    ...(parsed.notes ? { notes: parsed.notes.trim() } : {}),
+    createdAt: normalizeIsoDate(parsed.created_at),
+    updatedAt: normalizeIsoDate(parsed.updated_at),
+    ...(typeof parsed.completed_at !== "undefined"
+      ? { completedAt: parsed.completed_at ? normalizeIsoDate(parsed.completed_at) : null }
+      : {})
   };
 }
 

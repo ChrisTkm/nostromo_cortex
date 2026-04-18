@@ -70,63 +70,15 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return true;
     });
 
-    const byStatus = groupTasks(visible, (task) => task.status);
-    const byAgent = groupTasks(visible, (task) => task.agent);
-    const bySeverity = groupTasks(visible, (task) => task.severity);
-    const byProject = groupTasks(visible.filter((task) => task.project), (task) => task.project ?? "unassigned");
-    const byGroup = groupTasks(visible.filter((task) => task.lane), (task) => task.lane ?? "unassigned");
-    const blocked = visible.filter((task) => task.blockedByCount > 0 && task.status !== "DONE");
-    const ready = visible.filter((task) => task.ready);
+    const byPrimaryTag = groupTasks(visible, primaryTagForTask);
 
     return [
       {
         kind: "group",
-        id: "ready",
-        label: "Ready to execute",
-        description: `${ready.length}`,
-        children: ready.map(toTaskNode)
-      },
-      {
-        kind: "group",
-        id: "blocked",
-        label: "Blocked",
-        description: `${blocked.length}`,
-        children: blocked.map(toTaskNode)
-      },
-      {
-        kind: "group",
-        id: "by-project",
-        label: "By project",
-        description: `${new Set(visible.map((task) => task.project).filter(Boolean)).size}`,
-        children: toGroupedChildren(byProject)
-      },
-      {
-        kind: "group",
-        id: "by-group",
-        label: "By group",
-        description: `${new Set(visible.map((task) => task.lane).filter(Boolean)).size}`,
-        children: toGroupedChildren(byGroup)
-      },
-      {
-        kind: "group",
-        id: "by-status",
-        label: "By status",
+        id: "by-primary-tag",
+        label: "By primary tag",
         description: `${visible.length}`,
-        children: toGroupedChildren(byStatus)
-      },
-      {
-        kind: "group",
-        id: "by-agent",
-        label: "By agent",
-        description: `${new Set(visible.map((task) => task.agent)).size}`,
-        children: toGroupedChildren(byAgent)
-      },
-      {
-        kind: "group",
-        id: "by-severity",
-        label: "By severity",
-        description: `${visible.length}`,
-        children: toGroupedChildren(bySeverity)
+        children: toGroupedChildren(byPrimaryTag)
       }
     ];
   }
@@ -178,4 +130,8 @@ function toTaskNode(task: TaskGraphNode): TaskTreeNode {
     label: task.shortTask,
     task
   };
+}
+
+function primaryTagForTask(task: TaskGraphNode) {
+  return task.tags[0] ?? "(untagged)";
 }
