@@ -311,6 +311,28 @@ describe("activate notes commands", () => {
     expect(panelState.panel?.webview.html).toContain("logs.js");
   });
 
+  it("offers Tasks, Graph, Notes, and Logs in the panel switcher", async () => {
+    showQuickPickMock.mockResolvedValueOnce({
+      label: "Tasks",
+      command: "cortex.openTasks"
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.switchPanel");
+
+    const [items, options] = showQuickPickMock.mock.calls[0] ?? [];
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Tasks", command: "cortex.openTasks" }),
+        expect.objectContaining({ label: "Graph", command: "cortex.openGraph" }),
+        expect.objectContaining({ label: "Notes", command: "cortex.openNotes" }),
+        expect.objectContaining({ label: "Logs", command: "cortex.openLogs" })
+      ])
+    );
+    expect(options).toEqual(expect.objectContaining({ title: "Switch Cortex panel" }));
+    expect(executeCommandMock).toHaveBeenCalledWith("workbench.view.extension.cortex");
+  });
+
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
     showQuickPickMock
       .mockResolvedValueOnce({

@@ -19,7 +19,6 @@ const {
   telemetryRecorderMock,
   sharedConnect,
   sharedDb,
-  sharedGet,
   sharedClose,
   logsCreateIndexes,
   createDirectory,
@@ -78,7 +77,6 @@ const {
     logsCreateIndexes: vi.fn(),
     sharedConnect: vi.fn(),
     sharedDb: vi.fn(),
-    sharedGet: vi.fn(),
     sharedClose: vi.fn(),
     createDirectory: vi.fn(),
     getConfig: vi.fn((_: string, fallback?: string) => fallback),
@@ -100,7 +98,6 @@ vi.mock("@cortex/core", async () => {
 
       connect = sharedConnect;
       db = sharedDb;
-      get = sharedGet;
       close = sharedClose;
     },
     createMongoTaskStore: createMongoTaskStoreMock,
@@ -145,7 +142,6 @@ describe("ExtensionTaskService.initialize", () => {
     createDirectory.mockResolvedValue(undefined);
     telemetryInitialize.mockResolvedValue(undefined);
     sharedConnect.mockResolvedValue(undefined);
-    sharedGet.mockReturnValue({});
     logsCreateIndexes.mockResolvedValue(["logs_source_timestamp", "logs_level_timestamp", "logs_process_timestamp"]);
     sharedDb.mockImplementation(() => ({
       collection: vi.fn(() => ({
@@ -188,7 +184,6 @@ describe("ExtensionTaskService.initialize", () => {
     expect(jsonlTelemetryStoreMock).toHaveBeenCalledTimes(1);
     expect(telemetryRecorderMock).toHaveBeenCalledTimes(1);
     expect(sharedConnect).toHaveBeenCalledTimes(1);
-    expect(sharedGet).toHaveBeenCalledTimes(1);
     expect(createMongoTaskStoreMock).toHaveBeenCalledTimes(1);
     expect(createMongoActionPlanStoreMock).toHaveBeenCalledTimes(1);
     expect(createMongoNoteStoreMock).toHaveBeenCalledTimes(1);
@@ -203,10 +198,9 @@ describe("ExtensionTaskService.initialize", () => {
     expect(taskOptions.sharedClient).toBe(planOptions.sharedClient);
     expect(taskOptions.sharedClient).toBe(noteOptions.sharedClient);
     expect(noteOptions.collectionName).toBe("notes");
-    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(sharedGet.mock.invocationCallOrder[0]);
-    expect(sharedGet.mock.invocationCallOrder[0]).toBeLessThan(taskEnsureIndexes.mock.invocationCallOrder[0]);
-    expect(sharedGet.mock.invocationCallOrder[0]).toBeLessThan(planEnsureIndexes.mock.invocationCallOrder[0]);
-    expect(sharedGet.mock.invocationCallOrder[0]).toBeLessThan(noteEnsureIndexes.mock.invocationCallOrder[0]);
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(taskEnsureIndexes.mock.invocationCallOrder[0]);
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(planEnsureIndexes.mock.invocationCallOrder[0]);
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(noteEnsureIndexes.mock.invocationCallOrder[0]);
   });
 
   it("delegates note operations and propagates mongoNotesCollection updates", async () => {

@@ -322,8 +322,6 @@ export class ExtensionTaskService {
   private async ensureMongoIndexes() {
     const settings = this.getConnectionSettings();
     const sharedClient = this.getSharedClient(settings);
-    sharedClient?.get();
-
     const taskStore = createMongoTaskStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,

@@ -27,6 +27,14 @@
         "title": "Cortex: Refresh tasks"
       },
       {
+        "command": "cortex.openTasks",
+        "title": "Cortex: Focus task navigator"
+      },
+      {
+        "command": "cortex.switchPanel",
+        "title": "Cortex: Switch panel"
+      },
+      {
         "command": "cortex.openGraph",
         "title": "Cortex: Open PERT graph"
       },
@@ -132,7 +140,7 @@
           "group": "navigation@1"
         },
         {
-          "command": "cortex.openGraph",
+          "command": "cortex.switchPanel",
           "when": "view == cortex.overview",
           "group": "navigation@2"
         },

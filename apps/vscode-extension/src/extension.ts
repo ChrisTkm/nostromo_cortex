@@ -22,6 +22,7 @@ type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
 type NotesPanelMode = "list" | "new" | { type: "edit"; code: string };
 type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
+type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
 type FilterCatalog = {
   projects: string[];
   groups: string[];
@@ -130,7 +131,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     graphPanel.webview.postMessage(payload);
     await service.recordInteraction("graph_snapshot", {
-      mongo_query_count: 3,
+      mongo_query_count: 2,
       snapshot_node_count: snapshot.nodes.length,
       snapshot_edge_count: snapshot.edges.length,
       payload_size_bytes: Buffer.byteLength(JSON.stringify(payload), "utf8"),
@@ -373,7 +374,30 @@ export async function activate(context: vscode.ExtensionContext) {
     await postSnapshot(selectedTaskCode);
   }
 
+  async function openTasks() {
+    await vscode.commands.executeCommand("workbench.view.extension.cortex");
+  }
+
+  async function switchPanel() {
+    const items: PanelQuickPickItem[] = [
+      { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
+      { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
+      { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
+      { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" }
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: "Switch Cortex panel",
+      placeHolder: "Choose where to go"
+    });
+    if (!picked) {
+      return;
+    }
+    await vscode.commands.executeCommand(picked.command);
+  }
+
   context.subscriptions.push(
+    vscode.commands.registerCommand("cortex.openTasks", openTasks),
+    vscode.commands.registerCommand("cortex.switchPanel", switchPanel),
     vscode.commands.registerCommand("cortex.openGraph", async (arg?: string | { kind?: string; task?: { code?: string } }) => {
       const code = typeof arg === "string" ? arg : arg?.kind === "task" ? arg.task?.code : undefined;
       return openGraph(code);
@@ -381,13 +405,15 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("cortex.refresh", refreshView),
     vscode.commands.registerCommand("cortex.showOptions", async () => {
       const items: OptionsQuickPickItem[] = [
+        { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
+        { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
+        { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
+        { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
         { label: "Search query", description: "Update search text", command: "cortex.setSearchQuery" },
         { label: "Tag filter", description: "Select task tags", command: "cortex.setTagFilter" },
         { label: "Project filter", description: "Select projects", command: "cortex.setProjectFilter" },
         { label: "Group filter", description: "Select groups", command: "cortex.setGroupFilter" },
         { label: "Action plan", description: "Select an action plan", command: "cortex.selectPlan" },
-        { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
-        { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
         { label: "Mongo database", description: "Select Mongo connection", command: "cortex.selectDatabase" },
         { label: "Bootstrap sample DB", description: "Create or seed local sample data", command: "cortex.bootstrapDatabase" },
         { label: "Clear filters", description: "Reset filters and plan selection", command: "cortex.clearFilters" },
