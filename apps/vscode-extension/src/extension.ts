@@ -14,6 +14,7 @@ import { ExtensionTaskService } from "./service.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
+import { getNotesHtml } from "./webview/notes/getHtml.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
@@ -155,7 +156,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
     await notesPanel.webview.postMessage({
-      type: "notes:mode",
+      type: "open",
       mode
     });
   }
@@ -165,39 +166,6 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
     await postNotesList();
-  }
-
-  function getNotesPlaceholderHtml() {
-    return `<!DOCTYPE html>
-<html lang="en">
-  <body>
-    <div id="root"></div>
-    <script>
-      const vscode = acquireVsCodeApi();
-      const root = document.getElementById("root");
-      const render = (message) => {
-        if (!root) {
-          return;
-        }
-        const noteCount = Array.isArray(message?.notes) ? message.notes.length : undefined;
-        const mode =
-          typeof message?.mode === "string"
-            ? message.mode
-            : message?.mode && typeof message.mode === "object" && message.mode.type === "edit" && typeof message.mode.code === "string"
-              ? "edit:" + message.mode.code
-              : undefined;
-        root.textContent = noteCount === undefined && mode === undefined
-          ? "Notes panel (UI pendiente - CTX-N4)"
-          : "Notes panel (UI pendiente - CTX-N4) - " + [mode ? "mode " + mode : undefined, noteCount === undefined ? undefined : noteCount + " notes"].filter(Boolean).join(" | ");
-      };
-      render();
-      window.addEventListener("message", (event) => {
-        render(event.data);
-      });
-      vscode.postMessage({ type: "ready" });
-    </script>
-  </body>
-</html>`;
   }
 
   async function openNotesPanel(mode: NotesPanelMode) {
@@ -213,7 +181,7 @@ export async function activate(context: vscode.ExtensionContext) {
       enableScripts: true,
       retainContextWhenHidden: true
     });
-    notesPanel.webview.html = getNotesPlaceholderHtml();
+    notesPanel.webview.html = getNotesHtml(notesPanel.webview, context.extensionUri, nonce());
     notesPanel.onDidDispose(() => {
       notesPanel = undefined;
       notesPanelReady = false;
@@ -376,7 +344,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Project filter", description: "Select projects", command: "cortex.setProjectFilter" },
         { label: "Group filter", description: "Select groups", command: "cortex.setGroupFilter" },
         { label: "Action plan", description: "Select an action plan", command: "cortex.selectPlan" },
-        { label: "Notes", description: "Open the notes placeholder panel", command: "cortex.openNotes" },
+        { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
         { label: "Mongo database", description: "Select Mongo connection", command: "cortex.selectDatabase" },
         { label: "Bootstrap sample DB", description: "Create or seed local sample data", command: "cortex.bootstrapDatabase" },
         { label: "Clear filters", description: "Reset filters and plan selection", command: "cortex.clearFilters" },

@@ -161,6 +161,10 @@ vi.mock("./webview/html.js", () => ({
   getGraphHtml: vi.fn(() => "<html></html>")
 }));
 
+vi.mock("./webview/notes/getHtml.js", () => ({
+  getNotesHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"notes.js\"></script></html>")
+}));
+
 import { activate } from "./extension.js";
 
 function createContext() {
@@ -229,7 +233,7 @@ describe("activate notes commands", () => {
     );
     expect(createWebviewPanelMock).toHaveBeenCalledWith("cortex.notes", "Cortex Notes", 1, expect.objectContaining({ enableScripts: true }));
     expect(panelState.panel?.webview.html).toContain('<div id="root"></div>');
-    expect(panelState.panel?.webview.html).toContain("Notes panel (UI pendiente - CTX-N4)");
+    expect(panelState.panel?.webview.html).toContain("notes.js");
   });
 
   it("wires ready, save, and delete messages to the notes service", async () => {
@@ -288,7 +292,7 @@ describe("activate notes commands", () => {
     );
     expect(panelState.panel?.reveal).toHaveBeenCalled();
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
-      type: "notes:mode",
+      type: "open",
       mode: {
         type: "edit",
         code: "N-1"

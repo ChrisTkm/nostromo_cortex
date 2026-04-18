@@ -10,6 +10,16 @@ const shared = {
   target: "node20"
 };
 
+const browserBundle = {
+  bundle: true,
+  sourcemap: true,
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  jsx: "automatic",
+  loader: { ".tsx": "tsx" }
+};
+
 const contexts = await Promise.all([
   esbuild.context({
     ...shared,
@@ -19,16 +29,15 @@ const contexts = await Promise.all([
     external: ["vscode"]
   }),
   esbuild.context({
-    bundle: true,
-    sourcemap: true,
-    format: "iife",
-    platform: "browser",
-    target: "es2022",
-    // The webview now mounts a React TSX entry but still ships as a single browser bundle.
-    jsx: "automatic",
-    loader: { ".tsx": "tsx" },
+    ...browserBundle,
+    // The graph webview ships as a single browser bundle.
     entryPoints: ["src/webview/index.tsx"],
     outfile: "media/webview.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/notes/index.tsx"],
+    outfile: "media/notes.js"
   })
 ]);
 
