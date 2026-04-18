@@ -70,17 +70,9 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return true;
     });
 
-    const byPrimaryTag = groupTasks(visible, primaryTagForTask);
+    const byGroup = groupTasks(visible, groupLabelForTask);
 
-    return [
-      {
-        kind: "group",
-        id: "by-primary-tag",
-        label: "By primary tag",
-        description: `${visible.length}`,
-        children: toGroupedChildren(byPrimaryTag)
-      }
-    ];
+    return toGroupedChildren(byGroup, projectLabelForTask);
   }
 
   getTreeItem(element: GroupTreeNode | TaskTreeNode): vscode.TreeItem {
@@ -113,13 +105,28 @@ function groupTasks(tasks: TaskGraphNode[], selector: (task: TaskGraphNode) => s
   return [...map.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
-function toGroupedChildren(groups: Array<[string, TaskGraphNode[]]>): GroupTreeNode[] {
+function toGroupedChildren(groups: Array<[string, TaskGraphNode[]]>, nestedSelector?: (task: TaskGraphNode) => string): GroupTreeNode[] {
   return groups.map(([group, tasks]) => ({
     kind: "group",
     id: group,
     label: group,
     description: `${tasks.length}`,
-    children: tasks.sort((left, right) => left.code.localeCompare(right.code)).map(toTaskNode)
+    children: nestedSelector ? toNestedChildren(group, tasks, nestedSelector) : sortTasks(tasks).map(toTaskNode)
+  }));
+}
+
+function toNestedChildren(group: string, tasks: TaskGraphNode[], nestedSelector: (task: TaskGraphNode) => string) {
+  const nestedGroups = groupTasks(tasks, nestedSelector);
+  if (nestedGroups.length <= 1) {
+    return sortTasks(tasks).map(toTaskNode);
+  }
+
+  return nestedGroups.map(([nestedGroup, nestedTasks]) => ({
+    kind: "group" as const,
+    id: `${group}:${nestedGroup}`,
+    label: nestedGroup,
+    description: `${nestedTasks.length}`,
+    children: sortTasks(nestedTasks).map(toTaskNode)
   }));
 }
 
@@ -132,6 +139,20 @@ function toTaskNode(task: TaskGraphNode): TaskTreeNode {
   };
 }
 
-function primaryTagForTask(task: TaskGraphNode) {
-  return task.tags[0] ?? "(untagged)";
+function groupLabelForTask(task: TaskGraphNode) {
+  return task.lane?.trim() || "(ungrouped)";
+}
+
+function projectLabelForTask(task: TaskGraphNode) {
+  return task.project?.trim() || "(no project)";
+}
+
+function sortTasks(tasks: TaskGraphNode[]) {
+  return [...tasks].sort((left, right) => {
+    const orderDelta = (left.orderHint ?? Number.MAX_SAFE_INTEGER) - (right.orderHint ?? Number.MAX_SAFE_INTEGER);
+    if (orderDelta !== 0) {
+      return orderDelta;
+    }
+    return left.code.localeCompare(right.code);
+  });
 }
