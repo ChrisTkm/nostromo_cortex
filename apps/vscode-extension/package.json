@@ -2,7 +2,7 @@
   "name": "cortex",
   "displayName": "Cortex",
   "publisher": "cortex-local",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -33,6 +33,22 @@
       {
         "command": "cortex.showOptions",
         "title": "Cortex: Options"
+      },
+      {
+        "command": "cortex.openNotes",
+        "title": "Cortex: Open notes panel"
+      },
+      {
+        "command": "cortex.newNote",
+        "title": "Cortex: New note"
+      },
+      {
+        "command": "cortex.editNote",
+        "title": "Cortex: Edit note"
+      },
+      {
+        "command": "cortex.deleteNote",
+        "title": "Cortex: Delete note"
       },
       {
         "command": "cortex.setSearchQuery",
@@ -92,6 +108,18 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "cortex.newNote",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "cortex.openNotes",
+        "key": "ctrl+alt+shift+n",
+        "mac": "cmd+alt+shift+n"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -108,6 +136,11 @@
           "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@3"
+        },
+        {
+          "command": "cortex.openNotes",
+          "when": "view == cortex.overview",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [

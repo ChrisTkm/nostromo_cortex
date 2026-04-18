@@ -1,4 +1,13 @@
-import { buildTaskGraph, TASK_SEVERITIES, TASK_STATUSES, type TaskDocumentInput, type TaskFilter, type TaskRecord } from "@cortex/core";
+import {
+  buildTaskGraph,
+  TASK_SEVERITIES,
+  TASK_STATUSES,
+  type NoteDocumentInput,
+  type NoteRecord,
+  type TaskDocumentInput,
+  type TaskFilter,
+  type TaskRecord
+} from "@cortex/core";
 import * as vscode from "vscode";
 
 import { ExtensionTaskService } from "./service.js";
@@ -7,6 +16,8 @@ import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
+type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
+type NotesPanelMode = "list" | "new" | { type: "edit"; code: string };
 type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type FilterCatalog = {
@@ -47,6 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(treeView);
 
   let graphPanel: vscode.WebviewPanel | undefined;
+  let notesPanel: vscode.WebviewPanel | undefined;
+  let notesPanelReady = false;
+  let pendingNotesMode: NotesPanelMode = "list";
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -123,6 +137,138 @@ export async function activate(context: vscode.ExtensionContext) {
   async function refreshView() {
     treeProvider.refresh();
     await postSnapshot();
+  }
+
+  async function postNotesList() {
+    if (!notesPanel) {
+      return;
+    }
+    const notes = await service.listNotes();
+    await notesPanel.webview.postMessage({
+      type: "notes:list",
+      notes
+    });
+  }
+
+  async function postNotesMode(mode: NotesPanelMode) {
+    if (!notesPanel) {
+      return;
+    }
+    await notesPanel.webview.postMessage({
+      type: "notes:mode",
+      mode
+    });
+  }
+
+  async function refreshNotesPanel() {
+    if (!notesPanel || !notesPanelReady) {
+      return;
+    }
+    await postNotesList();
+  }
+
+  function getNotesPlaceholderHtml() {
+    return `<!DOCTYPE html>
+<html lang="en">
+  <body>
+    <div id="root"></div>
+    <script>
+      const vscode = acquireVsCodeApi();
+      const root = document.getElementById("root");
+      const render = (message) => {
+        if (!root) {
+          return;
+        }
+        const noteCount = Array.isArray(message?.notes) ? message.notes.length : undefined;
+        const mode =
+          typeof message?.mode === "string"
+            ? message.mode
+            : message?.mode && typeof message.mode === "object" && message.mode.type === "edit" && typeof message.mode.code === "string"
+              ? "edit:" + message.mode.code
+              : undefined;
+        root.textContent = noteCount === undefined && mode === undefined
+          ? "Notes panel (UI pendiente - CTX-N4)"
+          : "Notes panel (UI pendiente - CTX-N4) - " + [mode ? "mode " + mode : undefined, noteCount === undefined ? undefined : noteCount + " notes"].filter(Boolean).join(" | ");
+      };
+      render();
+      window.addEventListener("message", (event) => {
+        render(event.data);
+      });
+      vscode.postMessage({ type: "ready" });
+    </script>
+  </body>
+</html>`;
+  }
+
+  async function openNotesPanel(mode: NotesPanelMode) {
+    pendingNotesMode = mode;
+    if (notesPanel) {
+      notesPanel.reveal(vscode.ViewColumn.One);
+      await postNotesMode(mode);
+      return;
+    }
+
+    notesPanelReady = false;
+    notesPanel = vscode.window.createWebviewPanel("cortex.notes", "Cortex Notes", vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    notesPanel.webview.html = getNotesPlaceholderHtml();
+    notesPanel.onDidDispose(() => {
+      notesPanel = undefined;
+      notesPanelReady = false;
+    });
+    notesPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        notesPanelReady = true;
+        await postNotesList();
+        await postNotesMode(pendingNotesMode);
+        return;
+      }
+      if (message?.type === "notes:save" && isNoteDocumentInput(message.input)) {
+        const saved = await service.saveNote(message.input);
+        if (notesPanel) {
+          await notesPanel.webview.postMessage({
+            type: "notes:saved",
+            note: saved
+          });
+        }
+        await refreshNotesPanel();
+        return;
+      }
+      if (message?.type === "notes:delete" && typeof message.code === "string" && message.code.trim()) {
+        await service.deleteNote(message.code.trim());
+        await refreshNotesPanel();
+      }
+    });
+  }
+
+  async function pickNoteCode(options: {
+    title: string;
+    placeHolder: string;
+    emptyMessage: string;
+  }): Promise<string | undefined> {
+    const notes = await service.listNotes();
+    if (notes.length === 0) {
+      void vscode.window.showInformationMessage(options.emptyMessage);
+      return undefined;
+    }
+
+    const items: NoteQuickPickItem[] = [...notes]
+      .sort((left, right) => left.code.localeCompare(right.code))
+      .map((note) => ({
+        label: note.code,
+        description: note.title,
+        ...(note.body ? { detail: note.body } : {}),
+        code: note.code
+      }));
+    const picked = await vscode.window.showQuickPick(items, {
+      title: options.title,
+      placeHolder: options.placeHolder,
+      matchOnDescription: true,
+      matchOnDetail: true
+    });
+    return picked?.code;
   }
 
   async function openGraph(selectedTaskCode?: string) {
@@ -230,6 +376,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Project filter", description: "Select projects", command: "cortex.setProjectFilter" },
         { label: "Group filter", description: "Select groups", command: "cortex.setGroupFilter" },
         { label: "Action plan", description: "Select an action plan", command: "cortex.selectPlan" },
+        { label: "Notes", description: "Open the notes placeholder panel", command: "cortex.openNotes" },
         { label: "Mongo database", description: "Select Mongo connection", command: "cortex.selectDatabase" },
         { label: "Bootstrap sample DB", description: "Create or seed local sample data", command: "cortex.bootstrapDatabase" },
         { label: "Clear filters", description: "Reset filters and plan selection", command: "cortex.clearFilters" },
@@ -243,6 +390,53 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       await vscode.commands.executeCommand(picked.command);
+    }),
+    vscode.commands.registerCommand("cortex.openNotes", async () => {
+      await openNotesPanel("list");
+    }),
+    vscode.commands.registerCommand("cortex.newNote", async () => {
+      await openNotesPanel("new");
+    }),
+    vscode.commands.registerCommand("cortex.editNote", async (arg?: string | { code?: string }) => {
+      const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
+      const code =
+        requestedCode ??
+        (await pickNoteCode({
+          title: "Select a note to edit",
+          placeHolder: "Choose a note code",
+          emptyMessage: "No notes available to edit."
+        }));
+      if (!code) {
+        return;
+      }
+      await openNotesPanel({ type: "edit", code });
+    }),
+    vscode.commands.registerCommand("cortex.deleteNote", async (arg?: string | { code?: string }) => {
+      const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
+      const code =
+        requestedCode ??
+        (await pickNoteCode({
+          title: "Select a note to delete",
+          placeHolder: "Choose a note code",
+          emptyMessage: "No notes available to delete."
+        }));
+      if (!code) {
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(`Delete note ${code}?`, { modal: true }, "Delete");
+      if (confirmed !== "Delete") {
+        return;
+      }
+
+      const deleted = await service.deleteNote(code);
+      if (!deleted) {
+        void vscode.window.showWarningMessage(`Note ${code} not found.`);
+        return;
+      }
+
+      await refreshNotesPanel();
+      void vscode.window.showInformationMessage(`Note ${code} deleted.`);
     }),
     vscode.commands.registerCommand("cortex.setSearchQuery", async () => {
       const current = service.getFilterState().searchQuery ?? "";
@@ -786,4 +980,13 @@ function parseOptionalNumber(value: string) {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<NoteDocumentInput>;
+  return typeof candidate.code === "string" && candidate.code.trim().length > 0 && typeof candidate.title === "string" && candidate.title.trim().length > 0;
 }
