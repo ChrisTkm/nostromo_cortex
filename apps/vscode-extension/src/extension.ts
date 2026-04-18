@@ -24,16 +24,18 @@ function nonce() {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-  console.log("[cortex] activate() called");
   const service = new ExtensionTaskService(context);
   activeService = service;
+  service.logger.debug("activate", {
+    extensionMode: vscode.ExtensionMode[context.extensionMode]
+  });
   try {
     await service.initialize();
-    console.log("[cortex] service.initialize() ok");
+    service.logger.debug("initialize succeeded", {});
   } catch (err) {
-    console.error("[cortex] service.initialize() FAILED", err);
     await service.dispose();
     activeService = undefined;
+    service.logger.error("initialize failed", { error: String(err) });
     throw err;
   }
 
@@ -52,9 +54,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     const persistedState = service.getFilterState();
-    console.log("[cortex] postSnapshot — filterState:", JSON.stringify(persistedState));
+    service.logger.debug("postSnapshot filterState", {
+      filterState: persistedState
+    });
     const bundle = await service.loadBundle();
-    console.log("[cortex] postSnapshot — tasks:", bundle.tasks.length, "plans:", bundle.plans.length);
+    service.logger.debug("postSnapshot tasks/plans", {
+      taskCount: bundle.tasks.length,
+      planCount: bundle.plans.length
+    });
     const availablePlanCodes = new Set(bundle.plans.map((plan) => plan.code));
     const selectedPlanCode = resolveSelectedPlanCode(bundle.tasks, persistedState, availablePlanCodes, selectedTaskCode);
     const selectedPlan = selectedPlanCode ? bundle.plans.find((plan) => plan.code === selectedPlanCode) ?? null : null;
@@ -74,9 +81,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     const snapshotFilter = buildSnapshotFilter(state);
-    console.log("[cortex] postSnapshot — snapshotFilter:", JSON.stringify(snapshotFilter));
+    service.logger.debug("postSnapshot snapshotFilter", {
+      snapshotFilter
+    });
     const snapshot = await service.loadSnapshot(snapshotFilter, bundle, selectedPlan);
-    console.log("[cortex] postSnapshot — snapshot nodes:", snapshot.nodes.length, "edges:", snapshot.edges.length);
+    service.logger.debug("postSnapshot snapshot nodes/edges", {
+      nodeCount: snapshot.nodes.length,
+      edgeCount: snapshot.edges.length
+    });
 
     const payload = {
       type: "snapshot",
