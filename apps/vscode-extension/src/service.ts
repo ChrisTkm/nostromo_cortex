@@ -59,6 +59,7 @@ export class ExtensionTaskService {
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
     await this.refreshSharedClient();
+    await this.ensureMongoIndexes();
   }
 
   async dispose() {
@@ -255,6 +256,31 @@ export class ExtensionTaskService {
     await this.sharedClient?.close();
     this.sharedClient = new SharedMongoClient(settings.mongoUrl);
     await this.sharedClient.connect();
+  }
+
+  private async ensureMongoIndexes() {
+    const settings = this.getConnectionSettings();
+    const sharedClient = this.getSharedClient(settings);
+    sharedClient?.get();
+
+    const taskStore = createMongoTaskStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoTasksCollection,
+      ...(sharedClient ? { sharedClient } : {})
+    });
+    const planStore = createMongoActionPlanStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoPlansCollection,
+      ...(sharedClient ? { sharedClient } : {})
+    });
+
+    try {
+      await Promise.all([taskStore.ensureIndexes(), planStore.ensureIndexes()]);
+    } finally {
+      await Promise.all([taskStore.close(), planStore.close()]);
+    }
   }
 
   private async withTaskStore<T>(settings: ConnectionSettings, handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>): Promise<T> {

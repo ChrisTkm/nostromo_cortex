@@ -219,5 +219,6 @@ export interface ListTasksOptions {
 export interface TaskStore {
   listTasks(): Promise<TaskRecord[]>;
   getTask(codeOrId: string): Promise<TaskRecord | null>;
+  ensureIndexes(): Promise<void>;
   upsertTasks(tasks: TaskDocumentInput[]): Promise<number>;
 }

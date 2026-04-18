@@ -104,26 +104,27 @@ function computeTopologicalOrder(tasks: TaskRecord[], adjacency: Map<string, str
     indegree.set(task.code, reverseAdjacency.get(task.code)?.length ?? 0);
   }
 
-  const queue = stableArray(
+  let currentLevel = stableArray(
     [...indegree.entries()].filter(([, count]) => count === 0).map(([code]) => code),
     (value) => value
   );
   const order: string[] = [];
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      break;
-    }
-    order.push(current);
-    for (const dependent of adjacency.get(current) ?? []) {
-      const nextIndegree = (indegree.get(dependent) ?? 0) - 1;
-      indegree.set(dependent, nextIndegree);
-      if (nextIndegree === 0) {
-        queue.push(dependent);
-        queue.sort((left, right) => left.localeCompare(right));
+  while (currentLevel.length > 0) {
+    const nextLevel: string[] = [];
+
+    for (const current of currentLevel) {
+      order.push(current);
+      for (const dependent of adjacency.get(current) ?? []) {
+        const nextIndegree = (indegree.get(dependent) ?? 0) - 1;
+        indegree.set(dependent, nextIndegree);
+        if (nextIndegree === 0) {
+          nextLevel.push(dependent);
+        }
       }
     }
+
+    currentLevel = stableArray(nextLevel, (value) => value);
   }
 
   return order;

@@ -33,6 +33,10 @@ export class SharedMongoClient {
     return this.client.connect();
   }
 
+  get(): MongoClient {
+    return this.client;
+  }
+
   db(name?: string) {
     return this.client.db(name);
   }
@@ -108,24 +112,39 @@ export class MongoTaskStore implements TaskStore {
     return null;
   }
 
-  async upsertTasks(tasks: TaskDocumentInput[]): Promise<number> {
+  async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
-    let writes = 0;
-    for (const task of tasks) {
-      writes += 1;
-      await collection.updateOne(
-        { code: task.code },
-        {
-          $set: {
-            ...task,
-            updated_at: task.updated_at ?? new Date().toISOString(),
-            created_at: task.created_at ?? new Date().toISOString()
-          }
-        },
-        { upsert: true }
-      );
+    await collection.createIndexes([
+      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { status: 1 }, name: "status_idx" }
+    ]);
+  }
+
+  async upsertTasks(tasks: TaskDocumentInput[]): Promise<number> {
+    if (tasks.length === 0) {
+      return 0;
     }
-    return writes;
+
+    const collection = await this.collection();
+    const now = new Date().toISOString();
+    await collection.bulkWrite(
+      tasks.map((task) => ({
+        updateOne: {
+          filter: { code: task.code },
+          update: {
+            $set: {
+              ...task,
+              created_at: task.created_at ?? now,
+              updated_at: task.updated_at ?? now
+            }
+          },
+          upsert: true
+        }
+      })),
+      { ordered: false }
+    );
+    return tasks.length;
   }
 
   async close(): Promise<void> {
@@ -166,6 +185,14 @@ export class MongoActionPlanStore {
     }
 
     return null;
+  }
+
+  async ensureIndexes(): Promise<void> {
+    const collection = await this.collection();
+    await collection.createIndexes([
+      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { status: 1 }, name: "status_idx" }
+    ]);
   }
 
   async close(): Promise<void> {

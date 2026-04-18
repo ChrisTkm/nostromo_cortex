@@ -275,6 +275,39 @@ describe("graph algorithms", () => {
     expect(estimate.available).toBe(true);
     expect(estimate.path).toEqual(["S1", "S2", "S2.1", "S5b"]);
   });
+
+  it("builds a deterministic topological order for a diamond DAG", () => {
+    const graph = buildTaskGraph(
+      normalizeTasks([
+        {
+          ...sampleTasks[3]!,
+          code: "D",
+          short_task: "Task D",
+          depends_on: ["B", "C"]
+        },
+        {
+          ...sampleTasks[2]!,
+          code: "C",
+          short_task: "Task C",
+          depends_on: ["A"]
+        },
+        {
+          ...sampleTasks[1]!,
+          code: "B",
+          short_task: "Task B",
+          depends_on: ["A"]
+        },
+        {
+          ...sampleTasks[0]!,
+          code: "A",
+          short_task: "Task A",
+          depends_on: []
+        }
+      ])
+    );
+
+    expect(graph.topologicalOrder).toEqual(["A", "B", "C", "D"]);
+  });
 });
 
 describe("shared mongo client support", () => {
@@ -339,15 +372,127 @@ describe("shared mongo client support", () => {
     await store.close();
     expect(sharedClient.close).not.toHaveBeenCalled();
   });
+
+  it("returns zero writes when no tasks are provided", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    await expect(store.upsertTasks([])).resolves.toBe(0);
+    expect(sharedClient.collectionApi.bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it("upserts tasks in bulk with consistent timestamps", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    const writes = await store.upsertTasks([
+      {
+        ...sampleTasks[0]!,
+        code: "T-1"
+      },
+      {
+        ...sampleTasks[1]!,
+        code: "T-2",
+        created_at: "2026-04-12T10:00:00.000Z"
+      }
+    ]);
+
+    expect(writes).toBe(2);
+    expect(sharedClient.collectionApi.bulkWrite).toHaveBeenCalledTimes(1);
+    expect(sharedClient.collectionApi.bulkWrite).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          updateOne: expect.objectContaining({
+            filter: { code: "T-1" },
+            update: {
+              $set: expect.objectContaining({
+                code: "T-1",
+                created_at: expect.any(String),
+                updated_at: expect.any(String)
+              })
+            },
+            upsert: true
+          })
+        }),
+        expect.objectContaining({
+          updateOne: expect.objectContaining({
+            filter: { code: "T-2" },
+            update: {
+              $set: expect.objectContaining({
+                code: "T-2",
+                created_at: "2026-04-12T10:00:00.000Z",
+                updated_at: expect.any(String)
+              })
+            },
+            upsert: true
+          })
+        })
+      ],
+      { ordered: false }
+    );
+
+    const [operations] = sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const firstWrite = operations?.[0]?.updateOne.update.$set;
+    expect(firstWrite?.created_at).toEqual(firstWrite?.updated_at);
+  });
+
+  it("creates the required task and plan indexes", async () => {
+    const taskClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const taskStore = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient: taskClient
+    });
+
+    await taskStore.ensureIndexes();
+
+    expect(taskClient.collectionApi.createIndexes).toHaveBeenCalledWith([
+      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { status: 1 }, name: "status_idx" }
+    ]);
+
+    const planClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const planStore = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient: planClient
+    });
+
+    await planStore.ensureIndexes();
+
+    expect(planClient.collectionApi.createIndexes).toHaveBeenCalledWith([
+      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { status: 1 }, name: "status_idx" }
+    ]);
+  });
 });
 
 function createSharedClient(items: unknown[]) {
   const toArray = vi.fn().mockResolvedValue(items);
+  const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
+  const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
     toArray
   }));
+  const findOne = vi.fn().mockResolvedValue(null);
   const collection = vi.fn(() => ({
-    find
+    bulkWrite,
+    createIndexes,
+    find,
+    findOne
   }));
   const db = vi.fn(() => ({
     collection
@@ -356,6 +501,13 @@ function createSharedClient(items: unknown[]) {
   return {
     connect: vi.fn().mockResolvedValue(undefined),
     db,
-    close: vi.fn().mockResolvedValue(undefined)
+    close: vi.fn().mockResolvedValue(undefined),
+    collectionApi: {
+      bulkWrite,
+      createIndexes,
+      find,
+      findOne,
+      toArray
+    }
   };
 }
