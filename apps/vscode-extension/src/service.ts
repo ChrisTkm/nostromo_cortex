@@ -59,8 +59,6 @@ export class ExtensionTaskService {
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
     await this.refreshSharedClient();
-    // Full reset — bypass updateFilterState merge to clear stale/corrupt values
-    await this.context.workspaceState.update("cortex.filterState", DEFAULT_FILTER_STATE);
   }
 
   async dispose() {
@@ -69,9 +67,24 @@ export class ExtensionTaskService {
   }
 
   getFilterState(): ExtensionFilterState {
+    const persisted = this.context.workspaceState.get<Partial<ExtensionFilterState>>("cortex.filterState") ?? {};
+    const clampedZoom =
+      typeof persisted.zoom === "number" && Number.isFinite(persisted.zoom)
+        ? Math.min(Math.max(persisted.zoom, 0.2), 2.8)
+        : DEFAULT_FILTER_STATE.zoom;
+
     return {
       ...DEFAULT_FILTER_STATE,
-      ...(this.context.workspaceState.get<ExtensionFilterState>("cortex.filterState") ?? DEFAULT_FILTER_STATE)
+      ...persisted,
+      pan: { ...DEFAULT_FILTER_STATE.pan, ...(persisted.pan ?? {}) },
+      zoom: clampedZoom,
+      selectedTags: Array.isArray(persisted.selectedTags) ? persisted.selectedTags : [],
+      selectedProjects: Array.isArray(persisted.selectedProjects) ? persisted.selectedProjects : [],
+      selectedGroups: Array.isArray(persisted.selectedGroups) ? persisted.selectedGroups : [],
+      selectedStatuses: Array.isArray(persisted.selectedStatuses) ? persisted.selectedStatuses : [],
+      selectedSeverities: Array.isArray(persisted.selectedSeverities) ? persisted.selectedSeverities : [],
+      graphOrientation: persisted.graphOrientation === "TB" ? "TB" : "LR",
+      showMiniMap: typeof persisted.showMiniMap === "boolean" ? persisted.showMiniMap : DEFAULT_FILTER_STATE.showMiniMap
     };
   }
 
