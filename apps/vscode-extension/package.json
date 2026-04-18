@@ -146,6 +146,11 @@
           "default": "tasks",
           "description": "Mongo collection name used for tasks."
         },
+        "cortex.mongoNotesCollection": {
+          "type": "string",
+          "default": "notes",
+          "description": "Colección de notas en Mongo."
+        },
         "cortex.mongoPlansCollection": {
           "type": "string",
           "default": "action_plans",

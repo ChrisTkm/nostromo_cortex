@@ -2,9 +2,13 @@ import path from "node:path";
 
 import {
   createMongoActionPlanStore,
+  createMongoNoteStore,
   buildGraphSnapshot,
   createMongoTaskStore,
   loadConfig,
+  type MongoNoteStore,
+  type NoteDocumentInput,
+  type NoteRecord,
   SharedMongoClient,
   sampleTasks,
   stableStringify,
@@ -34,6 +38,7 @@ export class ExtensionTaskService {
   private readonly telemetryJsonlPath: string;
   private readonly config = vscode.workspace.getConfiguration("cortex");
   private sharedClient: SharedMongoClient | undefined;
+  private notesStore: MongoNoteStore | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
@@ -63,6 +68,7 @@ export class ExtensionTaskService {
   }
 
   async dispose() {
+    this.notesStore = undefined;
     await this.sharedClient?.close();
     this.sharedClient = undefined;
   }
@@ -94,6 +100,7 @@ export class ExtensionTaskService {
       mongoUrl: this.config.get("mongoUrl", "mongodb://localhost:27017"),
       mongoDbName: this.config.get("mongoDbName", "cortex"),
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
+      mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
       mongoPlansCollection: this.config.get("mongoPlansCollection", "action_plans")
     };
   }
@@ -144,6 +151,22 @@ export class ExtensionTaskService {
     return this.withPlanStore(this.getConnectionSettings(), (store) => store.getPlan(code));
   }
 
+  async listNotes(): Promise<NoteRecord[]> {
+    return this.getNotesStore().listNotes();
+  }
+
+  async getNote(code: string): Promise<NoteRecord | null> {
+    return this.getNotesStore().getNote(code);
+  }
+
+  async saveNote(input: NoteDocumentInput): Promise<NoteRecord> {
+    return this.getNotesStore().upsertNote(input);
+  }
+
+  async deleteNote(code: string): Promise<boolean> {
+    return this.getNotesStore().deleteNote(code);
+  }
+
   async saveTask(task: TaskDocumentInput) {
     return this.withTaskStore(this.getConnectionSettings(), (store) => store.upsertTasks([task]));
   }
@@ -173,6 +196,11 @@ export class ExtensionTaskService {
   }
 
   async updateConnectionSettings(next: Partial<ConnectionSettings>) {
+    const updatedSettings = {
+      ...this.getConnectionSettings(),
+      ...next
+    };
+
     if (next.mongoUrl) {
       await this.config.update("mongoUrl", next.mongoUrl, vscode.ConfigurationTarget.Workspace);
     }
@@ -182,9 +210,15 @@ export class ExtensionTaskService {
     if (next.mongoTasksCollection) {
       await this.config.update("mongoTasksCollection", next.mongoTasksCollection, vscode.ConfigurationTarget.Workspace);
     }
+    if (next.mongoNotesCollection) {
+      await this.config.update("mongoNotesCollection", next.mongoNotesCollection, vscode.ConfigurationTarget.Workspace);
+    }
 
     if (next.mongoUrl) {
       await this.refreshSharedClient();
+    }
+    if (next.mongoUrl || next.mongoDbName || next.mongoNotesCollection) {
+      this.notesStore = this.createNotesStore(updatedSettings);
     }
   }
 
@@ -240,6 +274,23 @@ export class ExtensionTaskService {
     });
   }
 
+  private createNotesStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+    const sharedClient = this.getSharedClient(settings);
+    return createMongoNoteStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoNotesCollection,
+      ...(sharedClient ? { sharedClient } : {})
+    });
+  }
+
+  private getNotesStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+    if (!this.notesStore) {
+      this.notesStore = this.createNotesStore(settings);
+    }
+    return this.notesStore;
+  }
+
   private getSharedClient(settings: ConnectionSettings) {
     if (!this.sharedClient || this.sharedClient.mongoUrl !== settings.mongoUrl) {
       return undefined;
@@ -256,6 +307,7 @@ export class ExtensionTaskService {
     await this.sharedClient?.close();
     this.sharedClient = new SharedMongoClient(settings.mongoUrl);
     await this.sharedClient.connect();
+    this.notesStore = this.createNotesStore(settings);
   }
 
   private async ensureMongoIndexes() {
@@ -275,11 +327,12 @@ export class ExtensionTaskService {
       collectionName: settings.mongoPlansCollection,
       ...(sharedClient ? { sharedClient } : {})
     });
+    const notesStore = this.getNotesStore(settings);
 
     try {
-      await Promise.all([taskStore.ensureIndexes(), planStore.ensureIndexes()]);
+      await Promise.all([taskStore.ensureIndexes(), planStore.ensureIndexes(), notesStore.ensureIndexes()]);
     } finally {
-      await Promise.all([taskStore.close(), planStore.close()]);
+      await Promise.all([taskStore.close(), planStore.close(), notesStore.close()]);
     }
   }
 
