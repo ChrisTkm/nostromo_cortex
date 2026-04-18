@@ -6,6 +6,8 @@ import {
   TASK_STATUSES,
   type ActionPlanDocument,
   type ActionPlanRecord,
+  type NoteDocumentInput,
+  type NoteRecord,
   type TaskDocumentInput,
   type TaskRecord
 } from "./types.js";
@@ -120,6 +122,32 @@ const actionPlanSchema = z.preprocess((input) => {
   completed_at: z.union([z.string(), z.date()]).optional().nullable()
 }));
 
+const noteSchema = z.preprocess((input) => {
+  if (!input || typeof input !== "object") {
+    return input;
+  }
+
+  const value = input as Record<string, unknown>;
+  return {
+    ...value,
+    task_code: value.task_code ?? value.taskCode,
+    plan_code: value.plan_code ?? value.planCode,
+    created_at: value.created_at ?? value.createdAt,
+    updated_at: value.updated_at ?? value.updatedAt
+  };
+}, z.object({
+  _id: z.unknown().optional(),
+  code: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string().default(""),
+  tags: z.array(z.string()).default([]),
+  task_code: z.string().optional().nullable(),
+  plan_code: z.string().optional().nullable(),
+  pinned: z.boolean().optional(),
+  created_at: z.union([z.string(), z.date()]).optional(),
+  updated_at: z.union([z.string(), z.date()]).optional()
+}));
+
 function normalizeIsoDate(value: string | Date | undefined): string {
   return value ? new Date(value).toISOString() : new Date().toISOString();
 }
@@ -181,6 +209,22 @@ export function normalizeActionPlan(input: ActionPlanDocument): ActionPlanRecord
     ...(typeof parsed.completed_at !== "undefined"
       ? { completedAt: parsed.completed_at ? normalizeIsoDate(parsed.completed_at) : null }
       : {})
+  };
+}
+
+export function normalizeNote(input: NoteDocumentInput): NoteRecord {
+  const parsed = noteSchema.parse(input);
+  return {
+    ...(parsed._id ? { id: String(parsed._id) } : {}),
+    code: parsed.code.trim(),
+    title: parsed.title.trim(),
+    body: parsed.body,
+    tags: dedupeSorted(parsed.tags),
+    ...(parsed.task_code ? { taskCode: parsed.task_code.trim() } : {}),
+    ...(parsed.plan_code ? { planCode: parsed.plan_code.trim() } : {}),
+    pinned: Boolean(parsed.pinned),
+    createdAt: normalizeIsoDate(parsed.created_at),
+    updatedAt: normalizeIsoDate(parsed.updated_at)
   };
 }
 

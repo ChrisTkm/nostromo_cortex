@@ -7,11 +7,13 @@ import {
   getReadyTasks,
   getTaskBlockers,
   getTaskDownstream,
+  normalizeNote,
   normalizeActionPlan,
   normalizeTaskDocument,
   normalizeTasks,
   sampleTasks,
   MongoActionPlanStore,
+  MongoNoteStore,
   MongoTaskStore,
   SharedMongoClient,
   stableStringify
@@ -310,6 +312,61 @@ describe("graph algorithms", () => {
   });
 });
 
+describe("note normalization", () => {
+  it("normalizes a minimal note input with defaults", () => {
+    const note = normalizeNote({
+      code: "n1",
+      title: "Hola"
+    });
+
+    expect(note.code).toBe("n1");
+    expect(note.title).toBe("Hola");
+    expect(note.body).toBe("");
+    expect(note.tags).toEqual([]);
+    expect(note.pinned).toBe(false);
+    expect(note.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(note.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("accepts camelCase note inputs and returns camelCase output", () => {
+    const note = normalizeNote({
+      _id: "note-1",
+      code: "n2",
+      title: "Compat",
+      body: "Body",
+      tags: ["alpha", "beta"],
+      taskCode: "TASK-1",
+      planCode: "PLAN-1",
+      pinned: true,
+      createdAt: "2026-04-12T00:00:00.000Z",
+      updatedAt: new Date("2026-04-12T01:00:00.000Z")
+    } as never);
+
+    expect(note).toMatchObject({
+      id: "note-1",
+      code: "n2",
+      title: "Compat",
+      body: "Body",
+      tags: ["alpha", "beta"],
+      taskCode: "TASK-1",
+      planCode: "PLAN-1",
+      pinned: true,
+      createdAt: "2026-04-12T00:00:00.000Z",
+      updatedAt: "2026-04-12T01:00:00.000Z"
+    });
+  });
+
+  it("deduplicates and sorts note tags", () => {
+    const note = normalizeNote({
+      code: "n3",
+      title: "Tags",
+      tags: ["zeta", "alpha", "zeta", "beta", "alpha"]
+    });
+
+    expect(note.tags).toEqual(["alpha", "beta", "zeta"]);
+  });
+});
+
 describe("shared mongo client support", () => {
   it("keeps task store close a no-op when using a shared client", async () => {
     const sharedClient = createSharedClient([
@@ -371,6 +428,120 @@ describe("shared mongo client support", () => {
 
     await store.close();
     expect(sharedClient.close).not.toHaveBeenCalled();
+  });
+
+  it("lists and fetches normalized notes when using a shared client", async () => {
+    const sharedClient = createSharedClient([
+      {
+        _id: "note-2",
+        code: "n2",
+        title: "Second",
+        pinned: false,
+        updated_at: "2026-04-12T11:00:00.000Z"
+      },
+      {
+        _id: "note-1",
+        code: "n1",
+        title: "First",
+        pinned: true,
+        updated_at: "2026-04-12T12:00:00.000Z",
+        tags: ["b", "a", "b"]
+      }
+    ]) as unknown as SharedMongoClient;
+
+    sharedClient.collectionApi.findOne.mockResolvedValue({
+      _id: "note-1",
+      code: "n1",
+      title: "First",
+      task_code: "TASK-1",
+      plan_code: "PLAN-1",
+      pinned: true
+    });
+
+    const store = new MongoNoteStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "notes",
+      sharedClient
+    });
+
+    const notes = await store.listNotes();
+    const note = await store.getNote("n1");
+
+    expect(sharedClient.collectionApi.find).toHaveBeenCalledWith({});
+    expect(sharedClient.collectionApi.sort).toHaveBeenCalledWith({ pinned: -1, updated_at: -1 });
+    expect(notes.map((item) => item.code)).toEqual(["n2", "n1"]);
+    expect(note).toMatchObject({
+      code: "n1",
+      taskCode: "TASK-1",
+      planCode: "PLAN-1",
+      pinned: true
+    });
+
+    await store.close();
+    expect(sharedClient.close).not.toHaveBeenCalled();
+  });
+
+  it("upserts, deletes and indexes notes", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValue({
+      _id: "note-3",
+      code: "n3",
+      title: "Stored",
+      body: "Persisted",
+      tags: ["z", "a", "z"],
+      pinned: true,
+      task_code: "TASK-3",
+      plan_code: "PLAN-3",
+      created_at: "2026-04-12T10:00:00.000Z",
+      updated_at: "2026-04-12T11:00:00.000Z"
+    });
+    sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+    const store = new MongoNoteStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "notes",
+      sharedClient
+    });
+
+    const note = await store.upsertNote({
+      code: "n3",
+      title: "Stored",
+      pinned: true
+    });
+    const deleted = await store.deleteNote("n3");
+
+    await store.ensureIndexes();
+
+    expect(sharedClient.collectionApi.updateOne).toHaveBeenCalledWith(
+      { code: "n3" },
+      {
+        $set: expect.objectContaining({
+          code: "n3",
+          title: "Stored",
+          pinned: true,
+          created_at: expect.any(String),
+          updated_at: expect.any(String)
+        })
+      },
+      { upsert: true }
+    );
+    expect(note).toMatchObject({
+      id: "note-3",
+      code: "n3",
+      tags: ["a", "z"],
+      taskCode: "TASK-3",
+      planCode: "PLAN-3"
+    });
+    expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "n3" });
+    expect(deleted).toBe(true);
+    expect(sharedClient.collectionApi.createIndexes).toHaveBeenCalledWith([
+      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { task_code: 1 }, name: "task_code_idx" },
+      { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
+    ]);
   });
 
   it("returns zero writes when no tasks are provided", async () => {
@@ -482,17 +653,25 @@ describe("shared mongo client support", () => {
 
 function createSharedClient(items: unknown[]) {
   const toArray = vi.fn().mockResolvedValue(items);
+  const sort = vi.fn(() => ({
+    toArray
+  }));
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
+  const updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0 });
+  const deleteOne = vi.fn().mockResolvedValue({ deletedCount: 0 });
   const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
+    sort,
     toArray
   }));
   const findOne = vi.fn().mockResolvedValue(null);
   const collection = vi.fn(() => ({
     bulkWrite,
     createIndexes,
+    deleteOne,
     find,
-    findOne
+    findOne,
+    updateOne
   }));
   const db = vi.fn(() => ({
     collection
@@ -505,9 +684,12 @@ function createSharedClient(items: unknown[]) {
     collectionApi: {
       bulkWrite,
       createIndexes,
+      deleteOne,
       find,
       findOne,
-      toArray
+      sort,
+      toArray,
+      updateOne
     }
   };
 }

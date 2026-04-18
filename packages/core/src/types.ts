@@ -222,3 +222,36 @@ export interface TaskStore {
   ensureIndexes(): Promise<void>;
   upsertTasks(tasks: TaskDocumentInput[]): Promise<number>;
 }
+
+export interface NoteDocumentInput {
+  _id?: unknown;
+  code: string;
+  title: string;
+  body?: string;
+  tags?: string[];
+  task_code?: string | null;
+  plan_code?: string | null;
+  pinned?: boolean;
+  created_at?: string | Date;
+  updated_at?: string | Date;
+}
+
+export interface NoteRecord {
+  id?: string;
+  code: string;
+  title: string;
+  body: string;
+  tags: string[];
+  taskCode?: string;
+  planCode?: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteStore {
+  listNotes(): Promise<NoteRecord[]>;
+  getNote(code: string): Promise<NoteRecord | null>;
+  upsertNote(input: NoteDocumentInput): Promise<NoteRecord>;
+  deleteNote(code: string): Promise<boolean>;
+}
