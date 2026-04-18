@@ -131,7 +131,7 @@ export class MongoTaskStore implements TaskStore {
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
     await collection.createIndexes([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
       { key: { status: 1 }, name: "status_idx" }
     ]);
@@ -284,7 +284,7 @@ export class MongoNoteStore implements NoteStore {
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
     await collection.createIndexes([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
       { key: { updated_at: -1 }, name: "updated_at_desc_idx" }

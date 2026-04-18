@@ -537,7 +537,7 @@ describe("shared mongo client support", () => {
     expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "n3" });
     expect(deleted).toBe(true);
     expect(sharedClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
       { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
@@ -629,7 +629,7 @@ describe("shared mongo client support", () => {
     await taskStore.ensureIndexes();
 
     expect(taskClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
       { key: { status: 1 }, name: "status_idx" }
     ]);
