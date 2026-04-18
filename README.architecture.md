@@ -88,6 +88,8 @@ Las respuestas se serializan con orden estable para reducir ruido entre corridas
 
 Esto evita hardcodes dispersos y permite actualizar precios sin tocar toda la base.
 
+- **Notes & Logs panels**  Webviews independientes sobre el mismo SharedMongoClient. Notes permite CRUD; Logs es read-only. Ambos tienen su bundle esbuild minificado propio (`media/notes.js`, `media/logs.js`).
+
 ## Modelo de datos
 
 Campos centrales:
@@ -154,4 +156,3 @@ Cada corrida puede guardar:
 - [x] pricing versionado y `billing_mode`
 - [x] seeds y scripts de inspección
 - [x] base modular lista para crecer
-
