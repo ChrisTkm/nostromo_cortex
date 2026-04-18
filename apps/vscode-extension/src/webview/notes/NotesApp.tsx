@@ -47,6 +47,7 @@ export function NotesApp() {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<NotesViewMode>("list");
+  const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<NoteDraft>(() => createEmptyDraft());
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function NotesApp() {
           const exists = message.notes.some((note) => note.code === currentSelected);
           if (!exists) {
             setMode("list");
+            setEditorOpen(false);
             setDraft(createEmptyDraft());
             setError(null);
             return null;
@@ -103,6 +105,7 @@ export function NotesApp() {
         setNotes((current) => upsertNote(current, message.note));
         setSelected(message.note.code);
         setMode("edit");
+        setEditorOpen(true);
         setDraft(createDraftFromNote(message.note));
         setError(null);
         return;
@@ -111,6 +114,7 @@ export function NotesApp() {
       if (message.type === "open") {
         applyOpenMode(message.mode, notesRef.current, {
           setDraft,
+          setEditorOpen,
           setError,
           setMode,
           setSelected
@@ -149,6 +153,7 @@ export function NotesApp() {
     }
     setSelected(code);
     setMode("edit");
+    setEditorOpen(true);
     setDraft(createDraftFromNote(note));
     setError(null);
   }
@@ -156,6 +161,7 @@ export function NotesApp() {
   function handleCreate() {
     setSelected(null);
     setMode("new");
+    setEditorOpen(true);
     setDraft(createEmptyDraft());
     setError(null);
   }
@@ -193,28 +199,31 @@ export function NotesApp() {
     });
   }
 
-  function handleCancel() {
-    if (mode === "new") {
-      setMode("list");
-      setDraft(createEmptyDraft());
-      setError(null);
-      return;
-    }
-
+  function handleReset() {
     if (selectedNote) {
       setDraft(createDraftFromNote(selectedNote));
       setError(null);
       return;
     }
 
-    setMode("list");
     setDraft(createEmptyDraft());
     setError(null);
+  }
+
+  function handleCloseEditor() {
+    setEditorOpen(false);
+    setError(null);
+    if (mode === "new") {
+      setMode("list");
+      setSelected(null);
+      setDraft(createEmptyDraft());
+    }
   }
 
   function handleDelete(code: string) {
     setSelected((current) => (current === code ? null : current));
     setMode("list");
+    setEditorOpen(false);
     setDraft(createEmptyDraft());
     setError(null);
     vscode.postMessage({
@@ -224,19 +233,22 @@ export function NotesApp() {
   }
 
   return (
-    <div className="notes-app">
+    <div className={`notes-app${editorOpen ? "" : " notes-app--list-only"}`}>
       <aside className="notes-sidebar">
         <NoteList
           notes={filteredNotes}
+          onCloseEditor={handleCloseEditor}
           onCreate={handleCreate}
           onSearchChange={setSearch}
           onSelect={handleSelect}
+          showEditor={editorOpen}
           search={search}
           selectedCode={selected}
         />
       </aside>
-      <section className="notes-editor-panel">
-        {mode === "list" && !selectedNote ? (
+      {editorOpen ? (
+        <section className="notes-editor-panel">
+          {mode === "list" && !selectedNote ? (
           <div className="notes-empty-state">
             <div className="notes-empty-state__eyebrow">Notes</div>
             <h2 className="notes-empty-state__title">Select a note or start a new one.</h2>
@@ -248,17 +260,19 @@ export function NotesApp() {
             </button>
           </div>
         ) : (
-          <NoteEditor
-            draft={draft}
-            error={error}
-            isNew={mode === "new"}
-            onCancel={handleCancel}
-            onChange={handleDraftChange}
-            onDelete={draft.code.trim() ? () => handleDelete(draft.code.trim()) : undefined}
-            onSave={handleSave}
-          />
-        )}
-      </section>
+            <NoteEditor
+              draft={draft}
+              error={error}
+              isNew={mode === "new"}
+              onChange={handleDraftChange}
+              onClose={handleCloseEditor}
+              onDelete={draft.code.trim() ? () => handleDelete(draft.code.trim()) : undefined}
+              onReset={handleReset}
+              onSave={handleSave}
+            />
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -268,6 +282,7 @@ function applyOpenMode(
   notes: readonly NoteRecord[],
   actions: {
     setDraft(value: NoteDraft): void;
+    setEditorOpen(value: boolean): void;
     setError(value: string | null): void;
     setMode(value: NotesViewMode): void;
     setSelected(value: string | null): void;
@@ -276,6 +291,7 @@ function applyOpenMode(
   if (openMode === "list") {
     actions.setSelected(null);
     actions.setMode("list");
+    actions.setEditorOpen(false);
     actions.setDraft(createEmptyDraft());
     actions.setError(null);
     return;
@@ -284,6 +300,7 @@ function applyOpenMode(
   if (openMode === "new") {
     actions.setSelected(null);
     actions.setMode("new");
+    actions.setEditorOpen(true);
     actions.setDraft(createEmptyDraft());
     actions.setError(null);
     return;
@@ -292,6 +309,7 @@ function applyOpenMode(
   const note = notes.find((entry) => entry.code === openMode.code);
   actions.setSelected(openMode.code);
   actions.setMode("edit");
+  actions.setEditorOpen(true);
   actions.setDraft(note ? createDraftFromNote(note) : { ...createEmptyDraft(), code: openMode.code });
   actions.setError(null);
 }

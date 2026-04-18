@@ -41,6 +41,11 @@ const contexts = await Promise.all([
     ...browserBundle,
     entryPoints: ["src/webview/notes/index.tsx"],
     outfile: "media/notes.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/logs/index.tsx"],
+    outfile: "media/logs.js"
   })
 ]);
 

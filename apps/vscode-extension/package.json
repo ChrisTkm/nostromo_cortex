@@ -39,6 +39,10 @@
         "title": "Cortex: Open notes panel"
       },
       {
+        "command": "cortex.openLogs",
+        "title": "Cortex: Open logs panel"
+      },
+      {
         "command": "cortex.newNote",
         "title": "Cortex: New note"
       },
@@ -136,16 +140,6 @@
           "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@3"
-        },
-        {
-          "command": "cortex.listCycles",
-          "when": "view == cortex.overview",
-          "group": "navigation@4"
-        },
-        {
-          "command": "cortex.openNotes",
-          "when": "view == cortex.overview",
-          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -183,6 +177,11 @@
           "type": "string",
           "default": "notes",
           "description": "Colección de notas en Mongo."
+        },
+        "cortex.mongoLogsCollection": {
+          "type": "string",
+          "default": "logs",
+          "description": "Colección de logs en Mongo."
         },
         "cortex.mongoPlansCollection": {
           "type": "string",

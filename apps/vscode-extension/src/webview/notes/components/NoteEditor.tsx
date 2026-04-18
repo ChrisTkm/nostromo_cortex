@@ -4,9 +4,10 @@ export function NoteEditor(props: {
   draft: NoteDraft;
   error?: string | null;
   isNew: boolean;
-  onCancel(): void;
   onChange(value: Partial<NoteDraft>): void;
+  onClose(): void;
   onDelete?(): void;
+  onReset(): void;
   onSave(): void;
 }) {
   const generatedCode = props.draft.code.trim() || (props.draft.title.trim() ? slugifyTitle(props.draft.title) : "note");
@@ -19,8 +20,11 @@ export function NoteEditor(props: {
           <h2 className="note-editor__title">{props.draft.title.trim() || "Untitled note"}</h2>
         </div>
         <div className="note-editor__actions">
-          <button className="notes-button" onClick={props.onCancel} type="button">
-            Cancel
+          <button className="notes-button" onClick={props.onClose} type="button">
+            Close
+          </button>
+          <button className="notes-button" onClick={props.onReset} type="button">
+            Reset
           </button>
           {props.onDelete ? (
             <button className="notes-button notes-button--danger" onClick={props.onDelete} type="button">

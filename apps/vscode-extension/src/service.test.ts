@@ -18,8 +18,10 @@ const {
   jsonlTelemetryStoreMock,
   telemetryRecorderMock,
   sharedConnect,
+  sharedDb,
   sharedGet,
   sharedClose,
+  logsCreateIndexes,
   createDirectory,
   getConfig,
   updateConfig,
@@ -73,7 +75,9 @@ const {
       initialize: telemetryInitialize,
       startRun: vi.fn()
     })),
+    logsCreateIndexes: vi.fn(),
     sharedConnect: vi.fn(),
+    sharedDb: vi.fn(),
     sharedGet: vi.fn(),
     sharedClose: vi.fn(),
     createDirectory: vi.fn(),
@@ -95,6 +99,7 @@ vi.mock("@cortex/core", async () => {
       }
 
       connect = sharedConnect;
+      db = sharedDb;
       get = sharedGet;
       close = sharedClose;
     },
@@ -141,6 +146,12 @@ describe("ExtensionTaskService.initialize", () => {
     telemetryInitialize.mockResolvedValue(undefined);
     sharedConnect.mockResolvedValue(undefined);
     sharedGet.mockReturnValue({});
+    logsCreateIndexes.mockResolvedValue(["logs_source_timestamp", "logs_level_timestamp", "logs_process_timestamp"]);
+    sharedDb.mockImplementation(() => ({
+      collection: vi.fn(() => ({
+        createIndexes: logsCreateIndexes
+      }))
+    }));
     sharedClose.mockResolvedValue(undefined);
     taskEnsureIndexes.mockResolvedValue(undefined);
     taskClose.mockResolvedValue(undefined);
@@ -184,6 +195,7 @@ describe("ExtensionTaskService.initialize", () => {
     expect(taskEnsureIndexes).toHaveBeenCalledTimes(1);
     expect(planEnsureIndexes).toHaveBeenCalledTimes(1);
     expect(noteEnsureIndexes).toHaveBeenCalledTimes(1);
+    expect(logsCreateIndexes).toHaveBeenCalledTimes(1);
 
     const [taskOptions] = createMongoTaskStoreMock.mock.calls[0] ?? [];
     const [planOptions] = createMongoActionPlanStoreMock.mock.calls[0] ?? [];

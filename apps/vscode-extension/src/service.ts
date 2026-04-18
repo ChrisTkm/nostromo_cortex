@@ -19,6 +19,7 @@ import {
 import { createLogger, JsonlTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
 import * as vscode from "vscode";
 
+import { normalizeLogCollection, type LogRecord } from "./logs.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
@@ -99,6 +100,7 @@ export class ExtensionTaskService {
       mongoDbName: this.config.get("mongoDbName", "cortex"),
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
       mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
+      mongoLogsCollection: this.config.get("mongoLogsCollection", "logs"),
       mongoPlansCollection: this.config.get("mongoPlansCollection", "action_plans")
     };
   }
@@ -165,6 +167,12 @@ export class ExtensionTaskService {
     return this.getNotesStore().deleteNote(code);
   }
 
+  async listLogs(limit = 500): Promise<LogRecord[]> {
+    const collection = await this.getLogsCollection();
+    const items = await collection.find({}).sort({ timestamp: -1 }).limit(limit).toArray();
+    return normalizeLogCollection(items);
+  }
+
   async saveTask(task: TaskDocumentInput) {
     return this.withTaskStore(this.getConnectionSettings(), (store) => store.upsertTasks([task]));
   }
@@ -210,6 +218,9 @@ export class ExtensionTaskService {
     }
     if (next.mongoNotesCollection) {
       await this.config.update("mongoNotesCollection", next.mongoNotesCollection, vscode.ConfigurationTarget.Workspace);
+    }
+    if (next.mongoLogsCollection) {
+      await this.config.update("mongoLogsCollection", next.mongoLogsCollection, vscode.ConfigurationTarget.Workspace);
     }
 
     if (next.mongoUrl) {
@@ -326,12 +337,34 @@ export class ExtensionTaskService {
       ...(sharedClient ? { sharedClient } : {})
     });
     const notesStore = this.getNotesStore(settings);
+    const logsCollection = await this.getLogsCollection(settings);
 
     try {
-      await Promise.all([taskStore.ensureIndexes(), planStore.ensureIndexes(), notesStore.ensureIndexes()]);
+      await Promise.all([
+        taskStore.ensureIndexes(),
+        planStore.ensureIndexes(),
+        notesStore.ensureIndexes(),
+        logsCollection.createIndexes([
+          { key: { source: 1, timestamp: -1 }, name: "logs_source_timestamp" },
+          { key: { level: 1, timestamp: -1 }, name: "logs_level_timestamp" },
+          { key: { process: 1, timestamp: -1 }, name: "logs_process_timestamp", partialFilterExpression: { process: { $type: "string" } } }
+        ])
+      ]);
     } finally {
       await Promise.all([taskStore.close(), planStore.close(), notesStore.close()]);
     }
+  }
+
+  private async getLogsCollection(settings: ConnectionSettings = this.getConnectionSettings()) {
+    let sharedClient = this.getSharedClient(settings);
+    if (!sharedClient) {
+      await this.refreshSharedClient();
+      sharedClient = this.getSharedClient(this.getConnectionSettings());
+    }
+    if (!sharedClient) {
+      throw new Error("Mongo client unavailable for logs collection");
+    }
+    return sharedClient.db(settings.mongoDbName).collection<Record<string, unknown>>(settings.mongoLogsCollection);
   }
 
   private async withTaskStore<T>(settings: ConnectionSettings, handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>): Promise<T> {

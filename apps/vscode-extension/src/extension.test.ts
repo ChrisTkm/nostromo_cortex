@@ -5,6 +5,7 @@ const {
   createTreeViewMock,
   createWebviewPanelMock,
   executeCommandMock,
+  listLogsMock,
   listNotesMock,
   panelState,
   registerCommandMock,
@@ -18,6 +19,7 @@ const {
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
   const listNotesMock = vi.fn();
+  const listLogsMock = vi.fn();
   const saveNoteMock = vi.fn();
   const deleteNoteMock = vi.fn();
   const showQuickPickMock = vi.fn();
@@ -77,6 +79,7 @@ const {
     createTreeViewMock,
     createWebviewPanelMock,
     executeCommandMock,
+    listLogsMock,
     listNotesMock,
     panelState,
     registerCommandMock,
@@ -146,6 +149,7 @@ vi.mock("./service.js", () => ({
     })),
     updateFilterState: vi.fn().mockResolvedValue(undefined),
     listNotes: listNotesMock,
+    listLogs: listLogsMock,
     saveNote: saveNoteMock,
     deleteNote: deleteNoteMock
   }))
@@ -163,6 +167,10 @@ vi.mock("./webview/html.js", () => ({
 
 vi.mock("./webview/notes/getHtml.js", () => ({
   getNotesHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"notes.js\"></script></html>")
+}));
+
+vi.mock("./webview/logs/getHtml.js", () => ({
+  getLogsHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"logs.js\"></script></html>")
 }));
 
 import { activate } from "./extension.js";
@@ -196,6 +204,18 @@ describe("activate notes commands", () => {
         pinned: false,
         createdAt: "2026-04-18T00:00:00.000Z",
         updatedAt: "2026-04-18T00:00:00.000Z"
+      }
+    ]);
+    listLogsMock.mockResolvedValue([
+      {
+        timestamp: "2026-04-18T00:00:00.000Z",
+        day: "2026-04-18",
+        level: "INFO",
+        source: "nostromo.bootstrap",
+        folder: "nostromo",
+        message: "Mongo ready",
+        summary: "Mongo ready (nostromo.bootstrap)",
+        details: []
       }
     ]);
     saveNoteMock.mockResolvedValue({
@@ -267,6 +287,28 @@ describe("activate notes commands", () => {
 
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
     expect(listNotesMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds Logs to cortex.showOptions and opens the logs panel", async () => {
+    showQuickPickMock.mockResolvedValueOnce({
+      label: "Logs",
+      command: "cortex.openLogs"
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.showOptions");
+
+    const [items] = showQuickPickMock.mock.calls[0] ?? [];
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Logs",
+          command: "cortex.openLogs"
+        })
+      ])
+    );
+    expect(createWebviewPanelMock).toHaveBeenCalledWith("cortex.logs", "Cortex Logs", 1, expect.objectContaining({ enableScripts: true }));
+    expect(panelState.panel?.webview.html).toContain("logs.js");
   });
 
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {

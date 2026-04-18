@@ -24,12 +24,14 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
 
         html, body, #root {
           margin: 0;
+          padding: 0;
           width: 100%;
           height: 100%;
         }
 
         body {
           overflow: hidden;
+          padding: 0;
           background:
             radial-gradient(circle at top left, rgba(80, 126, 255, 0.12) 0%, transparent 28%),
             radial-gradient(circle at top right, rgba(10, 170, 145, 0.12) 0%, transparent 24%),

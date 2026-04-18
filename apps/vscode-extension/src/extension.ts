@@ -14,6 +14,7 @@ import { ExtensionTaskService } from "./service.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
+import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
@@ -59,6 +60,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(treeView);
 
   let graphPanel: vscode.WebviewPanel | undefined;
+  let logsPanel: vscode.WebviewPanel | undefined;
+  let logsPanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
   let notesPanelReady = false;
   let pendingNotesMode: NotesPanelMode = "list";
@@ -151,6 +154,18 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
+  async function postLogsList() {
+    if (!logsPanel) {
+      return;
+    }
+
+    const logs = await service.listLogs();
+    await logsPanel.webview.postMessage({
+      type: "logs:list",
+      logs
+    });
+  }
+
   async function postNotesMode(mode: NotesPanelMode) {
     if (!notesPanel) {
       return;
@@ -207,6 +222,33 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "notes:delete" && typeof message.code === "string" && message.code.trim()) {
         await service.deleteNote(message.code.trim());
         await refreshNotesPanel();
+      }
+    });
+  }
+
+  async function openLogsPanel() {
+    if (logsPanel) {
+      logsPanel.reveal(vscode.ViewColumn.One);
+      if (logsPanelReady) {
+        await postLogsList();
+      }
+      return;
+    }
+
+    logsPanelReady = false;
+    logsPanel = vscode.window.createWebviewPanel("cortex.logs", "Cortex Logs", vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    logsPanel.webview.html = getLogsHtml(logsPanel.webview, context.extensionUri, nonce());
+    logsPanel.onDidDispose(() => {
+      logsPanel = undefined;
+      logsPanelReady = false;
+    });
+    logsPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready" || message?.type === "logs:refresh") {
+        logsPanelReady = true;
+        await postLogsList();
       }
     });
   }
@@ -345,6 +387,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Group filter", description: "Select groups", command: "cortex.setGroupFilter" },
         { label: "Action plan", description: "Select an action plan", command: "cortex.selectPlan" },
         { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
+        { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
         { label: "Mongo database", description: "Select Mongo connection", command: "cortex.selectDatabase" },
         { label: "Bootstrap sample DB", description: "Create or seed local sample data", command: "cortex.bootstrapDatabase" },
         { label: "Clear filters", description: "Reset filters and plan selection", command: "cortex.clearFilters" },
@@ -361,6 +404,9 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("cortex.openNotes", async () => {
       await openNotesPanel("list");
+    }),
+    vscode.commands.registerCommand("cortex.openLogs", async () => {
+      await openLogsPanel();
     }),
     vscode.commands.registerCommand("cortex.newNote", async () => {
       await openNotesPanel("new");

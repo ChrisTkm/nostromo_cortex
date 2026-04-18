@@ -2,9 +2,11 @@ import type { NoteRecord } from "@cortex/core";
 
 export function NoteList(props: {
   notes: readonly NoteRecord[];
+  onCloseEditor(): void;
   onCreate(): void;
   onSearchChange(value: string): void;
   onSelect(code: string): void;
+  showEditor: boolean;
   search: string;
   selectedCode: string | null;
 }) {
@@ -14,10 +16,18 @@ export function NoteList(props: {
         <div>
           <div className="notes-list__eyebrow">Workspace notes</div>
           <h1 className="notes-list__title">Cortex Notes</h1>
+          <div className="notes-list__count">{props.notes.length} visible</div>
         </div>
-        <button className="notes-button notes-button--primary" onClick={props.onCreate} type="button">
-          + New
-        </button>
+        <div className="notes-list__actions">
+          {props.showEditor ? (
+            <button className="notes-button" onClick={props.onCloseEditor} type="button">
+              Notes only
+            </button>
+          ) : null}
+          <button className="notes-button notes-button--primary" onClick={props.onCreate} type="button">
+            + New
+          </button>
+        </div>
       </header>
 
       <label className="notes-list__search">
@@ -53,6 +63,16 @@ export function NoteList(props: {
                 {note.pinned ? <span className="notes-list__item-pin">Pinned</span> : null}
               </div>
               <p className="notes-list__item-snippet">{buildSnippet(note.body, note.tags)}</p>
+              {note.tags.length > 0 ? (
+                <div className="notes-list__item-tags">
+                  {note.tags.slice(0, 4).map((tag) => (
+                    <span className="notes-tag" key={tag} style={tagStyle(tag)}>
+                      {tag}
+                    </span>
+                  ))}
+                  {note.tags.length > 4 ? <span className="notes-tag notes-tag--muted">+{note.tags.length - 4}</span> : null}
+                </div>
+              ) : null}
             </button>
           ))
         )}
@@ -87,4 +107,13 @@ function formatRelativeDate(value: string) {
   }
 
   return "just now";
+}
+
+function tagStyle(tag: string) {
+  const hue = Array.from(tag).reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360;
+  return {
+    background: `hsla(${hue}, 78%, 54%, 0.12)`,
+    borderColor: `hsla(${hue}, 82%, 58%, 0.28)`,
+    color: `hsl(${hue}, 82%, 70%)`
+  };
 }

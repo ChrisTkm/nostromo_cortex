@@ -10,6 +10,7 @@ export function HudCorner(props: {
   const done = props.planContext?.progress.done ?? 0;
   const total = props.planContext?.progress.total ?? 0;
   const progress = total > 0 ? done / total : 0;
+  const progressPercent = total > 0 ? Math.round(progress * 100) : 0;
   const offset = RING_CIRCUMFERENCE * (1 - progress);
 
   return (
@@ -31,8 +32,13 @@ export function HudCorner(props: {
               strokeDashoffset={offset}
             />
           </svg>
+          <div className="hud-corner__ring-meta">
+            <div className="hud-corner__ring-count">
+              {done}/{total}
+            </div>
+          </div>
           <div className="hud-corner__ring-text">
-            {done}/{total}
+            {progressPercent}%
           </div>
         </div>
       ) : null}
