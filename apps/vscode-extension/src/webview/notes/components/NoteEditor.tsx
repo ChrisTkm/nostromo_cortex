@@ -1,4 +1,5 @@
-import type { NoteDraft } from "../NotesApp";
+import { slugifyTitle } from "../lib/drafts";
+import type { NoteDraft } from "../types";
 
 export function NoteEditor(props: {
   draft: NoteDraft;
@@ -110,15 +111,4 @@ export function NoteEditor(props: {
       </div>
     </div>
   );
-}
-
-function slugifyTitle(value: string) {
-  const slug = value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return slug || "note";
 }
