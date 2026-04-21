@@ -232,6 +232,8 @@ export interface NoteDocumentInput {
   task_code?: string | null;
   plan_code?: string | null;
   pinned?: boolean;
+  remind_at?: string | Date | null;
+  reminded_at?: string | Date | null;
   created_at?: string | Date;
   updated_at?: string | Date;
 }
@@ -245,6 +247,8 @@ export interface NoteRecord {
   taskCode?: string;
   planCode?: string;
   pinned: boolean;
+  remindAt?: string;
+  remindedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

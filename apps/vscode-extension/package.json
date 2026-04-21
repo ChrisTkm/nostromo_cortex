@@ -63,6 +63,10 @@
         "title": "Cortex: Delete note"
       },
       {
+        "command": "cortex.snoozeReminder",
+        "title": "Cortex: Snooze reminder"
+      },
+      {
         "command": "cortex.setSearchQuery",
         "title": "Cortex: Set search query"
       },

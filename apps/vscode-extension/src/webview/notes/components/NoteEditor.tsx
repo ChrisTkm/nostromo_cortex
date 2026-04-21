@@ -15,6 +15,7 @@ export function NoteEditor(props: {
   const generatedCode = props.draft.code.trim() || (props.draft.title.trim() ? slugifyTitle(props.draft.title) : "note");
   const statusLabel = props.isNew ? "New draft" : props.isDirty ? "Unsaved changes" : "Saved";
   const statusTone = props.isNew ? "note-editor__status--new" : props.isDirty ? "note-editor__status--dirty" : "note-editor__status--saved";
+  const remindedLabel = props.draft.remindedAt ? `Reminded at ${formatReminderStamp(props.draft.remindedAt)}` : null;
 
   return (
     <div className="note-editor">
@@ -126,6 +127,41 @@ export function NoteEditor(props: {
           </label>
         </section>
 
+        <section className="note-editor__group note-editor__group--reminder">
+          <div className="note-editor__group-header">
+            <div className="note-editor__group-title">Reminder</div>
+            <div className="note-editor__group-hint">Optional one-shot reminder stored with this note.</div>
+          </div>
+
+          <label className="note-editor__field">
+            <span className="note-editor__label">Remind me at</span>
+            <div className="note-editor__field-row note-editor__field-row--actions">
+              <input
+                className="notes-input"
+                onChange={(event) =>
+                  props.onChange({
+                    remindAt: event.target.value,
+                    remindedAt: event.target.value === props.draft.remindAt ? props.draft.remindedAt : ""
+                  })
+                }
+                type="datetime-local"
+                value={props.draft.remindAt}
+              />
+              <button
+                className="notes-button"
+                disabled={!props.draft.remindAt && !props.draft.remindedAt}
+                onClick={() => props.onChange({ remindAt: "", remindedAt: "" })}
+                type="button"
+              >
+                Clear
+              </button>
+            </div>
+            <span className="note-editor__field-hint">Saved as ISO in Mongo and checked again when VS Code starts.</span>
+          </label>
+
+          {remindedLabel ? <div className="note-editor__reminder-badge">{remindedLabel}</div> : null}
+        </section>
+
         <section className="note-editor__group note-editor__group--body">
           <div className="note-editor__group-header">
             <div className="note-editor__group-title">Body</div>
@@ -144,4 +180,16 @@ export function NoteEditor(props: {
       </div>
     </div>
   );
+}
+
+function formatReminderStamp(value: string) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(parsed);
 }

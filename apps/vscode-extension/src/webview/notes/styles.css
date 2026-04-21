@@ -301,6 +301,7 @@
 
 .notes-chip--pin,
 .notes-chip--selected,
+.notes-chip--reminder,
 .note-editor__status--saved {
   color: var(--cortex-accent);
   border-color: color-mix(in srgb, var(--cortex-accent) 32%, transparent);
@@ -423,6 +424,10 @@
   grid-column: 2 / 3;
 }
 
+.note-editor__group--reminder {
+  grid-column: 2 / 3;
+}
+
 .note-editor__group--body {
   grid-column: 1 / -1;
 }
@@ -436,6 +441,10 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.note-editor__field-row--actions {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .note-editor__toggle {
@@ -452,6 +461,19 @@
 .note-editor__toggle input {
   width: 18px;
   height: 18px;
+}
+
+.note-editor__reminder-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--cortex-accent) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
+  color: var(--cortex-text-strong);
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .notes-highlight {

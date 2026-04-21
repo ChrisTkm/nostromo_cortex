@@ -7,6 +7,7 @@ export type NotesMessage =
   | {
       type: "notes:list";
       notes: NoteRecord[];
+      search?: string;
     }
   | {
       type: "notes:saved";
@@ -24,5 +25,7 @@ export type NoteDraft = {
   taskCode: string;
   planCode: string;
   pinned: boolean;
+  remindAt: string;
+  remindedAt: string;
   code: string;
 };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDraftFromNote, createEmptyDraft, isDraftPristineForSelection, slugifyTitle, splitCsv } from "./drafts";
+import { createDraftFromNote, createEmptyDraft, isDraftPristineForSelection, slugifyTitle, splitCsv, toIsoDateTime } from "./drafts";
 
 describe("notes drafts helpers", () => {
   it("creates an empty draft with the expected defaults", () => {
@@ -11,6 +11,8 @@ describe("notes drafts helpers", () => {
       taskCode: "",
       planCode: "",
       pinned: false,
+      remindAt: "",
+      remindedAt: "",
       code: ""
     });
   });
@@ -25,6 +27,8 @@ describe("notes drafts helpers", () => {
         taskCode: "TASK-7",
         planCode: "PLAN-2",
         pinned: true,
+        remindAt: "2026-04-20T12:34:00.000Z",
+        remindedAt: "2026-04-20T12:50:00.000Z",
         createdAt: "2026-04-20T00:00:00.000Z",
         updatedAt: "2026-04-20T01:00:00.000Z"
       })
@@ -35,7 +39,9 @@ describe("notes drafts helpers", () => {
       tags: "alpha, beta",
       taskCode: "TASK-7",
       planCode: "PLAN-2",
-      pinned: true
+      pinned: true,
+      remindAt: expect.stringMatching(/^2026-04-20T\d{2}:34$/),
+      remindedAt: "2026-04-20T12:50:00.000Z"
     });
   });
 
@@ -46,6 +52,12 @@ describe("notes drafts helpers", () => {
 
   it("splits comma-separated tags, trims whitespace, and drops empty entries", () => {
     expect(splitCsv(" alpha, beta ,, gamma  , ")).toEqual(["alpha", "beta", "gamma"]);
+  });
+
+  it("converts datetime-local values into ISO strings for saving", () => {
+    const iso = toIsoDateTime("2026-04-20T12:34");
+    expect(iso).toMatch(/:34:00\.000Z$/);
+    expect(Number.isFinite(new Date(String(iso)).getTime())).toBe(true);
   });
 
   it("treats blank drafts and selection placeholders as pristine", () => {

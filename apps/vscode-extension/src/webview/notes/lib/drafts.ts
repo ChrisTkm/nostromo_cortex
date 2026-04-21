@@ -10,6 +10,8 @@ export function createEmptyDraft(): NoteDraft {
     taskCode: "",
     planCode: "",
     pinned: false,
+    remindAt: "",
+    remindedAt: "",
     code: ""
   };
 }
@@ -22,6 +24,8 @@ export function createDraftFromNote(note: NoteRecord): NoteDraft {
     taskCode: note.taskCode ?? "",
     planCode: note.planCode ?? "",
     pinned: note.pinned,
+    remindAt: toLocalDateTimeInput(note.remindAt),
+    remindedAt: note.remindedAt ?? "",
     code: note.code
   };
 }
@@ -46,7 +50,13 @@ export function slugifyTitle(value: string) {
 
 export function isDraftPristineForSelection(draft: NoteDraft, selectedCode: string) {
   const hasContent =
-    hasText(draft.title) || hasText(draft.body) || hasText(draft.tags) || hasText(draft.taskCode) || hasText(draft.planCode);
+    hasText(draft.title) ||
+    hasText(draft.body) ||
+    hasText(draft.tags) ||
+    hasText(draft.taskCode) ||
+    hasText(draft.planCode) ||
+    hasText(draft.remindAt) ||
+    hasText(draft.remindedAt);
   const draftCode = draft.code.trim();
   const normalizedSelection = selectedCode.trim();
 
@@ -59,4 +69,28 @@ export function isDraftPristineForSelection(draft: NoteDraft, selectedCode: stri
 
 function hasText(value: string) {
   return value.trim().length > 0;
+}
+
+export function toLocalDateTimeInput(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    return "";
+  }
+
+  const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+export function toIsoDateTime(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined;
 }

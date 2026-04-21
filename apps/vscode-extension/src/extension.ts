@@ -10,6 +10,7 @@ import {
 } from "@cortex/core";
 import * as vscode from "vscode";
 
+import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { ExtensionTaskService } from "./service.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
@@ -20,6 +21,10 @@ import { getNotesHtml } from "./webview/notes/getHtml.js";
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
 type NotesPanelMode = "list" | "new" | { type: "edit"; code: string };
+type NotesPanelRequest = {
+  mode: NotesPanelMode;
+  search?: string;
+};
 type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
@@ -53,6 +58,12 @@ export async function activate(context: vscode.ExtensionContext) {
     throw err;
   }
 
+  const reminderStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 30);
+  reminderStatusBar.name = "Cortex Note Reminders";
+  context.subscriptions.push(reminderStatusBar, { dispose: disposeReminderTimers });
+  await fireDue(service, reminderStatusBar, "startup");
+  await scheduleAll(service, reminderStatusBar);
+
   const treeProvider = new CortexTreeProvider(service);
   const treeView = vscode.window.createTreeView("cortex.overview", {
     treeDataProvider: treeProvider,
@@ -66,6 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let notesPanel: vscode.WebviewPanel | undefined;
   let notesPanelReady = false;
   let pendingNotesMode: NotesPanelMode = "list";
+  let pendingNotesSearch: string | undefined;
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -144,7 +156,7 @@ export async function activate(context: vscode.ExtensionContext) {
     await postSnapshot();
   }
 
-  async function postNotesList() {
+  async function postNotesList(search?: string) {
     const panel = notesPanel;
     if (!panel) {
       return;
@@ -155,7 +167,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     await panel.webview.postMessage({
       type: "notes:list",
-      notes
+      notes,
+      ...(search?.trim() ? { search: search.trim() } : {})
     });
   }
 
@@ -193,11 +206,16 @@ export async function activate(context: vscode.ExtensionContext) {
     await postNotesList();
   }
 
-  async function openNotesPanel(mode: NotesPanelMode) {
-    pendingNotesMode = mode;
+  async function openNotesPanel(request: NotesPanelRequest) {
+    pendingNotesMode = request.mode;
+    pendingNotesSearch = request.search?.trim() || undefined;
     if (notesPanel) {
       notesPanel.reveal(vscode.ViewColumn.One);
-      await postNotesMode(mode);
+      if (pendingNotesSearch) {
+        await postNotesList(pendingNotesSearch);
+        pendingNotesSearch = undefined;
+      }
+      await postNotesMode(request.mode);
       return;
     }
 
@@ -214,7 +232,8 @@ export async function activate(context: vscode.ExtensionContext) {
     notesPanel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "ready") {
         notesPanelReady = true;
-        await postNotesList();
+        await postNotesList(pendingNotesSearch);
+        pendingNotesSearch = undefined;
         await postNotesMode(pendingNotesMode);
         return;
       }
@@ -228,11 +247,15 @@ export async function activate(context: vscode.ExtensionContext) {
           });
         }
         await refreshNotesPanel();
+        await fireDue(service, reminderStatusBar, "live");
+        await scheduleAll(service, reminderStatusBar);
         return;
       }
       if (message?.type === "notes:delete" && typeof message.code === "string" && message.code.trim()) {
         await service.deleteNote(message.code.trim());
         await refreshNotesPanel();
+        await fireDue(service, reminderStatusBar, "live");
+        await scheduleAll(service, reminderStatusBar);
       }
     });
   }
@@ -438,14 +461,18 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand(picked.command);
     }),
-    vscode.commands.registerCommand("cortex.openNotes", async () => {
-      await openNotesPanel("list");
+    vscode.commands.registerCommand("cortex.openNotes", async (arg?: string | { search?: string }) => {
+      const search = typeof arg === "string" ? arg : typeof arg?.search === "string" ? arg.search : undefined;
+      await openNotesPanel({
+        mode: "list",
+        ...(search ? { search } : {})
+      });
     }),
     vscode.commands.registerCommand("cortex.openLogs", async () => {
       await openLogsPanel();
     }),
     vscode.commands.registerCommand("cortex.newNote", async () => {
-      await openNotesPanel("new");
+      await openNotesPanel({ mode: "new" });
     }),
     vscode.commands.registerCommand("cortex.editNote", async (arg?: string | { code?: string }) => {
       const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
@@ -459,7 +486,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!code) {
         return;
       }
-      await openNotesPanel({ type: "edit", code });
+      await openNotesPanel({ mode: { type: "edit", code } });
     }),
     vscode.commands.registerCommand("cortex.deleteNote", async (arg?: string | { code?: string }) => {
       const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
@@ -486,7 +513,30 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       await refreshNotesPanel();
+      await fireDue(service, reminderStatusBar, "live");
+      await scheduleAll(service, reminderStatusBar);
       void vscode.window.showInformationMessage(`Note ${code} deleted.`);
+    }),
+    vscode.commands.registerCommand("cortex.snoozeReminder", async (arg?: string | { code?: string }) => {
+      const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
+      const code = requestedCode ?? (await pickPendingReminderCode());
+      if (!code) {
+        return;
+      }
+
+      const updated = await service.rescheduleReminder(code, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+      if (!updated) {
+        void vscode.window.showWarningMessage(`Note ${code} not found.`);
+        return;
+      }
+
+      await service.recordInteraction("note_reminder_snoozed", {
+        code,
+        source: "command"
+      });
+      await refreshNotesPanel();
+      await scheduleAll(service, reminderStatusBar);
+      void vscode.window.showInformationMessage(`Reminder for ${code} moved by 1 hour.`);
     }),
     vscode.commands.registerCommand("cortex.setSearchQuery", async () => {
       const current = service.getFilterState().searchQuery ?? "";
@@ -659,6 +709,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
+  disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
 }
@@ -1015,6 +1066,33 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
     created_at: task.createdAt,
     updated_at: new Date().toISOString()
   };
+}
+
+async function pickPendingReminderCode() {
+  const notes = await activeService?.listNotes();
+  const reminderNotes = (notes ?? []).filter((note) => note.remindAt && !note.remindedAt);
+  if (reminderNotes.length === 0) {
+    void vscode.window.showInformationMessage("No pending reminders available to snooze.");
+    return undefined;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    reminderNotes
+      .sort((left, right) => left.code.localeCompare(right.code))
+      .map((note) => ({
+        label: note.code,
+        description: note.title,
+        detail: note.remindAt
+      })),
+    {
+      title: "Select a reminder to snooze",
+      placeHolder: "Choose a note code",
+      matchOnDescription: true,
+      matchOnDetail: true
+    }
+  );
+
+  return picked?.label;
 }
 
 function splitCsv(value: string) {

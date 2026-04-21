@@ -132,6 +132,8 @@ const noteSchema = z.preprocess((input) => {
     ...value,
     task_code: value.task_code ?? value.taskCode,
     plan_code: value.plan_code ?? value.planCode,
+    remind_at: value.remind_at ?? value.remindAt,
+    reminded_at: value.reminded_at ?? value.remindedAt,
     created_at: value.created_at ?? value.createdAt,
     updated_at: value.updated_at ?? value.updatedAt
   };
@@ -144,12 +146,44 @@ const noteSchema = z.preprocess((input) => {
   task_code: z.string().optional().nullable(),
   plan_code: z.string().optional().nullable(),
   pinned: z.boolean().optional(),
+  remind_at: z.union([z.string(), z.date()]).optional().nullable(),
+  reminded_at: z.union([z.string(), z.date()]).optional().nullable(),
   created_at: z.union([z.string(), z.date()]).optional(),
   updated_at: z.union([z.string(), z.date()]).optional()
 }));
 
 function normalizeIsoDate(value: string | Date | undefined): string {
   return value ? new Date(value).toISOString() : new Date().toISOString();
+}
+
+function normalizeOptionalIsoDate(
+  value: string | Date | null | undefined,
+  fieldName: "remind_at" | "reminded_at"
+): string | undefined {
+  if (value === null || typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const looksIso = /^\d{4}-\d{2}-\d{2}T/.test(trimmed);
+    const timestamp = Date.parse(trimmed);
+    if (!looksIso || !Number.isFinite(timestamp)) {
+      throw new Error(`${fieldName} must be a valid ISO datetime`);
+    }
+
+    return new Date(trimmed).toISOString();
+  }
+
+  if (!Number.isFinite(value.getTime())) {
+    throw new Error(`${fieldName} must be a valid ISO datetime`);
+  }
+
+  return value.toISOString();
 }
 
 function dedupeSorted(values: string[]): string[] {
@@ -214,6 +248,8 @@ export function normalizeActionPlan(input: ActionPlanDocument): ActionPlanRecord
 
 export function normalizeNote(input: NoteDocumentInput): NoteRecord {
   const parsed = noteSchema.parse(input);
+  const remindAt = normalizeOptionalIsoDate(parsed.remind_at, "remind_at");
+  const remindedAt = normalizeOptionalIsoDate(parsed.reminded_at, "reminded_at");
   return {
     ...(parsed._id ? { id: String(parsed._id) } : {}),
     code: parsed.code.trim(),
@@ -223,6 +259,8 @@ export function normalizeNote(input: NoteDocumentInput): NoteRecord {
     ...(parsed.task_code ? { taskCode: parsed.task_code.trim() } : {}),
     ...(parsed.plan_code ? { planCode: parsed.plan_code.trim() } : {}),
     pinned: Boolean(parsed.pinned),
+    ...(remindAt ? { remindAt } : {}),
+    ...(remindedAt ? { remindedAt } : {}),
     createdAt: normalizeIsoDate(parsed.created_at),
     updatedAt: normalizeIsoDate(parsed.updated_at)
   };

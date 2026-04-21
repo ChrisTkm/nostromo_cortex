@@ -260,6 +260,8 @@ export class MongoNoteStore implements NoteStore {
           task_code: normalized.taskCode ?? null,
           plan_code: normalized.planCode ?? null,
           pinned: normalized.pinned,
+          remind_at: normalized.remindAt ?? null,
+          reminded_at: normalized.remindedAt ?? null,
           created_at: normalized.createdAt,
           updated_at: normalized.updatedAt
         }
@@ -287,6 +289,7 @@ export class MongoNoteStore implements NoteStore {
       { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { remind_at: 1, reminded_at: 1 }, name: "reminder_due_idx" },
       { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
     ]);
   }

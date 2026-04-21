@@ -75,7 +75,11 @@ export function NoteList(props: {
           ) : null}
         </div>
         <span className="notes-list__search-hint">
-          {props.isSearchPending ? "Updating results..." : hasSearch ? "Matches are highlighted in the list." : "Search supports multiple words."}
+          {props.isSearchPending
+            ? "Updating results..."
+            : hasSearch
+              ? "Matches are highlighted in the list."
+              : "Search supports multiple words and has:reminder."}
         </span>
       </label>
 
@@ -108,6 +112,10 @@ export function NoteList(props: {
                 <span className="notes-list__item-code">{highlightText(note.code, props.activeSearch)}</span>
                 <div className="notes-list__item-badges">
                   {note.pinned ? <span className="notes-chip notes-chip--pin">Pinned</span> : null}
+                  {note.remindAt && !note.remindedAt ? (
+                    <span className="notes-chip notes-chip--reminder">Reminder {highlightText(formatReminder(note.remindAt), props.activeSearch)}</span>
+                  ) : null}
+                  {note.remindedAt ? <span className="notes-chip">Reminded</span> : null}
                   {note.taskCode ? <span className="notes-chip">Task {highlightText(note.taskCode, props.activeSearch)}</span> : null}
                   {note.planCode ? <span className="notes-chip">Plan {highlightText(note.planCode, props.activeSearch)}</span> : null}
                   {props.selectedCode === note.code ? <span className="notes-chip notes-chip--selected">Selected</span> : null}
@@ -174,6 +182,20 @@ function formatRelativeDate(value: string) {
   }
 
   return "just now";
+}
+
+function formatReminder(value: string) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(parsed);
 }
 
 function tagStyle(tag: string) {

@@ -338,6 +338,8 @@ describe("note normalization", () => {
       taskCode: "TASK-1",
       planCode: "PLAN-1",
       pinned: true,
+      remindAt: "2026-04-12T02:00:00.000Z",
+      remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
       updatedAt: new Date("2026-04-12T01:00:00.000Z")
     } as never);
@@ -351,6 +353,8 @@ describe("note normalization", () => {
       taskCode: "TASK-1",
       planCode: "PLAN-1",
       pinned: true,
+      remindAt: "2026-04-12T02:00:00.000Z",
+      remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
       updatedAt: "2026-04-12T01:00:00.000Z"
     });
@@ -493,6 +497,8 @@ describe("shared mongo client support", () => {
       pinned: true,
       task_code: "TASK-3",
       plan_code: "PLAN-3",
+      remind_at: "2026-04-12T12:00:00.000Z",
+      reminded_at: "2026-04-12T13:00:00.000Z",
       created_at: "2026-04-12T10:00:00.000Z",
       updated_at: "2026-04-12T11:00:00.000Z"
     });
@@ -532,7 +538,9 @@ describe("shared mongo client support", () => {
       code: "n3",
       tags: ["a", "z"],
       taskCode: "TASK-3",
-      planCode: "PLAN-3"
+      planCode: "PLAN-3",
+      remindAt: "2026-04-12T12:00:00.000Z",
+      remindedAt: "2026-04-12T13:00:00.000Z"
     });
     expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "n3" });
     expect(deleted).toBe(true);
@@ -540,6 +548,7 @@ describe("shared mongo client support", () => {
       { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { remind_at: 1, reminded_at: 1 }, name: "reminder_due_idx" },
       { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
     ]);
   });

@@ -1,7 +1,7 @@
 import type { NoteDocumentInput, NoteRecord } from "@cortex/core";
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "react";
 
-import { createDraftFromNote, createEmptyDraft, isDraftPristineForSelection, slugifyTitle, splitCsv } from "../lib/drafts";
+import { createDraftFromNote, createEmptyDraft, isDraftPristineForSelection, slugifyTitle, splitCsv, toIsoDateTime } from "../lib/drafts";
 import type { NoteDraft, NotesMessage, NotesPanelMode, NotesViewMode } from "../types";
 
 declare global {
@@ -15,6 +15,7 @@ declare global {
 }
 
 const vscode = window.acquireVsCodeApi();
+const REMINDER_SEARCH_TOKENS = new Set(["has:reminder", "is:reminder"]);
 
 export function useNotesController() {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -55,8 +56,24 @@ export function useNotesController() {
         return true;
       }
 
-      const haystack = [note.title, note.body, note.code, note.taskCode ?? "", note.planCode ?? "", note.tags.join(" ")].join("\n").toLowerCase();
-      return searchTerms.every((term) => haystack.includes(term));
+      const haystack = [
+        note.title,
+        note.body,
+        note.code,
+        note.taskCode ?? "",
+        note.planCode ?? "",
+        note.tags.join(" "),
+        note.remindAt ?? "",
+        note.remindedAt ?? ""
+      ].join("\n").toLowerCase();
+
+      return searchTerms.every((term) => {
+        if (REMINDER_SEARCH_TOKENS.has(term)) {
+          return Boolean(note.remindAt) && !note.remindedAt;
+        }
+
+        return haystack.includes(term);
+      });
     });
 
     return next.sort((left, right) => {
@@ -85,6 +102,11 @@ export function useNotesController() {
         if (note) {
           setDraft(createDraftFromNote(note));
         }
+      }
+
+      if (typeof message.search === "string") {
+        setSearch(message.search);
+        setDebouncedSearch(message.search.trim().toLowerCase());
       }
 
       return;
@@ -178,6 +200,12 @@ export function useNotesController() {
       return;
     }
 
+    const remindAt = toIsoDateTime(draft.remindAt);
+    if (draft.remindAt.trim() && !remindAt) {
+      setError("Reminder date must be valid.");
+      return;
+    }
+
     const input: NoteDocumentInput = {
       code: draft.code.trim() || slugifyTitle(title),
       title,
@@ -185,7 +213,9 @@ export function useNotesController() {
       tags: splitCsv(draft.tags),
       ...(draft.taskCode.trim() ? { task_code: draft.taskCode.trim() } : {}),
       ...(draft.planCode.trim() ? { plan_code: draft.planCode.trim() } : {}),
-      ...(draft.pinned ? { pinned: true } : {})
+      ...(draft.pinned ? { pinned: true } : {}),
+      ...(remindAt ? { remind_at: remindAt } : {}),
+      ...(remindAt && draft.remindedAt.trim() ? { reminded_at: draft.remindedAt.trim() } : {})
     };
 
     vscode.postMessage({
@@ -310,6 +340,8 @@ function areDraftsEquivalent(left: NoteDraft, right: NoteDraft) {
     left.taskCode === right.taskCode &&
     left.planCode === right.planCode &&
     left.pinned === right.pinned &&
+    left.remindAt === right.remindAt &&
+    left.remindedAt === right.remindedAt &&
     left.code === right.code
   );
 }

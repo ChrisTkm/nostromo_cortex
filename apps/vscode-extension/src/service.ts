@@ -167,6 +167,53 @@ export class ExtensionTaskService {
     return this.getNotesStore().deleteNote(code);
   }
 
+  async listPendingReminders(options: { now: string | Date }): Promise<NoteRecord[]> {
+    const now = normalizeReminderIso(options.now);
+    const notes = await this.listNotes();
+
+    return notes
+      .filter((note) => note.remindAt && !note.remindedAt && note.remindAt <= now)
+      .sort((left, right) => String(left.remindAt).localeCompare(String(right.remindAt)));
+  }
+
+  async markReminded(code: string, when: string | Date): Promise<NoteRecord | null> {
+    const note = await this.getNote(code);
+    if (!note) {
+      return null;
+    }
+
+    return this.saveNote({
+      code: note.code,
+      title: note.title,
+      body: note.body,
+      tags: note.tags,
+      ...(note.taskCode ? { task_code: note.taskCode } : {}),
+      ...(note.planCode ? { plan_code: note.planCode } : {}),
+      ...(note.pinned ? { pinned: true } : {}),
+      ...(note.remindAt ? { remind_at: note.remindAt } : {}),
+      reminded_at: normalizeReminderIso(when)
+    });
+  }
+
+  async rescheduleReminder(code: string, remindAt: string | Date): Promise<NoteRecord | null> {
+    const note = await this.getNote(code);
+    if (!note) {
+      return null;
+    }
+
+    return this.saveNote({
+      code: note.code,
+      title: note.title,
+      body: note.body,
+      tags: note.tags,
+      ...(note.taskCode ? { task_code: note.taskCode } : {}),
+      ...(note.planCode ? { plan_code: note.planCode } : {}),
+      ...(note.pinned ? { pinned: true } : {}),
+      remind_at: normalizeReminderIso(remindAt),
+      reminded_at: null
+    });
+  }
+
   async listLogs(limit = 500): Promise<LogRecord[]> {
     const collection = await this.getLogsCollection();
     const items = await collection.find({}).sort({ timestamp: -1 }).limit(limit).toArray();
@@ -385,4 +432,8 @@ export class ExtensionTaskService {
       await store.close();
     }
   }
+}
+
+function normalizeReminderIso(value: string | Date) {
+  return new Date(value).toISOString();
 }
