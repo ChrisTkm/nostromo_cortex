@@ -8,6 +8,7 @@ import {
   type TaskFilter,
   type TaskRecord
 } from "@cortex/core";
+import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -17,6 +18,7 @@ import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
+import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
@@ -28,6 +30,54 @@ type NotesPanelRequest = {
 type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
+type ScriptFlowScope = "file" | "selection";
+type ScriptFlowRequest = {
+  scope: ScriptFlowScope;
+};
+type ScriptFlowInitPayload =
+  | {
+      status: "empty";
+      title: string;
+      description: string;
+      scope: ScriptFlowScope;
+    }
+  | {
+      status: "unsupported";
+      title: string;
+      description: string;
+      extension: string;
+      supportedExtensions: string[];
+      scope: ScriptFlowScope;
+      source: ScriptFlowSource;
+    }
+  | {
+      status: "error";
+      title: string;
+      description: string;
+      scope: ScriptFlowScope;
+      source: ScriptFlowSource;
+    }
+  | {
+      status: "loading";
+      title: string;
+      description: string;
+      scope: ScriptFlowScope;
+      source: ScriptFlowSource;
+      selection?: ScriptFlowSelection;
+    };
+type ScriptFlowSelection = {
+  startLine: number;
+  endLine: number;
+  startColumn: number;
+  endColumn: number;
+  charCount: number;
+};
+type ScriptFlowSource = {
+  fileName: string;
+  fsPath: string;
+  extension: string;
+  languageId: string;
+};
 type FilterCatalog = {
   projects: string[];
   groups: string[];
@@ -37,6 +87,7 @@ type FilterCatalog = {
 };
 
 let activeService: ExtensionTaskService | undefined;
+const SCRIPT_FLOW_SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".py", ".sql"];
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -76,8 +127,11 @@ export async function activate(context: vscode.ExtensionContext) {
   let logsPanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
   let notesPanelReady = false;
+  let scriptFlowPanel: vscode.WebviewPanel | undefined;
+  let scriptFlowPanelReady = false;
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
+  let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -199,6 +253,17 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
+  async function postScriptFlowInit(request: ScriptFlowRequest) {
+    const panel = scriptFlowPanel;
+    if (!panel) {
+      return;
+    }
+    await panel.webview.postMessage({
+      type: "init",
+      payload: buildScriptFlowInitPayload(request)
+    });
+  }
+
   async function refreshNotesPanel() {
     if (!notesPanel || !notesPanelReady) {
       return;
@@ -283,6 +348,45 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "ready" || message?.type === "logs:refresh") {
         logsPanelReady = true;
         await postLogsList();
+      }
+    });
+  }
+
+  async function openScriptFlowPanel(request: ScriptFlowRequest, options?: { forceReload?: boolean }) {
+    pendingScriptFlowRequest = request;
+    if (options?.forceReload && scriptFlowPanel) {
+      const panel = scriptFlowPanel;
+      scriptFlowPanel = undefined;
+      scriptFlowPanelReady = false;
+      panel.dispose();
+    }
+
+    if (scriptFlowPanel) {
+      scriptFlowPanel.reveal(vscode.ViewColumn.One);
+      if (scriptFlowPanelReady) {
+        await postScriptFlowInit(request);
+      }
+      return;
+    }
+
+    scriptFlowPanelReady = false;
+    scriptFlowPanel = vscode.window.createWebviewPanel("cortex.scriptFlow", "Cortex Script Flow", vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    scriptFlowPanel.webview.html = getScriptFlowHtml(scriptFlowPanel.webview, context.extensionUri, nonce());
+    scriptFlowPanel.onDidDispose(() => {
+      scriptFlowPanel = undefined;
+      scriptFlowPanelReady = false;
+    });
+    scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        scriptFlowPanelReady = true;
+        await postScriptFlowInit(pendingScriptFlowRequest);
+        return;
+      }
+      if (message?.type === "reload") {
+        await openScriptFlowPanel(pendingScriptFlowRequest, { forceReload: true });
       }
     });
   }
@@ -416,7 +520,8 @@ export async function activate(context: vscode.ExtensionContext) {
       { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
       { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
       { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
-      { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" }
+      { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+      { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" }
     ];
     const picked = await vscode.window.showQuickPick(items, {
       title: "Switch Cortex panel",
@@ -442,6 +547,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
         { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
         { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+        { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" },
         { label: "Search query", description: "Update search text", command: "cortex.setSearchQuery" },
         { label: "Tag filter", description: "Select task tags", command: "cortex.setTagFilter" },
         { label: "Project filter", description: "Select projects", command: "cortex.setProjectFilter" },
@@ -470,6 +576,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("cortex.openLogs", async () => {
       await openLogsPanel();
+    }),
+    vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
+      await openScriptFlowPanel({ scope: "file" });
+    }),
+    vscode.commands.registerCommand("cortex.openScriptFlowForSelection", async () => {
+      await openScriptFlowPanel({ scope: "selection" });
     }),
     vscode.commands.registerCommand("cortex.newNote", async () => {
       await openNotesPanel({ mode: "new" });
@@ -936,6 +1048,90 @@ async function pickConnectionSettings(
     mongoTasksCollection,
     mongoPlansCollection: current.mongoPlansCollection
   };
+}
+
+function buildScriptFlowInitPayload(request: ScriptFlowRequest): ScriptFlowInitPayload {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return {
+      status: "empty",
+      title: "No file selected",
+      description: "Open a TypeScript, TSX, Python, or SQL file and then open Script Flow.",
+      scope: request.scope
+    };
+  }
+
+  const extension = path.extname(editor.document.fileName).toLowerCase();
+  const source: ScriptFlowSource = {
+    fileName: path.basename(editor.document.fileName),
+    fsPath: editor.document.uri.fsPath,
+    extension: extension || "(none)",
+    languageId: editor.document.languageId
+  };
+
+  if (!SCRIPT_FLOW_SUPPORTED_EXTENSIONS.includes(extension)) {
+    return {
+      status: "unsupported",
+      title: `${source.fileName} is not supported yet`,
+      description: "Script Flow currently opens TypeScript, TSX, Python, and SQL files only.",
+      extension: source.extension,
+      supportedExtensions: SCRIPT_FLOW_SUPPORTED_EXTENSIONS,
+      scope: request.scope,
+      source
+    };
+  }
+
+  if (request.scope === "selection" && editor.selection.isEmpty) {
+    return {
+      status: "empty",
+      title: "No selection available",
+      description: "Select a code range in the active editor to inspect only that slice.",
+      scope: request.scope
+    };
+  }
+
+  try {
+    const text = request.scope === "selection" ? editor.document.getText(editor.selection) : editor.document.getText();
+    if (text.includes("cortex:script-flow-error")) {
+      return {
+        status: "error",
+        title: "Script Flow parser shell failed",
+        description: "Remove the `cortex:script-flow-error` marker to recover and reload the panel.",
+        scope: request.scope,
+        source
+      };
+    }
+
+    return {
+      status: "loading",
+      title: request.scope === "selection" ? "Parsing selected range" : "Parsing current file",
+      description:
+        request.scope === "selection"
+          ? "Script Flow is scoped to the current selection. Rendering arrives in CTX013-05."
+          : "Script Flow is loading the active file shell. Rendering arrives in CTX013-05.",
+      scope: request.scope,
+      source,
+      ...(request.scope === "selection"
+        ? {
+            selection: {
+              startLine: editor.selection.start.line + 1,
+              endLine: editor.selection.end.line + 1,
+              startColumn: editor.selection.start.character + 1,
+              endColumn: editor.selection.end.character + 1,
+              charCount: text.length
+            }
+          }
+        : {})
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      title: "Script Flow could not read the active source",
+      description: String(error),
+      scope: request.scope,
+      source
+    };
+  }
 }
 
 function formatCollectionMessage(

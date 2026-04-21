@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  activeTextEditorRef,
   commandHandlers,
   createTreeViewMock,
   createWebviewPanelMock,
@@ -21,6 +22,7 @@ const {
   showWarningMessageMock,
   treeRefreshMock
 } = vi.hoisted(() => {
+  const activeTextEditorRef: { current?: unknown } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
   const listNotesMock = vi.fn();
@@ -46,6 +48,7 @@ const {
   const panelState: {
     panel?: {
       reveal: ReturnType<typeof vi.fn>;
+      dispose: ReturnType<typeof vi.fn>;
       webview: {
         html: string;
         postMessage: ReturnType<typeof vi.fn>;
@@ -75,6 +78,9 @@ const {
   const createWebviewPanelMock = vi.fn(() => {
     const panel = {
       reveal: vi.fn(),
+      dispose: vi.fn(() => {
+        panelState.disposeHandler?.();
+      }),
       webview: {
         html: "",
         postMessage: vi.fn(),
@@ -93,6 +99,7 @@ const {
   });
 
   return {
+    activeTextEditorRef,
     commandHandlers,
     createTreeViewMock,
     createWebviewPanelMock,
@@ -133,6 +140,9 @@ vi.mock("vscode", () => ({
     Left: 1
   },
   window: {
+    get activeTextEditor() {
+      return activeTextEditorRef.current;
+    },
     createTreeView: createTreeViewMock,
     createWebviewPanel: createWebviewPanelMock,
     createStatusBarItem: createStatusBarItemMock,
@@ -204,6 +214,10 @@ vi.mock("./webview/logs/getHtml.js", () => ({
   getLogsHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"logs.js\"></script></html>")
 }));
 
+vi.mock("./webview/script-flow/getHtml.js", () => ({
+  getScriptFlowHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"script-flow.js\"></script></html>")
+}));
+
 import { activate } from "./extension.js";
 
 function createContext() {
@@ -221,6 +235,21 @@ function createContext() {
 
 describe("activate notes commands", () => {
   beforeEach(() => {
+    activeTextEditorRef.current = {
+      document: {
+        fileName: "C:\\dev\\Cortex\\apps\\vscode-extension\\src\\extension.ts",
+        uri: { fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension\\src\\extension.ts" },
+        languageId: "typescript",
+        getText: vi.fn((selection?: { isEmpty?: boolean }) =>
+          selection && !selection.isEmpty ? "const value = 1;" : "export const value = 1;"
+        )
+      },
+      selection: {
+        isEmpty: false,
+        start: { line: 4, character: 2 },
+        end: { line: 8, character: 18 }
+      }
+    };
     commandHandlers.clear();
     panelState.panel = undefined;
     panelState.messageHandler = undefined;
@@ -346,6 +375,45 @@ describe("activate notes commands", () => {
     expect(panelState.panel?.webview.html).toContain("logs.js");
   });
 
+  it("adds Script Flow to cortex.showOptions and opens the dedicated panel", async () => {
+    showQuickPickMock.mockResolvedValueOnce({
+      label: "Script Flow",
+      command: "cortex.openScriptFlow"
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.showOptions");
+    await panelState.messageHandler?.({ type: "ready" });
+
+    const [items] = showQuickPickMock.mock.calls[0] ?? [];
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Script Flow",
+          command: "cortex.openScriptFlow"
+        })
+      ])
+    );
+    expect(createWebviewPanelMock).toHaveBeenCalledWith(
+      "cortex.scriptFlow",
+      "Cortex Script Flow",
+      1,
+      expect.objectContaining({ enableScripts: true })
+    );
+    expect(panelState.panel?.webview.html).toContain("script-flow.js");
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "init",
+      payload: expect.objectContaining({
+        status: "loading",
+        scope: "file",
+        source: expect.objectContaining({
+          fileName: "extension.ts",
+          extension: ".ts"
+        })
+      })
+    });
+  });
+
   it("offers Tasks, Graph, Notes, and Logs in the panel switcher", async () => {
     showQuickPickMock.mockResolvedValueOnce({
       label: "Tasks",
@@ -361,7 +429,8 @@ describe("activate notes commands", () => {
         expect.objectContaining({ label: "Tasks", command: "cortex.openTasks" }),
         expect.objectContaining({ label: "Graph", command: "cortex.openGraph" }),
         expect.objectContaining({ label: "Notes", command: "cortex.openNotes" }),
-        expect.objectContaining({ label: "Logs", command: "cortex.openLogs" })
+        expect.objectContaining({ label: "Logs", command: "cortex.openLogs" }),
+        expect.objectContaining({ label: "Script Flow", command: "cortex.openScriptFlow" })
       ])
     );
     expect(options).toEqual(expect.objectContaining({ title: "Switch Cortex panel" }));
@@ -399,5 +468,24 @@ describe("activate notes commands", () => {
     });
     expect(showWarningMessageMock).toHaveBeenCalledWith("Delete note N-1?", { modal: true }, "Delete");
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
+  });
+
+  it("supports opening Script Flow for the current selection", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlowForSelection");
+    await panelState.messageHandler?.({ type: "ready" });
+
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "init",
+      payload: expect.objectContaining({
+        status: "loading",
+        scope: "selection",
+        selection: expect.objectContaining({
+          startLine: 5,
+          endLine: 9,
+          charCount: 16
+        })
+      })
+    });
   });
 });

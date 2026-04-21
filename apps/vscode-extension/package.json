@@ -18,7 +18,9 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:cortex.overview",
-    "onCommand:cortex.openGraph"
+    "onCommand:cortex.openGraph",
+    "onCommand:cortex.openScriptFlow",
+    "onCommand:cortex.openScriptFlowForSelection"
   ],
   "contributes": {
     "commands": [
@@ -49,6 +51,14 @@
       {
         "command": "cortex.openLogs",
         "title": "Cortex: Open logs panel"
+      },
+      {
+        "command": "cortex.openScriptFlow",
+        "title": "Cortex: Open Script Flow"
+      },
+      {
+        "command": "cortex.openScriptFlowForSelection",
+        "title": "Cortex: Open Script Flow for Selection"
       },
       {
         "command": "cortex.newNote",
@@ -164,6 +174,18 @@
           "command": "cortex.openGraph",
           "when": "view == cortex.overview && viewItem == cortex.task",
           "group": "inline@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "cortex.openScriptFlow",
+          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "group": "navigation@10"
+        },
+        {
+          "command": "cortex.openScriptFlowForSelection",
+          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "group": "navigation@11"
         }
       ]
     },

@@ -1,0 +1,191 @@
+.script-flow-app {
+  min-height: 100%;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent), transparent 38%),
+    linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%), var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+}
+
+.script-flow-header,
+.script-flow-surface {
+  display: grid;
+  gap: 18px;
+}
+
+.script-flow-header {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.script-flow-header__eyebrow,
+.script-flow-panel__eyebrow,
+.script-flow-state-card__label,
+.script-flow-boundary__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 84%, transparent);
+}
+
+.script-flow-header__title,
+.script-flow-state-card__title,
+.script-flow-panel__title,
+.script-flow-boundary__title {
+  margin: 6px 0 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.script-flow-header__actions,
+.script-flow-boundary__actions,
+.script-flow-pill-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.script-flow-surface {
+  grid-template-columns: minmax(320px, 1.1fr) minmax(260px, 0.9fr);
+}
+
+.script-flow-state-card,
+.script-flow-panel,
+.script-flow-boundary {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, #0c1724 12%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+.script-flow-state-card,
+.script-flow-panel {
+  padding: 20px;
+}
+
+.script-flow-state-card__text,
+.script-flow-panel__text,
+.script-flow-boundary__text,
+.script-flow-selection__text {
+  margin: 12px 0 0;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.6;
+}
+
+.script-flow-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.script-flow-meta__item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 28%, transparent);
+}
+
+.script-flow-meta__item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-meta__item dd {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.script-flow-selection {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 14%, transparent);
+}
+
+.script-flow-selection__title {
+  font-weight: 600;
+}
+
+.script-flow-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-badge-background) 82%, transparent);
+  color: var(--vscode-badge-foreground);
+}
+
+.script-flow-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.script-flow-app--loading .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 42%, transparent);
+}
+
+.script-flow-app--unsupported .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 38%, transparent);
+}
+
+.script-flow-app--error .script-flow-state-card,
+.script-flow-boundary {
+  border-color: color-mix(in srgb, var(--vscode-editorError-foreground) 44%, transparent);
+}
+
+.script-flow-app--empty .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-panel-border) 92%, transparent);
+}
+
+.script-flow-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.script-flow-button:hover {
+  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+}
+
+.script-flow-button--primary {
+  background: color-mix(in srgb, var(--vscode-button-background) 88%, transparent);
+  color: var(--vscode-button-foreground);
+  border-color: transparent;
+}
+
+.script-flow-button--primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.script-flow-boundary {
+  min-height: 100%;
+  padding: 32px;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vscode-editorError-foreground) 16%, transparent), transparent 42%),
+    color-mix(in srgb, var(--vscode-editor-background) 90%, #190d0d 10%);
+}
+
+@media (max-width: 900px) {
+  .script-flow-app {
+    padding: 18px;
+  }
+
+  .script-flow-header,
+  .script-flow-surface,
+  .script-flow-meta {
+    grid-template-columns: 1fr;
+  }
+}
