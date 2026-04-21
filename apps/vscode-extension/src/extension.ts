@@ -8,11 +8,14 @@ import {
   type TaskFilter,
   type TaskRecord
 } from "@cortex/core";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { ExtensionTaskService } from "./service.js";
+import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
+import { isScriptFlowSnapshot, type ScriptFlowLanguage, type ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
@@ -34,50 +37,6 @@ type ScriptFlowScope = "file" | "selection";
 type ScriptFlowRequest = {
   scope: ScriptFlowScope;
 };
-type ScriptFlowInitPayload =
-  | {
-      status: "empty";
-      title: string;
-      description: string;
-      scope: ScriptFlowScope;
-    }
-  | {
-      status: "unsupported";
-      title: string;
-      description: string;
-      extension: string;
-      supportedExtensions: string[];
-      scope: ScriptFlowScope;
-      source: ScriptFlowSource;
-    }
-  | {
-      status: "error";
-      title: string;
-      description: string;
-      scope: ScriptFlowScope;
-      source: ScriptFlowSource;
-    }
-  | {
-      status: "loading";
-      title: string;
-      description: string;
-      scope: ScriptFlowScope;
-      source: ScriptFlowSource;
-      selection?: ScriptFlowSelection;
-    };
-type ScriptFlowSelection = {
-  startLine: number;
-  endLine: number;
-  startColumn: number;
-  endColumn: number;
-  charCount: number;
-};
-type ScriptFlowSource = {
-  fileName: string;
-  fsPath: string;
-  extension: string;
-  languageId: string;
-};
 type FilterCatalog = {
   projects: string[];
   groups: string[];
@@ -85,9 +44,20 @@ type FilterCatalog = {
   statuses: string[];
   severities: string[];
 };
+type ScriptFlowDelivery =
+  | { type: "snapshot"; snapshot: ScriptFlowSnapshot }
+  | { type: "error"; error: string }
+  | { type: "unsupported"; language?: string };
 
 let activeService: ExtensionTaskService | undefined;
-const SCRIPT_FLOW_SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".py", ".sql"];
+const SCRIPT_FLOW_LANGUAGE_BY_EXTENSION: Record<string, ScriptFlowLanguage> = {
+  ".py": "python",
+  ".sql": "sql",
+  ".ts": "typescript",
+  ".tsx": "typescript"
+};
+const SCRIPT_FLOW_FIXTURE_RELATIVE_PATH = path.join("fixtures", "script-flow", "sample.ts");
+const SCRIPT_FLOW_FIXTURE_SNAPSHOT_RELATIVE_PATH = path.join("fixtures", "script-flow", "sample.ts.snapshot.json");
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -129,6 +99,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let notesPanelReady = false;
   let scriptFlowPanel: vscode.WebviewPanel | undefined;
   let scriptFlowPanelReady = false;
+  let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
@@ -149,6 +120,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     const availablePlanCodes = new Set(bundle.plans.map((plan) => plan.code));
     const selectedPlanCode = resolveSelectedPlanCode(bundle.tasks, persistedState, availablePlanCodes, selectedTaskCode);
+    const nextSelectedTaskCode = resolveSelectedTaskCode(bundle.tasks, persistedState, selectedPlanCode, selectedTaskCode);
     const selectedPlan = selectedPlanCode ? bundle.plans.find((plan) => plan.code === selectedPlanCode) ?? null : null;
     const catalog = buildFilterCatalog(
       selectedPlanCode ? bundle.tasks.filter((task) => task.planCode === selectedPlanCode) : bundle.tasks
@@ -156,7 +128,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const state = sanitizeFilterState(
       {
         ...persistedState,
-        ...(selectedPlanCode ? { selectedPlanCode } : {})
+        selectedPlanCode,
+        selectedTaskCode: nextSelectedTaskCode
       },
       catalog,
       availablePlanCodes
@@ -186,7 +159,7 @@ export async function activate(context: vscode.ExtensionContext) {
       state: {
         orientation: state.graphOrientation,
         showMiniMap: state.showMiniMap,
-        selectedTaskCode: selectedTaskCode ?? state.selectedTaskCode,
+        selectedTaskCode: state.selectedTaskCode,
         zoom: state.zoom,
         pan: state.pan
       },
@@ -258,10 +231,31 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!panel) {
       return;
     }
-    await panel.webview.postMessage({
-      type: "init",
-      payload: buildScriptFlowInitPayload(request)
-    });
+
+    currentScriptFlowSnapshot = undefined;
+    const delivery = await buildScriptFlowDelivery(request, context.extensionUri);
+    if (scriptFlowPanel !== panel) {
+      return;
+    }
+
+    if (delivery.type === "snapshot") {
+      currentScriptFlowSnapshot = delivery.snapshot;
+      await sendSnapshot(panel.webview, delivery.snapshot);
+      await service.recordInteraction("script_flow_open", {
+        lang: delivery.snapshot.metadata.language,
+        nodeCount: delivery.snapshot.nodes.length,
+        edgeCount: delivery.snapshot.edges.length,
+        parseMs: 0
+      });
+      return;
+    }
+
+    if (delivery.type === "error") {
+      await sendError(panel.webview, delivery.error);
+      return;
+    }
+
+    await sendUnsupported(panel.webview, delivery.language);
   }
 
   async function refreshNotesPanel() {
@@ -378,15 +372,30 @@ export async function activate(context: vscode.ExtensionContext) {
     scriptFlowPanel.onDidDispose(() => {
       scriptFlowPanel = undefined;
       scriptFlowPanelReady = false;
+      currentScriptFlowSnapshot = undefined;
     });
     scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
-      if (message?.type === "ready") {
+      if (!isScriptFlowWebviewMessage(message)) {
+        return;
+      }
+      if (message.type === "ready") {
         scriptFlowPanelReady = true;
         await postScriptFlowInit(pendingScriptFlowRequest);
         return;
       }
-      if (message?.type === "reload") {
+      if (message.type === "scriptFlow:refresh") {
         await openScriptFlowPanel(pendingScriptFlowRequest, { forceReload: true });
+        return;
+      }
+      if (message.type === "scriptFlow:selectNode") {
+        const selectedNode = currentScriptFlowSnapshot?.nodes.find((node) => node.id === message.nodeId);
+        if (!selectedNode) {
+          return;
+        }
+        await service.recordInteraction("script_flow_node_select", {
+          nodeId: selectedNode.id,
+          kind: selectedNode.kind
+        });
       }
     });
   }
@@ -438,7 +447,8 @@ export async function activate(context: vscode.ExtensionContext) {
           if (typeof message.code === "string" && message.code.trim()) {
             await service.updateFilterState({
               selectedPlanCode: message.code.trim(),
-              selectedProjects: []
+              selectedProjects: [],
+              selectedTaskCode: undefined
             });
             await refreshView();
             return;
@@ -505,9 +515,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     graphPanel.reveal(vscode.ViewColumn.One);
-    if (selectedTaskCode) {
-      await service.updateFilterState({ selectedTaskCode });
-    }
     await postSnapshot(selectedTaskCode);
   }
 
@@ -930,17 +937,15 @@ function resolveSelectedPlanCode(
   planCodes: ReadonlySet<string>,
   nextSelectedTaskCode?: string
 ) {
+  if (nextSelectedTaskCode) {
+    const selectedTask = tasks.find((task) => task.code === nextSelectedTaskCode || task.id === nextSelectedTaskCode);
+    const selectedTaskPlanCode = selectedTask?.planCode;
+    return selectedTaskPlanCode && planCodes.has(selectedTaskPlanCode) ? selectedTaskPlanCode : undefined;
+  }
+
   const current = state.selectedPlanCode;
   if (!current || !planCodes.has(current)) {
     return undefined;
-  }
-
-  const taskCode = nextSelectedTaskCode ?? state.selectedTaskCode;
-  if (taskCode) {
-    const selectedTask = tasks.find((task) => task.code === taskCode || task.id === taskCode);
-    if (selectedTask && selectedTask.planCode !== current) {
-      return undefined;
-    }
   }
 
   if (state.selectedProjects.length > 0) {
@@ -954,6 +959,29 @@ function resolveSelectedPlanCode(
   }
 
   return current;
+}
+
+function resolveSelectedTaskCode(
+  tasks: TaskRecord[],
+  state: ReturnType<ExtensionTaskService["getFilterState"]>,
+  selectedPlanCode?: string,
+  nextSelectedTaskCode?: string
+) {
+  const taskCode = nextSelectedTaskCode ?? state.selectedTaskCode;
+  if (!taskCode) {
+    return undefined;
+  }
+
+  const selectedTask = tasks.find((task) => task.code === taskCode || task.id === taskCode);
+  if (!selectedTask) {
+    return undefined;
+  }
+
+  if (selectedPlanCode && selectedTask.planCode !== selectedPlanCode) {
+    return undefined;
+  }
+
+  return taskCode;
 }
 
 function sameArray(left: readonly string[], right: readonly string[]) {
@@ -1050,88 +1078,64 @@ async function pickConnectionSettings(
   };
 }
 
-function buildScriptFlowInitPayload(request: ScriptFlowRequest): ScriptFlowInitPayload {
+async function buildScriptFlowDelivery(
+  request: ScriptFlowRequest,
+  extensionUri: vscode.Uri
+): Promise<ScriptFlowDelivery> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return {
-      status: "empty",
-      title: "No file selected",
-      description: "Open a TypeScript, TSX, Python, or SQL file and then open Script Flow.",
-      scope: request.scope
+      type: "unsupported"
     };
   }
 
-  const extension = path.extname(editor.document.fileName).toLowerCase();
-  const source: ScriptFlowSource = {
-    fileName: path.basename(editor.document.fileName),
-    fsPath: editor.document.uri.fsPath,
-    extension: extension || "(none)",
-    languageId: editor.document.languageId
-  };
-
-  if (!SCRIPT_FLOW_SUPPORTED_EXTENSIONS.includes(extension)) {
-    return {
-      status: "unsupported",
-      title: `${source.fileName} is not supported yet`,
-      description: "Script Flow currently opens TypeScript, TSX, Python, and SQL files only.",
-      extension: source.extension,
-      supportedExtensions: SCRIPT_FLOW_SUPPORTED_EXTENSIONS,
-      scope: request.scope,
-      source
-    };
-  }
+  const documentPath = editor.document.uri.fsPath;
+  const language = resolveScriptFlowLanguage(documentPath);
 
   if (request.scope === "selection" && editor.selection.isEmpty) {
     return {
-      status: "empty",
-      title: "No selection available",
-      description: "Select a code range in the active editor to inspect only that slice.",
-      scope: request.scope
+      type: "error",
+      error: "Select a code range before opening Script Flow for the current selection."
+    };
+  }
+
+  if (normalizeFsPath(documentPath) !== normalizeFsPath(path.join(extensionUri.fsPath, SCRIPT_FLOW_FIXTURE_RELATIVE_PATH))) {
+    return {
+      type: "unsupported",
+      language: language ?? editor.document.languageId
     };
   }
 
   try {
-    const text = request.scope === "selection" ? editor.document.getText(editor.selection) : editor.document.getText();
-    if (text.includes("cortex:script-flow-error")) {
-      return {
-        status: "error",
-        title: "Script Flow parser shell failed",
-        description: "Remove the `cortex:script-flow-error` marker to recover and reload the panel.",
-        scope: request.scope,
-        source
-      };
-    }
-
+    const snapshot = await loadScriptFlowFixtureSnapshot(extensionUri);
     return {
-      status: "loading",
-      title: request.scope === "selection" ? "Parsing selected range" : "Parsing current file",
-      description:
-        request.scope === "selection"
-          ? "Script Flow is scoped to the current selection. Rendering arrives in CTX013-05."
-          : "Script Flow is loading the active file shell. Rendering arrives in CTX013-05.",
-      scope: request.scope,
-      source,
-      ...(request.scope === "selection"
-        ? {
-            selection: {
-              startLine: editor.selection.start.line + 1,
-              endLine: editor.selection.end.line + 1,
-              startColumn: editor.selection.start.character + 1,
-              endColumn: editor.selection.end.character + 1,
-              charCount: text.length
-            }
-          }
-        : {})
+      type: "snapshot",
+      snapshot
     };
   } catch (error) {
     return {
-      status: "error",
-      title: "Script Flow could not read the active source",
-      description: String(error),
-      scope: request.scope,
-      source
+      type: "error",
+      error: String(error)
     };
   }
+}
+
+async function loadScriptFlowFixtureSnapshot(extensionUri: vscode.Uri): Promise<ScriptFlowSnapshot> {
+  const snapshotPath = path.join(extensionUri.fsPath, SCRIPT_FLOW_FIXTURE_SNAPSHOT_RELATIVE_PATH);
+  const raw = await fs.readFile(snapshotPath, "utf8");
+  const parsed: unknown = JSON.parse(raw);
+  if (!isScriptFlowSnapshot(parsed)) {
+    throw new Error(`Invalid Script Flow fixture snapshot: ${snapshotPath}`);
+  }
+  return parsed;
+}
+
+function resolveScriptFlowLanguage(fsPath: string): ScriptFlowLanguage | undefined {
+  return SCRIPT_FLOW_LANGUAGE_BY_EXTENSION[path.extname(fsPath).toLowerCase()];
+}
+
+function normalizeFsPath(fsPath: string) {
+  return path.normalize(fsPath).replace(/\\/g, "/").toLowerCase();
 }
 
 function formatCollectionMessage(

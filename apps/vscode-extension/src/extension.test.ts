@@ -7,7 +7,10 @@ const {
   createWebviewPanelMock,
   createStatusBarItemMock,
   executeCommandMock,
+  filterStateRef,
   listLogsMock,
+  loadBundleMock,
+  loadSnapshotMock,
   listNotesMock,
   listPendingRemindersMock,
   markRemindedMock,
@@ -15,9 +18,12 @@ const {
   registerCommandMock,
   recordInteractionMock,
   rescheduleReminderMock,
+  saveTaskMock,
   saveNoteMock,
+  getTaskMock,
   deleteNoteMock,
   showInformationMessageMock,
+  showInputBoxMock,
   showQuickPickMock,
   showWarningMessageMock,
   treeRefreshMock
@@ -25,14 +31,35 @@ const {
   const activeTextEditorRef: { current?: unknown } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
+  const filterStateRef = {
+    current: {
+      searchQuery: undefined as string | undefined,
+      selectedProjects: [] as string[],
+      selectedGroups: [] as string[],
+      selectedTags: [] as string[],
+      selectedStatuses: [] as string[],
+      selectedSeverities: [] as string[],
+      graphOrientation: "LR" as "LR" | "TB",
+      showMiniMap: true,
+      selectedTaskCode: undefined as string | undefined,
+      selectedPlanCode: undefined as string | undefined,
+      zoom: 1,
+      pan: { x: 0, y: 0 }
+    }
+  };
   const listNotesMock = vi.fn();
   const listLogsMock = vi.fn();
+  const loadBundleMock = vi.fn();
+  const loadSnapshotMock = vi.fn();
   const listPendingRemindersMock = vi.fn();
   const markRemindedMock = vi.fn();
   const rescheduleReminderMock = vi.fn();
   const recordInteractionMock = vi.fn();
+  const getTaskMock = vi.fn();
+  const saveTaskMock = vi.fn();
   const saveNoteMock = vi.fn();
   const deleteNoteMock = vi.fn();
+  const showInputBoxMock = vi.fn();
   const showQuickPickMock = vi.fn();
   const showInformationMessageMock = vi.fn();
   const showWarningMessageMock = vi.fn();
@@ -105,7 +132,10 @@ const {
     createWebviewPanelMock,
     createStatusBarItemMock,
     executeCommandMock,
+    filterStateRef,
     listLogsMock,
+    loadBundleMock,
+    loadSnapshotMock,
     listNotesMock,
     listPendingRemindersMock,
     markRemindedMock,
@@ -113,9 +143,12 @@ const {
     registerCommandMock,
     recordInteractionMock,
     rescheduleReminderMock,
+    saveTaskMock,
     saveNoteMock,
+    getTaskMock,
     deleteNoteMock,
     showInformationMessageMock,
+    showInputBoxMock,
     showQuickPickMock,
     showWarningMessageMock,
     treeRefreshMock
@@ -146,6 +179,7 @@ vi.mock("vscode", () => ({
     createTreeView: createTreeViewMock,
     createWebviewPanel: createWebviewPanelMock,
     createStatusBarItem: createStatusBarItemMock,
+    showInputBox: showInputBoxMock,
     showQuickPick: showQuickPickMock,
     showInformationMessage: showInformationMessageMock,
     showWarningMessage: showWarningMessageMock,
@@ -170,27 +204,58 @@ vi.mock("./service.js", () => ({
       debug: vi.fn(),
       error: vi.fn()
     },
-    getFilterState: vi.fn(() => ({
-      searchQuery: undefined,
-      selectedProjects: [],
-      selectedGroups: [],
-      selectedTags: [],
-      selectedStatuses: [],
-      selectedSeverities: [],
-      graphOrientation: "LR",
-      showMiniMap: true,
-      selectedTaskCode: undefined,
-      selectedPlanCode: undefined,
-      zoom: 1,
-      pan: { x: 0, y: 0 }
+    getConnectionSettings: vi.fn(() => ({
+      mongoUrl: "mongodb://localhost:27017",
+      mongoDbName: "nostromo_cortex",
+      mongoTasksCollection: "tasks",
+      mongoNotesCollection: "notes",
+      mongoLogsCollection: "logs",
+      mongoPlansCollection: "action_plans"
     })),
-    updateFilterState: vi.fn().mockResolvedValue(undefined),
+    getFilterState: vi.fn(() => ({
+      ...filterStateRef.current,
+      selectedProjects: [...filterStateRef.current.selectedProjects],
+      selectedGroups: [...filterStateRef.current.selectedGroups],
+      selectedTags: [...filterStateRef.current.selectedTags],
+      selectedStatuses: [...filterStateRef.current.selectedStatuses],
+      selectedSeverities: [...filterStateRef.current.selectedSeverities],
+      pan: { ...filterStateRef.current.pan }
+    })),
+    updateFilterState: vi.fn(async (nextState: Record<string, unknown>) => {
+      filterStateRef.current = {
+        ...filterStateRef.current,
+        ...nextState,
+        selectedProjects: Array.isArray(nextState.selectedProjects)
+          ? [...(nextState.selectedProjects as string[])]
+          : filterStateRef.current.selectedProjects,
+        selectedGroups: Array.isArray(nextState.selectedGroups)
+          ? [...(nextState.selectedGroups as string[])]
+          : filterStateRef.current.selectedGroups,
+        selectedTags: Array.isArray(nextState.selectedTags)
+          ? [...(nextState.selectedTags as string[])]
+          : filterStateRef.current.selectedTags,
+        selectedStatuses: Array.isArray(nextState.selectedStatuses)
+          ? [...(nextState.selectedStatuses as string[])]
+          : filterStateRef.current.selectedStatuses,
+        selectedSeverities: Array.isArray(nextState.selectedSeverities)
+          ? [...(nextState.selectedSeverities as string[])]
+          : filterStateRef.current.selectedSeverities,
+        pan:
+          nextState.pan && typeof nextState.pan === "object"
+            ? { ...filterStateRef.current.pan, ...(nextState.pan as { x?: number; y?: number }) }
+            : filterStateRef.current.pan
+      };
+    }),
+    loadBundle: loadBundleMock,
+    loadSnapshot: loadSnapshotMock,
     listNotes: listNotesMock,
     listPendingReminders: listPendingRemindersMock,
     listLogs: listLogsMock,
     markReminded: markRemindedMock,
     recordInteraction: recordInteractionMock,
     rescheduleReminder: rescheduleReminderMock,
+    getTask: getTaskMock,
+    saveTask: saveTaskMock,
     saveNote: saveNoteMock,
     deleteNote: deleteNoteMock
   }))
@@ -235,10 +300,11 @@ function createContext() {
 
 describe("activate notes commands", () => {
   beforeEach(() => {
+    const scriptFlowFixturePath = "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts";
     activeTextEditorRef.current = {
       document: {
-        fileName: "C:\\dev\\Cortex\\apps\\vscode-extension\\src\\extension.ts",
-        uri: { fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension\\src\\extension.ts" },
+        fileName: scriptFlowFixturePath,
+        uri: { fsPath: scriptFlowFixturePath },
         languageId: "typescript",
         getText: vi.fn((selection?: { isEmpty?: boolean }) =>
           selection && !selection.isEmpty ? "const value = 1;" : "export const value = 1;"
@@ -255,6 +321,20 @@ describe("activate notes commands", () => {
     panelState.messageHandler = undefined;
     panelState.disposeHandler = undefined;
     vi.clearAllMocks();
+    filterStateRef.current = {
+      searchQuery: undefined,
+      selectedProjects: [],
+      selectedGroups: [],
+      selectedTags: [],
+      selectedStatuses: [],
+      selectedSeverities: [],
+      graphOrientation: "LR",
+      showMiniMap: true,
+      selectedTaskCode: undefined,
+      selectedPlanCode: undefined,
+      zoom: 1,
+      pan: { x: 0, y: 0 }
+    };
     listNotesMock.mockResolvedValue([
       {
         code: "N-1",
@@ -282,6 +362,47 @@ describe("activate notes commands", () => {
     markRemindedMock.mockResolvedValue(null);
     recordInteractionMock.mockResolvedValue(undefined);
     rescheduleReminderMock.mockResolvedValue(null);
+    getTaskMock.mockResolvedValue({
+      id: "task-1",
+      code: "TASK-1",
+      shortTask: "First task",
+      detail: "Existing detail",
+      status: "PENDING",
+      severity: "LOW",
+      agent: "codex",
+      tags: ["graph"],
+      dependsOn: [],
+      createdAt: "2026-04-18T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z"
+    });
+    saveTaskMock.mockResolvedValue(undefined);
+    loadBundleMock.mockResolvedValue({
+      tasks: [
+        {
+          id: "task-1",
+          code: "TASK-1",
+          shortTask: "First task",
+          severity: "LOW",
+          status: "PENDING",
+          tags: [],
+          planCode: "PLAN-A"
+        },
+        {
+          id: "task-2",
+          code: "TASK-2",
+          shortTask: "Second task",
+          severity: "LOW",
+          status: "PENDING",
+          tags: [],
+          planCode: "PLAN-B"
+        }
+      ],
+      plans: [{ code: "PLAN-0" }, { code: "PLAN-A" }, { code: "PLAN-B" }]
+    });
+    loadSnapshotMock.mockImplementation(async (filter?: { planCode?: string }) => ({
+      nodes: filter?.planCode ? [{ id: filter.planCode, data: { label: filter.planCode } }] : [],
+      edges: []
+    }));
     saveNoteMock.mockResolvedValue({
       code: "N-2",
       title: "Saved note",
@@ -292,6 +413,7 @@ describe("activate notes commands", () => {
       updatedAt: "2026-04-18T00:00:00.000Z"
     });
     deleteNoteMock.mockResolvedValue(true);
+    showInputBoxMock.mockReset();
     showQuickPickMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
@@ -375,6 +497,28 @@ describe("activate notes commands", () => {
     expect(panelState.panel?.webview.html).toContain("logs.js");
   });
 
+  it("posts logs on ready, refresh, and panel reopen when data exists", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+
+    await panelState.messageHandler?.({ type: "ready" });
+
+    expect(listLogsMock).toHaveBeenCalledTimes(1);
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "logs:list",
+      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })])
+    });
+
+    await panelState.messageHandler?.({ type: "logs:refresh" });
+
+    expect(listLogsMock).toHaveBeenCalledTimes(2);
+
+    await executeCommandMock("cortex.openLogs");
+
+    expect(panelState.panel?.reveal).toHaveBeenCalled();
+    expect(listLogsMock).toHaveBeenCalledTimes(3);
+  });
+
   it("adds Script Flow to cortex.showOptions and opens the dedicated panel", async () => {
     showQuickPickMock.mockResolvedValueOnce({
       label: "Script Flow",
@@ -402,16 +546,23 @@ describe("activate notes commands", () => {
     );
     expect(panelState.panel?.webview.html).toContain("script-flow.js");
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
-      type: "init",
-      payload: expect.objectContaining({
-        status: "loading",
-        scope: "file",
-        source: expect.objectContaining({
-          fileName: "extension.ts",
-          extension: ".ts"
-        })
+      type: "scriptFlow:snapshot",
+      snapshot: expect.objectContaining({
+        metadata: expect.objectContaining({
+          path: "fixtures/script-flow/sample.ts",
+          language: "typescript"
+        }),
+        nodes: expect.arrayContaining([expect.objectContaining({ id: "fn:accumulate", kind: "function" })]),
+        edges: expect.any(Array)
       })
     });
+    expect(recordInteractionMock).toHaveBeenCalledWith(
+      "script_flow_open",
+      expect.objectContaining({
+        lang: "typescript",
+        parseMs: 0
+      })
+    );
   });
 
   it("offers Tasks, Graph, Notes, and Logs in the panel switcher", async () => {
@@ -435,6 +586,74 @@ describe("activate notes commands", () => {
     );
     expect(options).toEqual(expect.objectContaining({ title: "Switch Cortex panel" }));
     expect(executeCommandMock).toHaveBeenCalledWith("workbench.view.extension.cortex");
+  });
+
+  it("opens Graph with the selected task plan instead of the persisted banner plan", async () => {
+    filterStateRef.current.selectedPlanCode = "PLAN-0";
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-A" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-A" })
+    );
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-A");
+    expect(filterStateRef.current.selectedTaskCode).toBe("TASK-1");
+
+    await executeCommandMock("cortex.openGraph", "TASK-2");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-B");
+    expect(filterStateRef.current.selectedTaskCode).toBe("TASK-2");
+  });
+
+  it("preserves manual plan navigation when reopening Graph without a task target", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+
+    await panelState.messageHandler?.({ type: "selectPlan", code: "PLAN-B" });
+
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-B");
+    expect(filterStateRef.current.selectedTaskCode).toBeUndefined();
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+
+    await executeCommandMock("cortex.openGraph");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+  });
+
+  it("reuses the existing task edit flow when the Graph webview posts editTask", async () => {
+    showInputBoxMock.mockResolvedValueOnce("Edited from inspector");
+    showQuickPickMock.mockResolvedValueOnce("DONE").mockResolvedValueOnce("HIGH");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+    await panelState.messageHandler?.({ type: "editTask", code: "TASK-1" });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-1",
+        short_task: "Edited from inspector",
+        status: "DONE",
+        severity: "HIGH"
+      })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 updated.");
   });
 
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
@@ -470,22 +689,18 @@ describe("activate notes commands", () => {
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
   });
 
-  it("supports opening Script Flow for the current selection", async () => {
+  it("records node selection telemetry from the Script Flow webview", async () => {
     await activate(createContext());
-    await executeCommandMock("cortex.openScriptFlowForSelection");
+    await executeCommandMock("cortex.openScriptFlow");
     await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
 
-    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
-      type: "init",
-      payload: expect.objectContaining({
-        status: "loading",
-        scope: "selection",
-        selection: expect.objectContaining({
-          startLine: 5,
-          endLine: 9,
-          charCount: 16
-        })
+    expect(recordInteractionMock).toHaveBeenCalledWith(
+      "script_flow_node_select",
+      expect.objectContaining({
+        nodeId: "fn:accumulate",
+        kind: "function"
       })
-    });
+    );
   });
 });

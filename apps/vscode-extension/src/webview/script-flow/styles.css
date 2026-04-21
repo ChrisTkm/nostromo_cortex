@@ -134,6 +134,10 @@
   border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 38%, transparent);
 }
 
+.script-flow-app--snapshot .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+}
+
 .script-flow-app--error .script-flow-state-card,
 .script-flow-boundary {
   border-color: color-mix(in srgb, var(--vscode-editorError-foreground) 44%, transparent);
@@ -165,6 +169,59 @@
 
 .script-flow-button--primary:hover {
   background: var(--vscode-button-hoverBackground);
+}
+
+.script-flow-node-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.script-flow-node {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.script-flow-node:hover {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 44%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 18%, transparent);
+}
+
+.script-flow-node--selected {
+  border-color: color-mix(in srgb, var(--vscode-button-background) 64%, transparent);
+  background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+}
+
+.script-flow-node__kind {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 84%, transparent);
+}
+
+.script-flow-node__label {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.script-flow-json {
+  margin: 18px 0 0;
+  padding: 16px;
+  border-radius: 16px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--vscode-textCodeBlock-background) 86%, #08111d 14%);
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  color: var(--vscode-editor-foreground);
+  font: 12px/1.55 var(--vscode-editor-font-family), monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .script-flow-boundary {

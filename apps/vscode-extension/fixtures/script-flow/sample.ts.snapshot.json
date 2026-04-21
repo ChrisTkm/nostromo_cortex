@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "path": "fixtures/script-flow/sample.ts",
+    "language": "typescript",
+    "hash": "23e70eaf4a100c4ebab37c6537bdac70fbabada6",
+    "parsedAt": "2026-04-21T02:55:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "entry:sample",
+      "kind": "entry",
+      "label": "sample.ts",
+      "range": {
+        "startLine": 1,
+        "startCol": 1,
+        "endLine": 12,
+        "endCol": 2
+      }
+    },
+    {
+      "id": "fn:accumulate",
+      "kind": "function",
+      "label": "accumulate(limit)",
+      "range": {
+        "startLine": 1,
+        "startCol": 1,
+        "endLine": 12,
+        "endCol": 2
+      }
+    },
+    {
+      "id": "branch:limit-check",
+      "kind": "branch",
+      "label": "limit <= 0",
+      "range": {
+        "startLine": 4,
+        "startCol": 3,
+        "endLine": 6,
+        "endCol": 4
+      },
+      "meta": {
+        "branches": 2
+      }
+    },
+    {
+      "id": "return:early",
+      "kind": "return",
+      "label": "return total",
+      "range": {
+        "startLine": 5,
+        "startCol": 5,
+        "endLine": 5,
+        "endCol": 17
+      }
+    },
+    {
+      "id": "loop:for-index",
+      "kind": "loop",
+      "label": "for (index < limit)",
+      "range": {
+        "startLine": 8,
+        "startCol": 3,
+        "endLine": 10,
+        "endCol": 4
+      },
+      "meta": {
+        "kind": "for"
+      }
+    },
+    {
+      "id": "return:final",
+      "kind": "return",
+      "label": "return total",
+      "range": {
+        "startLine": 12,
+        "startCol": 3,
+        "endLine": 12,
+        "endCol": 15
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "entry:sample",
+      "to": "fn:accumulate",
+      "kind": "flow"
+    },
+    {
+      "from": "fn:accumulate",
+      "to": "branch:limit-check",
+      "kind": "flow"
+    },
+    {
+      "from": "branch:limit-check",
+      "to": "return:early",
+      "kind": "flow"
+    },
+    {
+      "from": "branch:limit-check",
+      "to": "loop:for-index",
+      "kind": "flow"
+    },
+    {
+      "from": "loop:for-index",
+      "to": "return:final",
+      "kind": "flow"
+    }
+  ],
+  "analysis": {
+    "entryPoints": [
+      "fn:accumulate"
+    ],
+    "summary": "Single function with one guard branch, one counting loop, and two return exits.",
+    "decisions": [
+      {
+        "nodeId": "branch:limit-check",
+        "label": "limit <= 0",
+        "branches": 2
+      }
+    ],
+    "loops": [
+      {
+        "nodeId": "loop:for-index",
+        "label": "for (index < limit)",
+        "kind": "for"
+      }
+    ],
+    "observations": [
+      "Early return short-circuits non-positive input before entering the loop."
+    ]
+  }
+}
