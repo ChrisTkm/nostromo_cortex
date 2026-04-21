@@ -45,8 +45,18 @@ export function slugifyTitle(value: string) {
 }
 
 export function isDraftPristineForSelection(draft: NoteDraft, selectedCode: string) {
-  return (
-    (!draft.title && !draft.body && !draft.tags && !draft.taskCode && !draft.planCode && !draft.code) ||
-    (draft.code === selectedCode && !draft.title && !draft.body && !draft.tags && !draft.taskCode && !draft.planCode && !draft.pinned)
-  );
+  const hasContent =
+    hasText(draft.title) || hasText(draft.body) || hasText(draft.tags) || hasText(draft.taskCode) || hasText(draft.planCode);
+  const draftCode = draft.code.trim();
+  const normalizedSelection = selectedCode.trim();
+
+  if (!hasContent && !draft.pinned && !draftCode) {
+    return true;
+  }
+
+  return draftCode === normalizedSelection && !hasContent && !draft.pinned;
+}
+
+function hasText(value: string) {
+  return value.trim().length > 0;
 }

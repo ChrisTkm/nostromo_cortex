@@ -5,12 +5,17 @@ import { useNotesController } from "./hooks/useNotesController";
 
 export function NotesApp() {
   const {
+    activeSearch,
     draft,
     error,
     filteredNotes,
+    isDraftDirty,
+    isSearchPending,
     search,
     selectedCode,
+    selectedNote,
     showEditor,
+    totalNotes,
     viewMode,
     closeEditor,
     createNote,
@@ -26,14 +31,21 @@ export function NotesApp() {
     <div className={`notes-app${showEditor ? "" : " notes-app--list-only"}`}>
       <aside className="notes-sidebar">
         <NoteList
+          activeSearch={activeSearch}
+          hasDirtyDraft={isDraftDirty}
+          isCreatingNew={viewMode === "new"}
+          isSearchPending={isSearchPending}
           notes={filteredNotes}
           onCloseEditor={closeEditor}
           onCreate={createNote}
+          onClearSearch={() => setSearch("")}
           onSearchChange={setSearch}
           onSelect={selectNote}
+          selectedNoteTitle={selectedNote?.title ?? null}
           showEditor={showEditor}
           search={search}
           selectedCode={selectedCode}
+          totalNotes={totalNotes}
         />
       </aside>
       {showEditor ? (
@@ -42,6 +54,7 @@ export function NotesApp() {
             <NoteEditor
               draft={draft}
               error={error}
+              isDirty={isDraftDirty}
               isNew={viewMode === "new"}
               onChange={updateDraft}
               onClose={closeEditor}

@@ -23,20 +23,40 @@ export function useNotesController() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<NoteDraft>(() => createEmptyDraft());
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearch(search.trim().toLowerCase());
+    }, 140);
+
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  const deferredSearch = useDeferredValue(debouncedSearch);
+  const searchTerms = useMemo(() => deferredSearch.split(/\s+/).filter(Boolean), [deferredSearch]);
   const selectedNote = selectedCode ? notes.find((note) => note.code === selectedCode) ?? null : null;
   const showEditor = editorOpen;
+  const draftBaseline = useMemo(() => {
+    if (viewMode === "edit" && selectedNote) {
+      return createDraftFromNote(selectedNote);
+    }
+
+    return createEmptyDraft();
+  }, [selectedNote, viewMode]);
+  const isDraftDirty = useMemo(() => !areDraftsEquivalent(draft, draftBaseline), [draft, draftBaseline]);
+  const totalNotes = notes.length;
+  const isSearchPending = search.trim().toLowerCase() !== deferredSearch;
 
   const filteredNotes = useMemo(() => {
     const next = notes.filter((note) => {
-      if (!deferredSearch) {
+      if (searchTerms.length === 0) {
         return true;
       }
 
-      const haystack = [note.title, note.body, note.tags.join(" ")].join("\n").toLowerCase();
-      return haystack.includes(deferredSearch);
+      const haystack = [note.title, note.body, note.code, note.taskCode ?? "", note.planCode ?? "", note.tags.join(" ")].join("\n").toLowerCase();
+      return searchTerms.every((term) => haystack.includes(term));
     });
 
     return next.sort((left, right) => {
@@ -45,7 +65,7 @@ export function useNotesController() {
       }
       return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
     });
-  }, [deferredSearch, notes]);
+  }, [notes, searchTerms]);
 
   const handleMessage = useEffectEvent((message: NotesMessage) => {
     if (message.type === "notes:list" && Array.isArray(message.notes)) {
@@ -221,11 +241,15 @@ export function useNotesController() {
     draft,
     error,
     filteredNotes,
+    isDraftDirty,
+    isSearchPending,
     search,
     selectedCode,
     selectedNote,
     showEditor,
+    totalNotes,
     viewMode,
+    activeSearch: deferredSearch,
     closeEditor,
     createNote,
     deleteNote,
@@ -276,4 +300,16 @@ function isNoteRecord(value: unknown): value is NoteRecord {
 
   const note = value as Partial<NoteRecord>;
   return typeof note.code === "string" && typeof note.title === "string" && typeof note.body === "string" && Array.isArray(note.tags);
+}
+
+function areDraftsEquivalent(left: NoteDraft, right: NoteDraft) {
+  return (
+    left.title === right.title &&
+    left.body === right.body &&
+    left.tags === right.tags &&
+    left.taskCode === right.taskCode &&
+    left.planCode === right.planCode &&
+    left.pinned === right.pinned &&
+    left.code === right.code
+  );
 }

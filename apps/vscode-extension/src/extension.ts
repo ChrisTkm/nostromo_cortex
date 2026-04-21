@@ -145,33 +145,42 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function postNotesList() {
-    if (!notesPanel) {
+    const panel = notesPanel;
+    if (!panel) {
       return;
     }
     const notes = await service.listNotes();
-    await notesPanel.webview.postMessage({
+    if (notesPanel !== panel) {
+      return;
+    }
+    await panel.webview.postMessage({
       type: "notes:list",
       notes
     });
   }
 
   async function postLogsList() {
-    if (!logsPanel) {
+    const panel = logsPanel;
+    if (!panel) {
       return;
     }
 
     const logs = await service.listLogs();
-    await logsPanel.webview.postMessage({
+    if (logsPanel !== panel) {
+      return;
+    }
+    await panel.webview.postMessage({
       type: "logs:list",
       logs
     });
   }
 
   async function postNotesMode(mode: NotesPanelMode) {
-    if (!notesPanel) {
+    const panel = notesPanel;
+    if (!panel) {
       return;
     }
-    await notesPanel.webview.postMessage({
+    await panel.webview.postMessage({
       type: "open",
       mode
     });
@@ -210,9 +219,10 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (message?.type === "notes:save" && isNoteDocumentInput(message.input)) {
+        const panel = notesPanel;
         const saved = await service.saveNote(message.input);
-        if (notesPanel) {
-          await notesPanel.webview.postMessage({
+        if (panel && notesPanel === panel) {
+          await panel.webview.postMessage({
             type: "notes:saved",
             note: saved
           });

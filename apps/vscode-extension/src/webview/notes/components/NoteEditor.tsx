@@ -4,6 +4,7 @@ import type { NoteDraft } from "../types";
 export function NoteEditor(props: {
   draft: NoteDraft;
   error?: string | null;
+  isDirty: boolean;
   isNew: boolean;
   onChange(value: Partial<NoteDraft>): void;
   onClose(): void;
@@ -12,6 +13,8 @@ export function NoteEditor(props: {
   onSave(): void;
 }) {
   const generatedCode = props.draft.code.trim() || (props.draft.title.trim() ? slugifyTitle(props.draft.title) : "note");
+  const statusLabel = props.isNew ? "New draft" : props.isDirty ? "Unsaved changes" : "Saved";
+  const statusTone = props.isNew ? "note-editor__status--new" : props.isDirty ? "note-editor__status--dirty" : "note-editor__status--saved";
 
   return (
     <div className="note-editor">
@@ -19,95 +22,125 @@ export function NoteEditor(props: {
         <div>
           <div className="note-editor__eyebrow">{props.isNew ? "New note" : "Editing note"}</div>
           <h2 className="note-editor__title">{props.draft.title.trim() || "Untitled note"}</h2>
+          <div className={`note-editor__status ${statusTone}`}>{statusLabel}</div>
         </div>
         <div className="note-editor__actions">
-          <button className="notes-button" onClick={props.onClose} type="button">
-            Close
+          <button className="notes-button notes-button--primary" onClick={props.onSave} type="button">
+            {props.isNew ? "Create note" : "Save note"}
           </button>
-          <button className="notes-button" onClick={props.onReset} type="button">
-            Reset
+          <button className="notes-button" disabled={!props.isDirty} onClick={props.onReset} type="button">
+            Reset changes
           </button>
           {props.onDelete ? (
             <button className="notes-button notes-button--danger" onClick={props.onDelete} type="button">
               Delete
             </button>
           ) : null}
-          <button className="notes-button notes-button--primary" onClick={props.onSave} type="button">
-            Save
+          <button className="notes-button" onClick={props.onClose} type="button">
+            Close
           </button>
         </div>
       </header>
 
-      <div className="note-editor__meta-card">
-        <div className="note-editor__meta-label">Code</div>
-        <div className="note-editor__meta-value">{generatedCode}</div>
+      <div className="note-editor__meta-grid">
+        <div className="note-editor__meta-card">
+          <div className="note-editor__meta-label">Code</div>
+          <div className="note-editor__meta-value">{generatedCode}</div>
+        </div>
+        <div className="note-editor__meta-card">
+          <div className="note-editor__meta-label">State</div>
+          <div className="note-editor__meta-value note-editor__meta-value--neutral">{statusLabel}</div>
+        </div>
       </div>
 
       {props.error ? <div className="note-editor__error">{props.error}</div> : null}
 
-      <div className="note-editor__grid">
-        <label className="note-editor__field note-editor__field--full">
-          <span className="note-editor__label">Title</span>
-          <input
-            className="notes-input"
-            onChange={(event) => props.onChange({ title: event.target.value })}
-            placeholder="Meeting notes, decision log, next steps..."
-            type="text"
-            value={props.draft.title}
-          />
-        </label>
+      <div className="note-editor__layout">
+        <section className="note-editor__group note-editor__group--summary">
+          <div className="note-editor__group-header">
+            <div className="note-editor__group-title">Summary</div>
+            <div className="note-editor__group-hint">Keep the title scannable. Code updates automatically until you save.</div>
+          </div>
+          <label className="note-editor__field">
+            <span className="note-editor__label">Title</span>
+            <input
+              className="notes-input"
+              onChange={(event) => props.onChange({ title: event.target.value })}
+              placeholder="Meeting notes, decision log, next steps..."
+              type="text"
+              value={props.draft.title}
+            />
+          </label>
+          <label className="note-editor__field">
+            <span className="note-editor__label">Tags</span>
+            <input
+              className="notes-input"
+              onChange={(event) => props.onChange({ tags: event.target.value })}
+              placeholder="research, blocker, follow-up"
+              type="text"
+              value={props.draft.tags}
+            />
+            <span className="note-editor__field-hint">Comma-separated. They stay searchable in the list.</span>
+          </label>
+        </section>
 
-        <label className="note-editor__field">
-          <span className="note-editor__label">Tags CSV</span>
-          <input
-            className="notes-input"
-            onChange={(event) => props.onChange({ tags: event.target.value })}
-            placeholder="research, blocker, follow-up"
-            type="text"
-            value={props.draft.tags}
-          />
-        </label>
+        <section className="note-editor__group note-editor__group--links">
+          <div className="note-editor__group-header">
+            <div className="note-editor__group-title">Links</div>
+            <div className="note-editor__group-hint">Optional task and plan references stay in the current save contract.</div>
+          </div>
+          <div className="note-editor__field-row">
+            <label className="note-editor__field">
+              <span className="note-editor__label">Task code</span>
+              <input
+                className="notes-input"
+                onChange={(event) => props.onChange({ taskCode: event.target.value })}
+                placeholder="TASK-123"
+                type="text"
+                value={props.draft.taskCode}
+              />
+            </label>
 
-        <label className="note-editor__field">
-          <span className="note-editor__label">TaskCode</span>
-          <input
-            className="notes-input"
-            onChange={(event) => props.onChange({ taskCode: event.target.value })}
-            placeholder="TASK-123"
-            type="text"
-            value={props.draft.taskCode}
-          />
-        </label>
+            <label className="note-editor__field">
+              <span className="note-editor__label">Plan code</span>
+              <input
+                className="notes-input"
+                onChange={(event) => props.onChange({ planCode: event.target.value })}
+                placeholder="PLAN-42"
+                type="text"
+                value={props.draft.planCode}
+              />
+            </label>
+          </div>
 
-        <label className="note-editor__field">
-          <span className="note-editor__label">PlanCode</span>
-          <input
-            className="notes-input"
-            onChange={(event) => props.onChange({ planCode: event.target.value })}
-            placeholder="PLAN-42"
-            type="text"
-            value={props.draft.planCode}
-          />
-        </label>
+          <label className="note-editor__toggle">
+            <span>
+              <span className="note-editor__label">Pinned note</span>
+              <span className="note-editor__field-hint">Pinned notes stay at the top of the list.</span>
+            </span>
+            <input
+              checked={props.draft.pinned}
+              onChange={(event) => props.onChange({ pinned: event.target.checked })}
+              type="checkbox"
+            />
+          </label>
+        </section>
 
-        <label className="note-editor__field note-editor__field--checkbox">
-          <span className="note-editor__label">Pinned</span>
-          <input
-            checked={props.draft.pinned}
-            onChange={(event) => props.onChange({ pinned: event.target.checked })}
-            type="checkbox"
-          />
-        </label>
-
-        <label className="note-editor__field note-editor__field--full">
-          <span className="note-editor__label">Body</span>
-          <textarea
-            className="notes-textarea"
-            onChange={(event) => props.onChange({ body: event.target.value })}
-            placeholder="Write the note body here..."
-            value={props.draft.body}
-          />
-        </label>
+        <section className="note-editor__group note-editor__group--body">
+          <div className="note-editor__group-header">
+            <div className="note-editor__group-title">Body</div>
+            <div className="note-editor__group-hint">Use this space for the actual note content.</div>
+          </div>
+          <label className="note-editor__field">
+            <span className="note-editor__label">Note body</span>
+            <textarea
+              className="notes-textarea"
+              onChange={(event) => props.onChange({ body: event.target.value })}
+              placeholder="Write the note body here..."
+              value={props.draft.body}
+            />
+          </label>
+        </section>
       </div>
     </div>
   );
