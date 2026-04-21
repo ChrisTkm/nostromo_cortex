@@ -654,6 +654,11 @@
   gap: 10px;
 }
 
+.drawer-task-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .drawer-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

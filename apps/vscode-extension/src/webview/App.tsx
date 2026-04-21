@@ -160,6 +160,14 @@ export function App() {
     setPromptExpanded(true);
   }
 
+  function handleEditSelectedTask() {
+    if (!selectedNode) {
+      return;
+    }
+
+    vscode.postMessage({ type: "editTask", code: selectedNode.code });
+  }
+
   function handleFocusPlanTask(code: string) {
     setPlanFocusRequest({ code, nonce: Date.now() });
   }
@@ -262,6 +270,7 @@ export function App() {
           setPromptExpanded(false);
         }}
         onClosePromptPanel={() => setPromptExpanded(false)}
+        onEditTask={handleEditSelectedTask}
         onOpenPromptPanel={handleOpenPromptPanel}
         onSelectDependency={handleSelectDependency}
         onTabChange={(tab) => {

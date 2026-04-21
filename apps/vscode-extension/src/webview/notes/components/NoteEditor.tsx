@@ -16,6 +16,11 @@ export function NoteEditor(props: {
   const statusLabel = props.isNew ? "New draft" : props.isDirty ? "Unsaved changes" : "Saved";
   const statusTone = props.isNew ? "note-editor__status--new" : props.isDirty ? "note-editor__status--dirty" : "note-editor__status--saved";
   const remindedLabel = props.draft.remindedAt ? `Reminded at ${formatReminderStamp(props.draft.remindedAt)}` : null;
+  const reminderLabel = props.draft.remindAt ? `Reminder ${formatReminderStamp(props.draft.remindAt)}` : null;
+  const tagCount = props.draft.tags
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean).length;
 
   return (
     <div className="note-editor">
@@ -43,15 +48,34 @@ export function NoteEditor(props: {
         </div>
       </header>
 
-      <div className="note-editor__meta-grid">
-        <div className="note-editor__meta-card">
-          <div className="note-editor__meta-label">Code</div>
-          <div className="note-editor__meta-value">{generatedCode}</div>
+      <div className="note-editor__meta-strip">
+        <div className="note-editor__meta-pill">
+          <span className="note-editor__meta-label">Code</span>
+          <span className="note-editor__meta-value">{generatedCode}</span>
         </div>
-        <div className="note-editor__meta-card">
-          <div className="note-editor__meta-label">State</div>
-          <div className="note-editor__meta-value note-editor__meta-value--neutral">{statusLabel}</div>
+        <div className={`note-editor__meta-pill ${statusTone}`}>
+          <span className="note-editor__meta-label">State</span>
+          <span className="note-editor__meta-value note-editor__meta-value--neutral">{statusLabel}</span>
         </div>
+        <div className="note-editor__meta-pill">
+          <span className="note-editor__meta-label">Tags</span>
+          <span className="note-editor__meta-value note-editor__meta-value--neutral">{tagCount || "None"}</span>
+        </div>
+        {props.draft.pinned ? (
+          <div className="note-editor__meta-pill note-editor__meta-pill--accent">
+            <span className="note-editor__meta-value note-editor__meta-value--neutral">Pinned</span>
+          </div>
+        ) : null}
+        {reminderLabel ? (
+          <div className="note-editor__meta-pill note-editor__meta-pill--accent">
+            <span className="note-editor__meta-value note-editor__meta-value--neutral">{reminderLabel}</span>
+          </div>
+        ) : null}
+        {remindedLabel ? (
+          <div className="note-editor__meta-pill">
+            <span className="note-editor__meta-value note-editor__meta-value--neutral">{remindedLabel}</span>
+          </div>
+        ) : null}
       </div>
 
       {props.error ? <div className="note-editor__error">{props.error}</div> : null}
@@ -72,17 +96,31 @@ export function NoteEditor(props: {
               value={props.draft.title}
             />
           </label>
-          <label className="note-editor__field">
-            <span className="note-editor__label">Tags</span>
-            <input
-              className="notes-input"
-              onChange={(event) => props.onChange({ tags: event.target.value })}
-              placeholder="research, blocker, follow-up"
-              type="text"
-              value={props.draft.tags}
-            />
-            <span className="note-editor__field-hint">Comma-separated. They stay searchable in the list.</span>
-          </label>
+          <div className="note-editor__summary-row">
+            <label className="note-editor__field note-editor__field--dense">
+              <span className="note-editor__label">Tags</span>
+              <input
+                className="notes-input"
+                onChange={(event) => props.onChange({ tags: event.target.value })}
+                placeholder="research, blocker, follow-up"
+                type="text"
+                value={props.draft.tags}
+              />
+              <span className="note-editor__field-hint">Comma-separated and still searchable.</span>
+            </label>
+
+            <label className="note-editor__toggle note-editor__toggle--compact">
+              <span>
+                <span className="note-editor__label">Pinned</span>
+                <span className="note-editor__field-hint">Keep this note at the top.</span>
+              </span>
+              <input
+                checked={props.draft.pinned}
+                onChange={(event) => props.onChange({ pinned: event.target.checked })}
+                type="checkbox"
+              />
+            </label>
+          </div>
         </section>
 
         <section className="note-editor__group note-editor__group--links">
@@ -90,7 +128,7 @@ export function NoteEditor(props: {
             <div className="note-editor__group-title">Links</div>
             <div className="note-editor__group-hint">Optional task and plan references stay in the current save contract.</div>
           </div>
-          <div className="note-editor__field-row">
+          <div className="note-editor__field-row note-editor__field-row--stacked">
             <label className="note-editor__field">
               <span className="note-editor__label">Task code</span>
               <input
@@ -113,18 +151,6 @@ export function NoteEditor(props: {
               />
             </label>
           </div>
-
-          <label className="note-editor__toggle">
-            <span>
-              <span className="note-editor__label">Pinned note</span>
-              <span className="note-editor__field-hint">Pinned notes stay at the top of the list.</span>
-            </span>
-            <input
-              checked={props.draft.pinned}
-              onChange={(event) => props.onChange({ pinned: event.target.checked })}
-              type="checkbox"
-            />
-          </label>
         </section>
 
         <section className="note-editor__group note-editor__group--reminder">
@@ -165,12 +191,12 @@ export function NoteEditor(props: {
         <section className="note-editor__group note-editor__group--body">
           <div className="note-editor__group-header">
             <div className="note-editor__group-title">Body</div>
-            <div className="note-editor__group-hint">Use this space for the actual note content.</div>
+            <div className="note-editor__group-hint">Use the main canvas for the actual note content.</div>
           </div>
-          <label className="note-editor__field">
+          <label className="note-editor__field note-editor__field--body">
             <span className="note-editor__label">Note body</span>
             <textarea
-              className="notes-textarea"
+              className="notes-textarea notes-textarea--body"
               onChange={(event) => props.onChange({ body: event.target.value })}
               placeholder="Write the note body here..."
               value={props.draft.body}
