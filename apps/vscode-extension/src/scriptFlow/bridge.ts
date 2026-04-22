@@ -1,4 +1,4 @@
-import type { ScriptFlowSnapshot } from "./types.js";
+import { isScriptFlowSnapshot, type ScriptFlowSnapshot } from "./types.js";
 
 export type ScriptFlowHostMessage =
   | { type: "scriptFlow:snapshot"; snapshot: ScriptFlowSnapshot }
@@ -61,9 +61,10 @@ export function isScriptFlowHostMessage(value: unknown): value is ScriptFlowHost
 
   const candidate = value as Partial<ScriptFlowHostMessage>;
   return (
-    candidate.type === "scriptFlow:snapshot" ||
+    (candidate.type === "scriptFlow:snapshot" && isScriptFlowSnapshot(candidate.snapshot)) ||
     (candidate.type === "scriptFlow:error" && typeof candidate.error === "string") ||
-    candidate.type === "scriptFlow:unsupported"
+    (candidate.type === "scriptFlow:unsupported" &&
+      (candidate.language === undefined || typeof candidate.language === "string"))
   );
 }
 

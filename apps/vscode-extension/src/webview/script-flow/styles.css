@@ -110,6 +110,39 @@
   font-weight: 600;
 }
 
+.script-flow-detail-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 78%, transparent);
+}
+
+.script-flow-detail-card__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-detail-card__title {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.script-flow-detail-card__text {
+  margin-top: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.script-flow-observations {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.6;
+}
+
 .script-flow-pill {
   display: inline-flex;
   align-items: center;
@@ -123,11 +156,7 @@
 .script-flow-panel {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-}
-
-.script-flow-app--loading .script-flow-state-card {
-  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 42%, transparent);
+  gap: 14px;
 }
 
 .script-flow-app--unsupported .script-flow-state-card {
@@ -161,67 +190,126 @@
   background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
 }
 
-.script-flow-button--primary {
-  background: color-mix(in srgb, var(--vscode-button-background) 88%, transparent);
-  color: var(--vscode-button-foreground);
-  border-color: transparent;
+.script-flow-canvas {
+  min-height: 640px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent), transparent 28%),
+    color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%);
 }
 
-.script-flow-button--primary:hover {
-  background: var(--vscode-button-hoverBackground);
+.script-flow-canvas .react-flow__renderer,
+.script-flow-canvas .react-flow__pane {
+  cursor: grab;
 }
 
-.script-flow-node-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 18px;
+.script-flow-canvas .react-flow__controls,
+.script-flow-canvas .react-flow__minimap {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 }
 
-.script-flow-node {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
+.script-flow-canvas .react-flow__controls-button {
+  background: transparent;
   color: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.script-flow-node:hover {
-  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 44%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 18%, transparent);
+.script-flow-canvas .react-flow__attribution {
+  display: none;
 }
 
-.script-flow-node--selected {
-  border-color: color-mix(in srgb, var(--vscode-button-background) 64%, transparent);
-  background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+.script-flow-node-card {
+  min-width: 226px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
-.script-flow-node__kind {
+.script-flow-node-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.script-flow-node-card__kind,
+.script-flow-node-card__range {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 84%, transparent);
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
 }
 
-.script-flow-node__label {
-  font-size: 13px;
-  line-height: 1.4;
+.script-flow-node-card__label {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 600;
 }
 
-.script-flow-json {
-  margin: 18px 0 0;
-  padding: 16px;
-  border-radius: 16px;
-  overflow: auto;
-  background: color-mix(in srgb, var(--vscode-textCodeBlock-background) 86%, #08111d 14%);
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
-  color: var(--vscode-editor-foreground);
-  font: 12px/1.55 var(--vscode-editor-font-family), monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
+.script-flow-node-card__range {
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+
+.script-flow-node-card__accent {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.script-flow-node-card__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--vscode-editor-background) 40%, black 60%);
+  background: currentColor;
+}
+
+.script-flow-node-card--selected {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+}
+
+.script-flow-node-card--entry {
+  color: #22d3ee;
+}
+
+.script-flow-node-card--function {
+  color: #60a5fa;
+}
+
+.script-flow-node-card--branch {
+  color: #facc15;
+}
+
+.script-flow-node-card--loop {
+  color: #a855f7;
+}
+
+.script-flow-node-card--return {
+  color: #22c55e;
+}
+
+.script-flow-node-card--tryCatch {
+  color: #f97316;
+}
+
+.script-flow-node-card--call {
+  color: #94a3b8;
+}
+
+.script-flow-node-card--cte,
+.script-flow-node-card--select,
+.script-flow-node-card--join,
+.script-flow-node-card--subquery {
+  color: #64748b;
 }
 
 .script-flow-boundary {

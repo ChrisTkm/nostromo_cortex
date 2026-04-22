@@ -25,6 +25,7 @@ const {
   showInformationMessageMock,
   showInputBoxMock,
   showQuickPickMock,
+  showTextDocumentMock,
   showWarningMessageMock,
   treeRefreshMock
 } = vi.hoisted(() => {
@@ -63,6 +64,7 @@ const {
   const showQuickPickMock = vi.fn();
   const showInformationMessageMock = vi.fn();
   const showWarningMessageMock = vi.fn();
+  const showTextDocumentMock = vi.fn();
   const createStatusBarItemMock = vi.fn(() => ({
     text: "",
     tooltip: "",
@@ -150,6 +152,7 @@ const {
     showInformationMessageMock,
     showInputBoxMock,
     showQuickPickMock,
+    showTextDocumentMock,
     showWarningMessageMock,
     treeRefreshMock
   };
@@ -182,6 +185,7 @@ vi.mock("vscode", () => ({
     showInputBox: showInputBoxMock,
     showQuickPick: showQuickPickMock,
     showInformationMessage: showInformationMessageMock,
+    showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: vi.fn(),
     createOutputChannel: vi.fn(() => ({
@@ -193,6 +197,18 @@ vi.mock("vscode", () => ({
   commands: {
     registerCommand: registerCommandMock,
     executeCommand: executeCommandMock
+  },
+  Position: class Position {
+    constructor(
+      public readonly line: number,
+      public readonly character: number
+    ) {}
+  },
+  Range: class Range {
+    constructor(
+      public readonly start: { line: number; character: number },
+      public readonly end: { line: number; character: number }
+    ) {}
   }
 }));
 
@@ -301,14 +317,27 @@ function createContext() {
 describe("activate notes commands", () => {
   beforeEach(() => {
     const scriptFlowFixturePath = "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts";
+    const scriptFlowFixtureSource = [
+      "export function accumulate(limit: number) {",
+      "  let total = 0;",
+      "",
+      "  if (limit <= 0) {",
+      "    return total;",
+      "  }",
+      "",
+      "  for (let index = 0; index < limit; index += 1) {",
+      "    total += index;",
+      "  }",
+      "",
+      "  return total;",
+      "}"
+    ].join("\n");
     activeTextEditorRef.current = {
       document: {
         fileName: scriptFlowFixturePath,
         uri: { fsPath: scriptFlowFixturePath },
         languageId: "typescript",
-        getText: vi.fn((selection?: { isEmpty?: boolean }) =>
-          selection && !selection.isEmpty ? "const value = 1;" : "export const value = 1;"
-        )
+        getText: vi.fn(() => scriptFlowFixtureSource)
       },
       selection: {
         isEmpty: false,
@@ -549,7 +578,7 @@ describe("activate notes commands", () => {
       type: "scriptFlow:snapshot",
       snapshot: expect.objectContaining({
         metadata: expect.objectContaining({
-          path: "fixtures/script-flow/sample.ts",
+          path: "C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts",
           language: "typescript"
         }),
         nodes: expect.arrayContaining([expect.objectContaining({ id: "fn:accumulate", kind: "function" })]),
@@ -560,7 +589,7 @@ describe("activate notes commands", () => {
       "script_flow_open",
       expect.objectContaining({
         lang: "typescript",
-        parseMs: 0
+        parseMs: expect.any(Number)
       })
     );
   });
@@ -700,6 +729,15 @@ describe("activate notes commands", () => {
       expect.objectContaining({
         nodeId: "fn:accumulate",
         kind: "function"
+      })
+    );
+    expect(showTextDocumentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts" }),
+      expect.objectContaining({
+        selection: expect.objectContaining({
+          start: expect.objectContaining({ line: 0, character: 0 }),
+          end: expect.objectContaining({ line: 12, character: 1 })
+        })
       })
     );
   });

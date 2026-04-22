@@ -8,14 +8,13 @@ import {
   type TaskFilter,
   type TaskRecord
 } from "@cortex/core";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { ExtensionTaskService } from "./service.js";
+import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFlow/analyzers/index.js";
 import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
-import { isScriptFlowSnapshot, type ScriptFlowLanguage, type ScriptFlowSnapshot } from "./scriptFlow/types.js";
+import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
@@ -45,19 +44,11 @@ type FilterCatalog = {
   severities: string[];
 };
 type ScriptFlowDelivery =
-  | { type: "snapshot"; snapshot: ScriptFlowSnapshot }
+  | { type: "snapshot"; snapshot: ScriptFlowSnapshot; parseMs: number; documentUri: vscode.Uri }
   | { type: "error"; error: string }
   | { type: "unsupported"; language?: string };
 
 let activeService: ExtensionTaskService | undefined;
-const SCRIPT_FLOW_LANGUAGE_BY_EXTENSION: Record<string, ScriptFlowLanguage> = {
-  ".py": "python",
-  ".sql": "sql",
-  ".ts": "typescript",
-  ".tsx": "typescript"
-};
-const SCRIPT_FLOW_FIXTURE_RELATIVE_PATH = path.join("fixtures", "script-flow", "sample.ts");
-const SCRIPT_FLOW_FIXTURE_SNAPSHOT_RELATIVE_PATH = path.join("fixtures", "script-flow", "sample.ts.snapshot.json");
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -100,6 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let scriptFlowPanel: vscode.WebviewPanel | undefined;
   let scriptFlowPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
+  let currentScriptFlowDocumentUri: vscode.Uri | undefined;
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
@@ -233,19 +225,21 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     currentScriptFlowSnapshot = undefined;
-    const delivery = await buildScriptFlowDelivery(request, context.extensionUri);
+    currentScriptFlowDocumentUri = undefined;
+    const delivery = await buildScriptFlowDelivery(request);
     if (scriptFlowPanel !== panel) {
       return;
     }
 
     if (delivery.type === "snapshot") {
       currentScriptFlowSnapshot = delivery.snapshot;
+      currentScriptFlowDocumentUri = delivery.documentUri;
       await sendSnapshot(panel.webview, delivery.snapshot);
       await service.recordInteraction("script_flow_open", {
         lang: delivery.snapshot.metadata.language,
         nodeCount: delivery.snapshot.nodes.length,
         edgeCount: delivery.snapshot.edges.length,
-        parseMs: 0
+        parseMs: delivery.parseMs
       });
       return;
     }
@@ -373,6 +367,7 @@ export async function activate(context: vscode.ExtensionContext) {
       scriptFlowPanel = undefined;
       scriptFlowPanelReady = false;
       currentScriptFlowSnapshot = undefined;
+      currentScriptFlowDocumentUri = undefined;
     });
     scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
       if (!isScriptFlowWebviewMessage(message)) {
@@ -395,6 +390,15 @@ export async function activate(context: vscode.ExtensionContext) {
         await service.recordInteraction("script_flow_node_select", {
           nodeId: selectedNode.id,
           kind: selectedNode.kind
+        });
+        if (!currentScriptFlowDocumentUri || !selectedNode.range) {
+          return;
+        }
+        await vscode.window.showTextDocument(currentScriptFlowDocumentUri, {
+          selection: new vscode.Range(
+            new vscode.Position(selectedNode.range.startLine - 1, selectedNode.range.startCol - 1),
+            new vscode.Position(selectedNode.range.endLine - 1, selectedNode.range.endCol - 1)
+          )
         });
       }
     });
@@ -1078,10 +1082,7 @@ async function pickConnectionSettings(
   };
 }
 
-async function buildScriptFlowDelivery(
-  request: ScriptFlowRequest,
-  extensionUri: vscode.Uri
-): Promise<ScriptFlowDelivery> {
+async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<ScriptFlowDelivery> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return {
@@ -1099,18 +1100,31 @@ async function buildScriptFlowDelivery(
     };
   }
 
-  if (normalizeFsPath(documentPath) !== normalizeFsPath(path.join(extensionUri.fsPath, SCRIPT_FLOW_FIXTURE_RELATIVE_PATH))) {
+  if (!language) {
     return {
       type: "unsupported",
-      language: language ?? editor.document.languageId
+      language: editor.document.languageId
     };
   }
 
   try {
-    const snapshot = await loadScriptFlowFixtureSnapshot(extensionUri);
+    const source = editor.document.getText();
+    const startedAt = Date.now();
+    const snapshot = analyzeScriptFlowDocument({
+      documentPath,
+      source
+    });
+    if (!snapshot) {
+      return {
+        type: "unsupported",
+        language
+      };
+    }
     return {
       type: "snapshot",
-      snapshot
+      snapshot,
+      parseMs: Date.now() - startedAt,
+      documentUri: editor.document.uri
     };
   } catch (error) {
     return {
@@ -1118,24 +1132,6 @@ async function buildScriptFlowDelivery(
       error: String(error)
     };
   }
-}
-
-async function loadScriptFlowFixtureSnapshot(extensionUri: vscode.Uri): Promise<ScriptFlowSnapshot> {
-  const snapshotPath = path.join(extensionUri.fsPath, SCRIPT_FLOW_FIXTURE_SNAPSHOT_RELATIVE_PATH);
-  const raw = await fs.readFile(snapshotPath, "utf8");
-  const parsed: unknown = JSON.parse(raw);
-  if (!isScriptFlowSnapshot(parsed)) {
-    throw new Error(`Invalid Script Flow fixture snapshot: ${snapshotPath}`);
-  }
-  return parsed;
-}
-
-function resolveScriptFlowLanguage(fsPath: string): ScriptFlowLanguage | undefined {
-  return SCRIPT_FLOW_LANGUAGE_BY_EXTENSION[path.extname(fsPath).toLowerCase()];
-}
-
-function normalizeFsPath(fsPath: string) {
-  return path.normalize(fsPath).replace(/\\/g, "/").toLowerCase();
 }
 
 function formatCollectionMessage(

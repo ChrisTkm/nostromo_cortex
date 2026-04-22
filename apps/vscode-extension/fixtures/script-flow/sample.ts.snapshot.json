@@ -7,7 +7,7 @@
   },
   "nodes": [
     {
-      "id": "entry:sample",
+      "id": "entry:sample-ts",
       "kind": "entry",
       "label": "sample.ts",
       "range": {
@@ -29,9 +29,9 @@
       }
     },
     {
-      "id": "branch:limit-check",
+      "id": "branch:if-limit-0",
       "kind": "branch",
-      "label": "limit <= 0",
+      "label": "if limit <= 0",
       "range": {
         "startLine": 4,
         "startCol": 3,
@@ -43,7 +43,7 @@
       }
     },
     {
-      "id": "return:early",
+      "id": "return:return-total",
       "kind": "return",
       "label": "return total",
       "range": {
@@ -54,9 +54,9 @@
       }
     },
     {
-      "id": "loop:for-index",
+      "id": "loop:for-index-limit",
       "kind": "loop",
-      "label": "for (index < limit)",
+      "label": "for index < limit",
       "range": {
         "startLine": 8,
         "startCol": 3,
@@ -68,7 +68,7 @@
       }
     },
     {
-      "id": "return:final",
+      "id": "return:return-total-2",
       "kind": "return",
       "label": "return total",
       "range": {
@@ -81,28 +81,30 @@
   ],
   "edges": [
     {
-      "from": "entry:sample",
+      "from": "entry:sample-ts",
       "to": "fn:accumulate",
       "kind": "flow"
     },
     {
       "from": "fn:accumulate",
-      "to": "branch:limit-check",
+      "to": "branch:if-limit-0",
       "kind": "flow"
     },
     {
-      "from": "branch:limit-check",
-      "to": "return:early",
-      "kind": "flow"
+      "from": "branch:if-limit-0",
+      "to": "return:return-total",
+      "kind": "flow",
+      "label": "then"
     },
     {
-      "from": "branch:limit-check",
-      "to": "loop:for-index",
-      "kind": "flow"
+      "from": "branch:if-limit-0",
+      "to": "loop:for-index-limit",
+      "kind": "flow",
+      "label": "else"
     },
     {
-      "from": "loop:for-index",
-      "to": "return:final",
+      "from": "loop:for-index-limit",
+      "to": "return:return-total-2",
       "kind": "flow"
     }
   ],
@@ -110,23 +112,23 @@
     "entryPoints": [
       "fn:accumulate"
     ],
-    "summary": "Single function with one guard branch, one counting loop, and two return exits.",
+    "summary": "TypeScript flow with 1 function, 1 decision, 1 loop, and 2 returns.",
     "decisions": [
       {
-        "nodeId": "branch:limit-check",
-        "label": "limit <= 0",
+        "nodeId": "branch:if-limit-0",
+        "label": "if limit <= 0",
         "branches": 2
       }
     ],
     "loops": [
       {
-        "nodeId": "loop:for-index",
-        "label": "for (index < limit)",
+        "nodeId": "loop:for-index-limit",
+        "label": "for index < limit",
         "kind": "for"
       }
     ],
     "observations": [
-      "Early return short-circuits non-positive input before entering the loop."
+      "2 return exits detected."
     ]
   }
 }

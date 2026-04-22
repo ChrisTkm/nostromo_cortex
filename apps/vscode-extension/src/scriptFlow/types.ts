@@ -43,6 +43,7 @@ export interface ScriptFlowEdge {
   from: string;
   to: string;
   kind: ScriptFlowEdgeKind;
+  label?: string;
 }
 
 export interface ScriptFlowAnalysis {
@@ -87,7 +88,13 @@ export function isScriptFlowSnapshot(value: unknown): value is ScriptFlowSnapsho
     Array.isArray(candidate.nodes) &&
     candidate.nodes.every((node) => typeof node?.id === "string" && isScriptFlowNodeKind(node?.kind) && typeof node?.label === "string") &&
     Array.isArray(candidate.edges) &&
-    candidate.edges.every((edge) => typeof edge?.from === "string" && typeof edge?.to === "string" && isScriptFlowEdgeKind(edge?.kind)) &&
+    candidate.edges.every(
+      (edge) =>
+        typeof edge?.from === "string" &&
+        typeof edge?.to === "string" &&
+        isScriptFlowEdgeKind(edge?.kind) &&
+        (edge.label === undefined || typeof edge.label === "string")
+    ) &&
     Array.isArray(candidate.analysis?.entryPoints) &&
     typeof candidate.analysis?.summary === "string" &&
     Array.isArray(candidate.analysis?.decisions) &&
