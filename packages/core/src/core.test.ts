@@ -658,6 +658,45 @@ describe("shared mongo client support", () => {
       { key: { status: 1 }, name: "status_idx" }
     ]);
   });
+
+  it("drops legacy task indexes before recreating the supported set", async () => {
+    const taskClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const taskStore = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient: taskClient
+    });
+
+    await taskStore.ensureIndexes();
+
+    expect(taskClient.collectionApi.dropIndex.mock.calls).toEqual([
+      ["tasks_code_unique"],
+      ["tasks_status_created_at"],
+      ["tasks_tags"],
+      ["tasks_plan_code"]
+    ]);
+    expect(taskClient.collectionApi.dropIndex.mock.invocationCallOrder[3]).toBeLessThan(
+      taskClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    );
+  });
+
+  it("drops legacy note indexes before recreating the supported set", async () => {
+    const noteClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const noteStore = new MongoNoteStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "notes",
+      sharedClient: noteClient
+    });
+
+    await noteStore.ensureIndexes();
+
+    expect(noteClient.collectionApi.dropIndex.mock.calls).toEqual([["notes_created_at"], ["notes_tags"]]);
+    expect(noteClient.collectionApi.dropIndex.mock.invocationCallOrder[1]).toBeLessThan(
+      noteClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    );
+  });
 });
 
 function createSharedClient(items: unknown[]) {
@@ -668,6 +707,7 @@ function createSharedClient(items: unknown[]) {
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
   const updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0 });
   const deleteOne = vi.fn().mockResolvedValue({ deletedCount: 0 });
+  const dropIndex = vi.fn().mockResolvedValue(undefined);
   const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
     sort,
@@ -678,6 +718,7 @@ function createSharedClient(items: unknown[]) {
     bulkWrite,
     createIndexes,
     deleteOne,
+    dropIndex,
     find,
     findOne,
     updateOne
@@ -694,6 +735,7 @@ function createSharedClient(items: unknown[]) {
       bulkWrite,
       createIndexes,
       deleteOne,
+      dropIndex,
       find,
       findOne,
       sort,

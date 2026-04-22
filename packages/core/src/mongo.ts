@@ -1,4 +1,4 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { MongoClient, ObjectId, type Collection } from "mongodb";
 
 import { normalizeActionPlan, normalizeNote, normalizeTaskDocument } from "./schema.js";
 import type {
@@ -34,6 +34,9 @@ export interface MongoNoteStoreOptions {
 }
 
 type MongoClientLike = Pick<MongoClient, "connect" | "db" | "close">;
+
+const LEGACY_TASK_INDEX_NAMES = ["tasks_code_unique", "tasks_status_created_at", "tasks_tags", "tasks_plan_code"] as const;
+const LEGACY_NOTE_INDEX_NAMES = ["notes_created_at", "notes_tags"] as const;
 
 export class SharedMongoClient {
   readonly mongoUrl: string;
@@ -130,6 +133,7 @@ export class MongoTaskStore implements TaskStore {
 
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
+    await dropLegacyIndexes(collection, LEGACY_TASK_INDEX_NAMES);
     await collection.createIndexes([
       { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
@@ -285,6 +289,7 @@ export class MongoNoteStore implements NoteStore {
 
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
+    await dropLegacyIndexes(collection, LEGACY_NOTE_INDEX_NAMES);
     await collection.createIndexes([
       { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
@@ -311,6 +316,24 @@ export function createMongoActionPlanStore(options: MongoActionPlanStoreOptions)
 
 export function createMongoNoteStore(options: MongoNoteStoreOptions): MongoNoteStore {
   return new MongoNoteStore(options);
+}
+
+async function dropLegacyIndexes(collection: Collection, names: readonly string[]): Promise<void> {
+  for (const name of names) {
+    try {
+      await collection.dropIndex(name);
+    } catch (error: unknown) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        ("codeName" in error || "code" in error) &&
+        ((error as { codeName?: string }).codeName === "IndexNotFound" || (error as { code?: number }).code === 26)
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 function collectValidTasks(items: unknown[]): TaskRecord[] {
