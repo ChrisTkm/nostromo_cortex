@@ -741,4 +741,15 @@ describe("activate notes commands", () => {
       })
     );
   });
+
+  it("records drawer click telemetry from the Script Flow webview", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlow");
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "scriptFlow:drawerClick", section: "decisions" });
+
+    expect(recordInteractionMock).toHaveBeenCalledWith("script_flow_drawer_click", {
+      section: "decisions"
+    });
+  });
 });

@@ -382,6 +382,12 @@ export async function activate(context: vscode.ExtensionContext) {
         await openScriptFlowPanel(pendingScriptFlowRequest, { forceReload: true });
         return;
       }
+      if (message.type === "scriptFlow:drawerClick") {
+        await service.recordInteraction("script_flow_drawer_click", {
+          section: message.section
+        });
+        return;
+      }
       if (message.type === "scriptFlow:selectNode") {
         const selectedNode = currentScriptFlowSnapshot?.nodes.find((node) => node.id === message.nodeId);
         if (!selectedNode) {

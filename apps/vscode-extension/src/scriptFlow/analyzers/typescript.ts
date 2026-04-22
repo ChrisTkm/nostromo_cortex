@@ -38,6 +38,7 @@ class TypeScriptFlowAnalyzer {
   private readonly decisions: ScriptFlowAnalysis["decisions"] = [];
   private readonly loops: ScriptFlowAnalysis["loops"] = [];
   private readonly entryPoints: string[] = [];
+  private readonly observations = new Set<string>();
   private readonly edgeKeys = new Set<string>();
   private readonly idCounters = new Map<string, number>();
 
@@ -81,31 +82,28 @@ class TypeScriptFlowAnalyzer {
   }
 
   private buildAnalysis(): ScriptFlowAnalysis {
+    const fileName = path.basename(this.documentPath);
     const functionCount = this.nodes.filter((node) => node.kind === "function").length;
-    const returnCount = this.nodes.filter((node) => node.kind === "return").length;
-    const callCount = this.nodes.filter((node) => node.kind === "call").length;
-    const observations: string[] = [];
+    const entryPointCount = [...new Set(this.entryPoints)].length;
+    const summaryLines = [
+      `${fileName} exposes ${entryPointCount} entry point${entryPointCount === 1 ? "" : "s"} and ${functionCount} function${
+        functionCount === 1 ? "" : "s"
+      }.`,
+      `${this.decisions.length} decision${this.decisions.length === 1 ? "" : "s"} and ${this.loops.length} loop${
+        this.loops.length === 1 ? "" : "s"
+      } shape the current flow.`
+    ];
 
-    if (returnCount > 1) {
-      observations.push(`${returnCount} return exits detected.`);
-    }
-    if (callCount > 0) {
-      observations.push(`${callCount} direct call sites included in the flow.`);
-    }
     if (functionCount === 0 && this.nodes.length > 1) {
-      observations.push("No top-level function declarations were detected in this file.");
+      this.observations.add("No top-level function flow was detected in this file.");
     }
 
     return {
       entryPoints: [...new Set(this.entryPoints)],
-      summary: `TypeScript flow with ${functionCount} function${functionCount === 1 ? "" : "s"}, ${this.decisions.length} decision${
-        this.decisions.length === 1 ? "" : "s"
-      }, ${this.loops.length} loop${this.loops.length === 1 ? "" : "s"}, and ${returnCount} return${
-        returnCount === 1 ? "" : "s"
-      }.`,
+      summary: summaryLines.join("\n"),
       decisions: this.decisions,
       loops: this.loops,
-      observations
+      observations: [...this.observations]
     };
   }
 
@@ -143,7 +141,7 @@ class TypeScriptFlowAnalyzer {
 
       const name = this.readPropertyName(member.name);
       const qualifiedName = className ? `${className}.${name}` : name;
-      segments.push(this.parseFunctionLike(member, member.body, qualifiedName, member.parameters, true));
+      segments.push(this.parseFunctionLike(member, member.body, qualifiedName, member.parameters, false));
     }
 
     return this.sequenceSegments(segments);
@@ -185,6 +183,9 @@ class TypeScriptFlowAnalyzer {
     const functionId = this.createNode("function", `${displayName}(${this.formatParameters(parameters)})`, anchorNode, displayName);
     if (isEntryPoint) {
       this.entryPoints.push(functionId);
+    }
+    if (!this.hasExplicitReturn(body)) {
+      this.observations.add(`Function ${displayName} has no explicit return.`);
     }
 
     const bodySegment = this.parseStatementList(body.statements);
@@ -246,12 +247,13 @@ class TypeScriptFlowAnalyzer {
   private parseIfStatement(statement: ts.IfStatement): FlowSegment {
     const label = `if ${this.formatExpression(statement.expression)}`;
     const branchId = this.createNode("branch", label, statement, label);
-    this.setNodeMeta(branchId, { branches: statement.elseStatement ? 2 : 2 });
+    const branchCount = statement.elseStatement ? 2 : 1;
+    this.setNodeMeta(branchId, { branches: branchCount });
 
     this.decisions.push({
       nodeId: branchId,
       label,
-      branches: statement.elseStatement ? 2 : 2
+      branches: branchCount
     });
 
     const thenSegment = this.parseNestedStatement(statement.thenStatement);
@@ -351,6 +353,10 @@ class TypeScriptFlowAnalyzer {
     const trySegment = this.parseStatementList(statement.tryBlock.statements);
     const catchSegment = statement.catchClause ? this.parseStatementList(statement.catchClause.block.statements) : EMPTY_SEGMENT;
     const finallySegment = statement.finallyBlock ? this.parseStatementList(statement.finallyBlock.statements) : EMPTY_SEGMENT;
+
+    if (statement.catchClause && statement.catchClause.block.statements.length === 0) {
+      this.observations.add(`Catch block is empty near line ${this.toRange(statement.catchClause).startLine}.`);
+    }
 
     if (trySegment.entries.length > 0) {
       this.connect([{ id: tryId, label: "try" }], trySegment.entries);
@@ -549,15 +555,46 @@ class TypeScriptFlowAnalyzer {
       return "for";
     }
     if (ts.isForOfStatement(statement)) {
-      return "forOf";
+      return "for-of";
     }
     if (ts.isForInStatement(statement)) {
-      return "forIn";
+      return "for-in";
     }
     if (ts.isWhileStatement(statement)) {
       return "while";
     }
     return "do";
+  }
+
+  private hasExplicitReturn(body: ts.Block) {
+    let found = false;
+    const visit = (node: ts.Node) => {
+      if (found) {
+        return;
+      }
+      if (
+        ts.isFunctionDeclaration(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isFunctionExpression(node)
+      ) {
+        return;
+      }
+      if (ts.isReturnStatement(node)) {
+        found = true;
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    for (const statement of body.statements) {
+      visit(statement);
+      if (found) {
+        break;
+      }
+    }
+
+    return found;
   }
 
   private extractImportantCall(statement: ts.Statement) {

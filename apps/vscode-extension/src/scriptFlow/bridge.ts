@@ -8,6 +8,7 @@ export type ScriptFlowHostMessage =
 export type ScriptFlowWebviewMessage =
   | { type: "ready" }
   | { type: "scriptFlow:selectNode"; nodeId: string }
+  | { type: "scriptFlow:drawerClick"; section: string }
   | { type: "scriptFlow:refresh" };
 
 type MessageTarget = {
@@ -48,6 +49,13 @@ export function sendSelectNode(target: MessageTarget, nodeId: string) {
   } satisfies ScriptFlowWebviewMessage);
 }
 
+export function sendDrawerClick(target: MessageTarget, section: string) {
+  return target.postMessage({
+    type: "scriptFlow:drawerClick",
+    section
+  } satisfies ScriptFlowWebviewMessage);
+}
+
 export function sendRefresh(target: MessageTarget) {
   return target.postMessage({
     type: "scriptFlow:refresh"
@@ -77,6 +85,7 @@ export function isScriptFlowWebviewMessage(value: unknown): value is ScriptFlowW
   return (
     candidate.type === "ready" ||
     (candidate.type === "scriptFlow:selectNode" && typeof candidate.nodeId === "string") ||
+    (candidate.type === "scriptFlow:drawerClick" && typeof candidate.section === "string") ||
     candidate.type === "scriptFlow:refresh"
   );
 }

@@ -7,12 +7,21 @@ import {
   MiniMap,
   ReactFlow,
   type Edge,
-  type Node
+  type Node,
+  type ReactFlowInstance
 } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 
-import { isScriptFlowHostMessage, sendReady, sendRefresh, sendSelectNode, type ScriptFlowHostMessage } from "../../scriptFlow/bridge.js";
+import {
+  isScriptFlowHostMessage,
+  sendDrawerClick,
+  sendReady,
+  sendRefresh,
+  sendSelectNode,
+  type ScriptFlowHostMessage
+} from "../../scriptFlow/bridge.js";
 import { isScriptFlowSnapshot, type ScriptFlowNode, type ScriptFlowNodeKind, type ScriptFlowSnapshot } from "../../scriptFlow/types.js";
+import { AnalysisDrawer } from "./components/AnalysisDrawer";
 import { FlowNode, type FlowNodeData } from "./components/FlowNode";
 
 declare global {
@@ -28,6 +37,8 @@ declare global {
 const vscode = window.acquireVsCodeApi();
 const nodeTypes = { scriptFlow: FlowNode };
 const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = { nodes: [], edges: [] };
+const NODE_WIDTH = 226;
+const NODE_HEIGHT = 100;
 
 const KIND_LABELS: Record<ScriptFlowNodeKind, string> = {
   entry: "Entry",
@@ -81,6 +92,9 @@ export function ScriptFlowApp() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     state.status === "snapshot" ? getPreferredNodeId(state.snapshot) : null
   );
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
+  const [isNarrowLayout, setIsNarrowLayout] = useState(() => window.innerWidth < 800);
+  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(() => window.innerWidth < 800);
 
   const flow = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -90,6 +104,14 @@ export function ScriptFlowApp() {
     return buildFlowModel(state.snapshot, selectedNodeId);
   }, [selectedNodeId, state]);
 
+  const nodeLabels = useMemo(() => {
+    if (state.status !== "snapshot") {
+      return new Map<string, string>();
+    }
+
+    return new Map(state.snapshot.nodes.map((node) => [node.id, node.label]));
+  }, [state]);
+
   const selectedNode =
     state.status === "snapshot"
       ? state.snapshot.nodes.find((node) => node.id === selectedNodeId) ??
@@ -97,6 +119,19 @@ export function ScriptFlowApp() {
         state.snapshot.nodes[0] ??
         null
       : null;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 800px)");
+    const syncLayout = (matches: boolean) => {
+      setIsNarrowLayout(matches);
+      setIsDrawerCollapsed(matches);
+    };
+
+    syncLayout(mediaQuery.matches);
+    const onChange = (event: MediaQueryListEvent) => syncLayout(event.matches);
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     function onMessage(event: MessageEvent<unknown>) {
@@ -116,6 +151,22 @@ export function ScriptFlowApp() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  useEffect(() => {
+    if (state.status !== "snapshot" || !flowInstance || !selectedNodeId) {
+      return;
+    }
+
+    const target = flow.nodes.find((node) => node.id === selectedNodeId);
+    if (!target) {
+      return;
+    }
+
+    flowInstance.setCenter(target.position.x + NODE_WIDTH / 2, target.position.y + NODE_HEIGHT / 2, {
+      zoom: isNarrowLayout ? 0.9 : 1,
+      duration: 220
+    });
+  }, [flow.nodes, flowInstance, isNarrowLayout, selectedNodeId, state.status]);
+
   return (
     <div className={`script-flow-app script-flow-app--${state.status}`}>
       <header className="script-flow-header">
@@ -131,37 +182,30 @@ export function ScriptFlowApp() {
       </header>
 
       <main className="script-flow-surface">
-        <section className="script-flow-state-card">
-          <div className="script-flow-state-card__label">{formatStatusLabel(state.status)}</div>
-          <h2 className="script-flow-state-card__title">{state.title}</h2>
-          <p className="script-flow-state-card__text">{state.description}</p>
-
+        <section className="script-flow-panel">
+          <div className="script-flow-panel__eyebrow">Bridge output</div>
           {state.status === "snapshot" ? (
-            <dl className="script-flow-meta">
-              <div className="script-flow-meta__item">
-                <dt>File</dt>
-                <dd>{state.snapshot.metadata.path}</dd>
-              </div>
-              <div className="script-flow-meta__item">
-                <dt>Language</dt>
-                <dd>{state.snapshot.metadata.language}</dd>
-              </div>
-              <div className="script-flow-meta__item">
-                <dt>Hash</dt>
-                <dd>{state.snapshot.metadata.hash}</dd>
-              </div>
-              <div className="script-flow-meta__item">
-                <dt>Parsed</dt>
-                <dd>{new Date(state.snapshot.metadata.parsedAt).toLocaleString()}</dd>
-              </div>
-            </dl>
-          ) : null}
-
-          {state.status === "snapshot" ? (
-            <div className="script-flow-selection">
-              <div className="script-flow-selection__title">Analysis shell</div>
-              <div className="script-flow-selection__text">{state.snapshot.analysis.summary || "Analysis remains intentionally light for the MVP."}</div>
-              <div className="script-flow-selection__text">{state.snapshot.nodes.length} nodes and {state.snapshot.edges.length} edges are currently rendered.</div>
+            <>
+              <h3 className="script-flow-panel__title">Live TypeScript flow</h3>
+              <p className="script-flow-panel__text">Click a node or drawer item to jump to code and keep the flow centered.</p>
+              <dl className="script-flow-meta">
+                <div className="script-flow-meta__item">
+                  <dt>File</dt>
+                  <dd>{state.snapshot.metadata.path}</dd>
+                </div>
+                <div className="script-flow-meta__item">
+                  <dt>Language</dt>
+                  <dd>{state.snapshot.metadata.language}</dd>
+                </div>
+                <div className="script-flow-meta__item">
+                  <dt>Nodes</dt>
+                  <dd>{state.snapshot.nodes.length}</dd>
+                </div>
+                <div className="script-flow-meta__item">
+                  <dt>Edges</dt>
+                  <dd>{state.snapshot.edges.length}</dd>
+                </div>
+              </dl>
               {selectedNode ? (
                 <div className="script-flow-detail-card">
                   <div className="script-flow-detail-card__eyebrow">{KIND_LABELS[selectedNode.kind]}</div>
@@ -169,33 +213,6 @@ export function ScriptFlowApp() {
                   {selectedNode.range ? <div className="script-flow-detail-card__text">{formatRangeLabel(selectedNode)}</div> : null}
                 </div>
               ) : null}
-              {state.snapshot.analysis.observations.length > 0 ? (
-                <ul className="script-flow-observations">
-                  {state.snapshot.analysis.observations.map((observation) => (
-                    <li key={observation}>{observation}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-
-          {state.status === "unsupported" ? (
-            <div className="script-flow-pill-row">
-              {["typescript", "python", "sql"].map((language) => (
-                <span className="script-flow-pill" key={language}>
-                  {language}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="script-flow-panel">
-          <div className="script-flow-panel__eyebrow">Bridge output</div>
-          {state.status === "snapshot" ? (
-            <>
-              <h3 className="script-flow-panel__title">Live TypeScript flow</h3>
-              <p className="script-flow-panel__text">Click any node to jump back to its range in the editor.</p>
               <div className="script-flow-canvas">
                 <ReactFlow
                   fitView
@@ -203,6 +220,7 @@ export function ScriptFlowApp() {
                   nodes={flow.nodes}
                   nodeTypes={nodeTypes}
                   nodesDraggable={false}
+                  onInit={setFlowInstance}
                   onNodeClick={(_, node) => {
                     setSelectedNodeId(node.id);
                     sendSelectNode(vscode, node.id);
@@ -219,7 +237,7 @@ export function ScriptFlowApp() {
           {state.status === "empty" ? (
             <>
               <h3 className="script-flow-panel__title">Open a TypeScript source file to render its flow.</h3>
-              <p className="script-flow-panel__text">The panel now parses in the extension host and renders through React Flow.</p>
+              <p className="script-flow-panel__text">The panel parses in the extension host and renders the flow through React Flow.</p>
             </>
           ) : null}
           {state.status === "unsupported" ? (
@@ -227,7 +245,7 @@ export function ScriptFlowApp() {
               <h3 className="script-flow-panel__title">Only the TypeScript analyzer is active in this phase.</h3>
               <p className="script-flow-panel__text">
                 {state.language
-                  ? `The active source resolved to ${state.language}, but CTX013-05 only analyzes .ts and .tsx files so far.`
+                  ? `The active source resolved to ${state.language}, but Script Flow only analyzes .ts and .tsx files right now.`
                   : "Open a .ts or .tsx file to render its flow."}
               </p>
             </>
@@ -239,6 +257,39 @@ export function ScriptFlowApp() {
             </>
           ) : null}
         </section>
+
+        {state.status === "snapshot" ? (
+          <AnalysisDrawer
+            activeNodeId={selectedNodeId}
+            analysis={state.snapshot.analysis}
+            isCollapsed={isDrawerCollapsed}
+            nodeLabels={nodeLabels}
+            onSelectNode={(nodeId, section) => {
+              setSelectedNodeId(nodeId);
+              sendDrawerClick(vscode, section);
+              sendSelectNode(vscode, nodeId);
+              if (isNarrowLayout) {
+                setIsDrawerCollapsed(true);
+              }
+            }}
+            onToggle={() => setIsDrawerCollapsed((current) => !current)}
+          />
+        ) : (
+          <section className="script-flow-state-card">
+            <div className="script-flow-state-card__label">{formatStatusLabel(state.status)}</div>
+            <h2 className="script-flow-state-card__title">{state.title}</h2>
+            <p className="script-flow-state-card__text">{state.description}</p>
+            {state.status === "unsupported" ? (
+              <div className="script-flow-pill-row">
+                {["typescript", "python", "sql"].map((language) => (
+                  <span className="script-flow-pill" key={language}>
+                    {language}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        )}
       </main>
     </div>
   );
@@ -265,7 +316,7 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
   return {
     status: "unsupported",
     title: "Script Flow language not supported yet",
-    description: "The bridge is active, but only the TypeScript analyzer is implemented in CTX013-05.",
+    description: "The bridge is active, but only the TypeScript analyzer is implemented right now.",
     ...(message.language ? { language: message.language } : {})
   } satisfies ScriptFlowViewState;
 }
@@ -356,7 +407,7 @@ function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
   });
 
   for (const node of nodes) {
-    graph.setNode(node.id, { width: 226, height: 100 });
+    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   }
   for (const edge of edges) {
     graph.setEdge(edge.source, edge.target);
@@ -370,8 +421,8 @@ function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
       return {
         ...node,
         position: {
-          x: position.x - 113,
-          y: position.y - 50
+          x: position.x - NODE_WIDTH / 2,
+          y: position.y - NODE_HEIGHT / 2
         }
       };
     }),
