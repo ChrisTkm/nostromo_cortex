@@ -1116,7 +1116,7 @@ async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<Scri
   try {
     const source = editor.document.getText();
     const startedAt = Date.now();
-    const snapshot = analyzeScriptFlowDocument({
+    const snapshot = await analyzeScriptFlowDocument({
       documentPath,
       source
     });

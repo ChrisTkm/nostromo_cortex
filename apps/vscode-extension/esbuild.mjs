@@ -1,7 +1,23 @@
+import { copyFile, mkdir } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+
 import esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");
 const minify = !watch;
+const require = createRequire(import.meta.url);
+
+const staticAssets = [
+  {
+    source: require.resolve("web-tree-sitter/web-tree-sitter.wasm"),
+    target: path.resolve("media/web-tree-sitter.wasm")
+  },
+  {
+    source: path.join(path.dirname(require.resolve("tree-sitter-python/package.json")), "tree-sitter-python.wasm"),
+    target: path.resolve("media/tree-sitter-python.wasm")
+  }
+];
 
 const shared = {
   bundle: true,
@@ -54,10 +70,21 @@ const contexts = await Promise.all([
   })
 ]);
 
+async function copyStaticAssets() {
+  await Promise.all(
+    staticAssets.map(async (asset) => {
+      await mkdir(path.dirname(asset.target), { recursive: true });
+      await copyFile(asset.source, asset.target);
+    })
+  );
+}
+
 if (watch) {
+  await copyStaticAssets();
   await Promise.all(contexts.map((context) => context.watch()));
   console.log("Watching Cortex VS Code extension...");
 } else {
   await Promise.all(contexts.map((context) => context.rebuild()));
+  await copyStaticAssets();
   await Promise.all(contexts.map((context) => context.dispose()));
 }

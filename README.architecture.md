@@ -89,6 +89,7 @@ Las respuestas se serializan con orden estable para reducir ruido entre corridas
 Esto evita hardcodes dispersos y permite actualizar precios sin tocar toda la base.
 
 - **Notes & Logs panels**  Webviews independientes sobre el mismo SharedMongoClient. Notes permite CRUD; Logs es read-only. Ambos tienen su bundle esbuild minificado propio (`media/notes.js`, `media/logs.js`).
+- **Python Script Flow analyzer**  El host usa `web-tree-sitter@0.26.8` y el asset `tree-sitter-python.wasm` derivado de `tree-sitter-python@0.25.0`. Para regenerarlo: `corepack pnpm --filter cortex add web-tree-sitter` + `corepack pnpm --filter cortex add -D tree-sitter-python` y luego `pnpm --filter cortex build` para recopiarlos a `apps/vscode-extension/media/`.
 
 ## Modelo de datos
 

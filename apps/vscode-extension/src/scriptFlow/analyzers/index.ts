@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { ScriptFlowLanguage, ScriptFlowSnapshot } from "../types.js";
+import { analyzePythonDocument } from "./python.js";
 import { analyzeTypeScriptDocument } from "./typescript.js";
 
 export type ScriptFlowAnalyzerInput = {
@@ -22,11 +23,15 @@ export function resolveScriptFlowLanguage(documentPath: string): ScriptFlowLangu
   }
 }
 
-export function analyzeScriptFlowDocument(input: ScriptFlowAnalyzerInput): ScriptFlowSnapshot | undefined {
+export async function analyzeScriptFlowDocument(input: ScriptFlowAnalyzerInput): Promise<ScriptFlowSnapshot | undefined> {
   const language = resolveScriptFlowLanguage(input.documentPath);
-  if (language !== "typescript") {
-    return undefined;
-  }
 
-  return analyzeTypeScriptDocument(input);
+  switch (language) {
+    case "typescript":
+      return analyzeTypeScriptDocument(input);
+    case "python":
+      return analyzePythonDocument(input);
+    default:
+      return undefined;
+  }
 }
