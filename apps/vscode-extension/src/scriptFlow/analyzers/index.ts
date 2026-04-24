@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { ScriptFlowLanguage, ScriptFlowSnapshot } from "../types.js";
 import { analyzePythonDocument } from "./python.js";
+import { analyzeSqlDocument } from "./sql.js";
 import { analyzeTypeScriptDocument } from "./typescript.js";
 
 export type ScriptFlowAnalyzerInput = {
@@ -31,6 +32,8 @@ export async function analyzeScriptFlowDocument(input: ScriptFlowAnalyzerInput):
       return analyzeTypeScriptDocument(input);
     case "python":
       return analyzePythonDocument(input);
+    case "sql":
+      return analyzeSqlDocument(input);
     default:
       return undefined;
   }

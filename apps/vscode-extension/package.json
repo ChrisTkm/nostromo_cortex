@@ -250,6 +250,7 @@
     "@cortex/telemetry": "workspace:*",
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.2",
+    "node-sql-parser": "^5.4.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "web-tree-sitter": "^0.26.8"

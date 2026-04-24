@@ -81,7 +81,7 @@ type ScriptFlowViewState =
 const defaultState: ScriptFlowViewState = {
   status: "empty",
   title: "Waiting for Script Flow",
-  description: "Open a TypeScript file to inspect its control flow in the extension host."
+  description: "Open a TypeScript, Python, or SQL file to inspect its flow in the extension host."
 };
 
 export function ScriptFlowApp() {
@@ -236,17 +236,17 @@ export function ScriptFlowApp() {
           ) : null}
           {state.status === "empty" ? (
             <>
-              <h3 className="script-flow-panel__title">Open a TypeScript source file to render its flow.</h3>
+              <h3 className="script-flow-panel__title">Open a supported source file to render its flow.</h3>
               <p className="script-flow-panel__text">The panel parses in the extension host and renders the flow through React Flow.</p>
             </>
           ) : null}
           {state.status === "unsupported" ? (
             <>
-              <h3 className="script-flow-panel__title">Only the TypeScript analyzer is active in this phase.</h3>
+              <h3 className="script-flow-panel__title">Script Flow does not support this source yet.</h3>
               <p className="script-flow-panel__text">
                 {state.language
-                  ? `The active source resolved to ${state.language}, but Script Flow only analyzes .ts and .tsx files right now.`
-                  : "Open a .ts or .tsx file to render its flow."}
+                  ? `The active source resolved to ${state.language}, but Script Flow currently analyzes TypeScript, Python, and SQL files only.`
+                  : "Open a .ts, .tsx, .py, or .sql file to render its flow."}
               </p>
             </>
           ) : null}
@@ -299,7 +299,7 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
   if (message.type === "scriptFlow:snapshot") {
     return {
       status: "snapshot",
-      title: "TypeScript snapshot ready",
+      title: "Script Flow snapshot ready",
       description: "The host parsed the active file and streamed the resulting Script Flow snapshot into the panel.",
       snapshot: message.snapshot
     } satisfies ScriptFlowViewState;
@@ -316,7 +316,7 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
   return {
     status: "unsupported",
     title: "Script Flow language not supported yet",
-    description: "The bridge is active, but only the TypeScript analyzer is implemented right now.",
+    description: "The bridge is active, but only the TypeScript, Python, and SQL analyzers are implemented right now.",
     ...(message.language ? { language: message.language } : {})
   } satisfies ScriptFlowViewState;
 }
