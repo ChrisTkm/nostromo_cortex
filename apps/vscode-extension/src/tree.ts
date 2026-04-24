@@ -5,6 +5,8 @@ import type { ExtensionTaskService } from "./service.js";
 
 const NO_PLAN_KEY = "__no_plan__";
 
+export type PlanStatusFilter = "active" | "done";
+
 type TreeNodeKind = "group" | "task";
 
 interface BaseTreeNode {
@@ -36,9 +38,20 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
   private readonly emitter = new vscode.EventEmitter<GroupTreeNode | TaskTreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this.emitter.event;
 
-  constructor(private readonly service: ExtensionTaskService) {}
+  constructor(
+    private readonly service: ExtensionTaskService,
+    private planStatusFilter: PlanStatusFilter = "active"
+  ) {}
 
   refresh() {
+    this.emitter.fire();
+  }
+
+  setPlanStatusFilter(next: PlanStatusFilter) {
+    if (this.planStatusFilter === next) {
+      return;
+    }
+    this.planStatusFilter = next;
     this.emitter.fire();
   }
 
@@ -72,7 +85,11 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return true;
     });
 
-    return toPlanChildren(groupTasksByPlan(visible, state.selectedPlanCode), plans);
+    const filteredPlans = plans.filter((plan) => matchesPlanStatusFilter(plan, this.planStatusFilter));
+    const visiblePlanCodes = new Set(filteredPlans.map((plan) => plan.code));
+    const filteredTasks = visible.filter((task) => !task.planCode || visiblePlanCodes.has(task.planCode));
+
+    return toPlanChildren(groupTasksByPlan(filteredTasks, state.selectedPlanCode), filteredPlans);
   }
 
   getTreeItem(element: GroupTreeNode | TaskTreeNode): vscode.TreeItem {
@@ -179,6 +196,14 @@ function comparePlanKeys(left: string, right: string, selectedPlanCode?: string)
     return -1;
   }
   return left.localeCompare(right);
+}
+
+function matchesPlanStatusFilter(
+  plan: Awaited<ReturnType<ExtensionTaskService["loadPlans"]>>[number],
+  filter: PlanStatusFilter
+) {
+  const status = String(plan.status).toUpperCase();
+  return filter === "done" ? status === "DONE" : status === "IN_PROGRESS";
 }
 
 function describePlanGroup(

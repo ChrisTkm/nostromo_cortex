@@ -27,11 +27,25 @@ const {
   showQuickPickMock,
   showTextDocumentMock,
   showWarningMessageMock,
+  treePlansRef,
+  treeProviderInstances,
   treeRefreshMock
 } = vi.hoisted(() => {
   const activeTextEditorRef: { current?: unknown } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
+  const treePlansRef = {
+    current: [
+      { code: "PLAN-A", status: "IN_PROGRESS" },
+      { code: "PLAN-B", status: "DONE" }
+    ]
+  };
+  const treeProviderInstances: Array<{
+    planStatusFilter: "active" | "done";
+    refresh: ReturnType<typeof vi.fn>;
+    setPlanStatusFilter: ReturnType<typeof vi.fn>;
+    getChildren: ReturnType<typeof vi.fn>;
+  }> = [];
   const filterStateRef = {
     current: {
       searchQuery: undefined as string | undefined,
@@ -100,6 +114,7 @@ const {
   });
 
   const createTreeViewMock = vi.fn(() => ({
+    title: "",
     onDidChangeSelection: vi.fn(() => ({ dispose: vi.fn() })),
     dispose: vi.fn()
   }));
@@ -154,6 +169,8 @@ const {
     showQuickPickMock,
     showTextDocumentMock,
     showWarningMessageMock,
+    treePlansRef,
+    treeProviderInstances,
     treeRefreshMock
   };
 });
@@ -170,7 +187,8 @@ vi.mock("vscode", () => ({
     1: "Test"
   },
   ViewColumn: {
-    One: 1
+    One: 1,
+    Beside: 2
   },
   StatusBarAlignment: {
     Left: 1
@@ -278,9 +296,27 @@ vi.mock("./service.js", () => ({
 }));
 
 vi.mock("./tree.js", () => ({
-  CortexTreeProvider: vi.fn().mockImplementation(() => ({
-    refresh: treeRefreshMock
-  }))
+  CortexTreeProvider: vi.fn().mockImplementation((_service, initialFilter: "active" | "done" = "active") => {
+    const instance = {
+      planStatusFilter: initialFilter,
+      refresh: treeRefreshMock,
+      setPlanStatusFilter: vi.fn((next: "active" | "done") => {
+        instance.planStatusFilter = next;
+      }),
+      getChildren: vi.fn(async () =>
+        treePlansRef.current
+          .filter((plan) => (instance.planStatusFilter === "done" ? plan.status === "DONE" : plan.status === "IN_PROGRESS"))
+          .map((plan) => ({
+            kind: "group",
+            id: `plan:${plan.code}`,
+            label: plan.code,
+            children: []
+          }))
+      )
+    };
+    treeProviderInstances.push(instance);
+    return instance;
+  })
 }));
 
 vi.mock("./webview/html.js", () => ({
@@ -301,17 +337,20 @@ vi.mock("./webview/script-flow/getHtml.js", () => ({
 
 import { activate } from "./extension.js";
 
-function createContext() {
+function createContext(initialWorkspaceState: Record<string, unknown> = {}) {
+  const workspaceStateValues = new Map<string, unknown>(Object.entries(initialWorkspaceState));
   return {
     extensionMode: 1,
     extensionUri: { fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension" },
     globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
     subscriptions: [],
     workspaceState: {
-      get: vi.fn(),
-      update: vi.fn()
+      get: vi.fn((key: string, defaultValue?: unknown) => (workspaceStateValues.has(key) ? workspaceStateValues.get(key) : defaultValue)),
+      update: vi.fn(async (key: string, value: unknown) => {
+        workspaceStateValues.set(key, value);
+      })
     }
-  } as never;
+  } as any;
 }
 
 describe("activate notes commands", () => {
@@ -346,6 +385,11 @@ describe("activate notes commands", () => {
       }
     };
     commandHandlers.clear();
+    treeProviderInstances.length = 0;
+    treePlansRef.current = [
+      { code: "PLAN-A", status: "IN_PROGRESS" },
+      { code: "PLAN-B", status: "DONE" }
+    ];
     panelState.panel = undefined;
     panelState.messageHandler = undefined;
     panelState.disposeHandler = undefined;
@@ -446,6 +490,39 @@ describe("activate notes commands", () => {
     showQuickPickMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
+  });
+
+  it("starts the tree in active mode and only exposes IN_PROGRESS plans", async () => {
+    const context = createContext();
+
+    await activate(context);
+
+    const treeProvider = treeProviderInstances[0];
+    const treeView = createTreeViewMock.mock.results[0]?.value;
+    const children = await treeProvider.getChildren();
+
+    expect(context.workspaceState.get).toHaveBeenCalledWith("cortex.planStatusFilter", "active");
+    expect(treeProvider.planStatusFilter).toBe("active");
+    expect(children.map((node: { label: string }) => node.label)).toEqual(["PLAN-A"]);
+    expect(treeView.title).toBe("Cortex · En curso");
+  });
+
+  it("toggles the tree to done mode and only exposes DONE plans", async () => {
+    const context = createContext();
+
+    await activate(context);
+    await executeCommandMock("cortex.togglePlanStatusFilter");
+
+    const treeProvider = treeProviderInstances[0];
+    const treeView = createTreeViewMock.mock.results[0]?.value;
+    const children = await treeProvider.getChildren();
+
+    expect(context.workspaceState.update).toHaveBeenCalledWith("cortex.planStatusFilter", "done");
+    expect(context.workspaceState.get("cortex.planStatusFilter", "active")).toBe("done");
+    expect(treeProvider.setPlanStatusFilter).toHaveBeenCalledWith("done");
+    expect(treeProvider.planStatusFilter).toBe("done");
+    expect(children.map((node: { label: string }) => node.label)).toEqual(["PLAN-B"]);
+    expect(treeView.title).toBe("Cortex · Cerrados");
   });
 
   it("adds Notes to cortex.showOptions and opens the notes panel", async () => {
@@ -570,7 +647,7 @@ describe("activate notes commands", () => {
     expect(createWebviewPanelMock).toHaveBeenCalledWith(
       "cortex.scriptFlow",
       "Cortex Script Flow",
-      1,
+      2,
       expect.objectContaining({ enableScripts: true })
     );
     expect(panelState.panel?.webview.html).toContain("script-flow.js");

@@ -16,7 +16,7 @@ import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFl
 import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
-import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
+import { CortexTreeProvider, type PlanStatusFilter, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
@@ -51,6 +51,7 @@ type ScriptFlowDelivery =
   | { type: "unsupported"; language?: string };
 
 let activeService: ExtensionTaskService | undefined;
+const PLAN_STATUS_FILTER_KEY = "cortex.planStatusFilter";
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -78,11 +79,13 @@ export async function activate(context: vscode.ExtensionContext) {
   await fireDue(service, reminderStatusBar, "startup");
   await scheduleAll(service, reminderStatusBar);
 
-  const treeProvider = new CortexTreeProvider(service);
+  let planStatusFilter = normalizePlanStatusFilter(context.workspaceState.get<PlanStatusFilter>(PLAN_STATUS_FILTER_KEY, "active"));
+  const treeProvider = new CortexTreeProvider(service, planStatusFilter);
   const treeView = vscode.window.createTreeView("cortex.overview", {
     treeDataProvider: treeProvider,
     showCollapseAll: true
   });
+  treeView.title = titleForPlanStatusFilter(planStatusFilter);
   context.subscriptions.push(treeView);
 
   let graphPanel: vscode.WebviewPanel | undefined;
@@ -560,6 +563,12 @@ export async function activate(context: vscode.ExtensionContext) {
       return openGraph(code);
     }),
     vscode.commands.registerCommand("cortex.refresh", refreshView),
+    vscode.commands.registerCommand("cortex.togglePlanStatusFilter", async () => {
+      planStatusFilter = planStatusFilter === "active" ? "done" : "active";
+      await context.workspaceState.update(PLAN_STATUS_FILTER_KEY, planStatusFilter);
+      treeProvider.setPlanStatusFilter(planStatusFilter);
+      treeView.title = titleForPlanStatusFilter(planStatusFilter);
+    }),
     vscode.commands.registerCommand("cortex.showOptions", async () => {
       const items: OptionsQuickPickItem[] = [
         { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
@@ -1006,6 +1015,14 @@ function resolveSelectedTaskCode(
 
 function sameArray(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function normalizePlanStatusFilter(value: PlanStatusFilter | undefined): PlanStatusFilter {
+  return value === "done" ? "done" : "active";
+}
+
+function titleForPlanStatusFilter(filter: PlanStatusFilter) {
+  return filter === "done" ? "Cortex · Cerrados" : "Cortex · En curso";
 }
 
 async function pickConnectionSettings(
