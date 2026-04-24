@@ -1,16 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { sendRefresh } from "../../../scriptFlow/bridge.js";
-
-declare global {
-  interface Window {
-    acquireVsCodeApi(): {
-      postMessage(message: unknown): void;
-    };
-  }
-}
-
-const vscode = window.acquireVsCodeApi();
+import { vscode } from "../vscodeApi";
 
 type ErrorBoundaryProps = {
   children: ReactNode;

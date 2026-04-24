@@ -35,6 +35,8 @@ type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
 type ScriptFlowScope = "file" | "selection";
 type ScriptFlowRequest = {
   scope: ScriptFlowScope;
+  documentUri?: vscode.Uri;
+  selection?: vscode.Range;
 };
 type FilterCatalog = {
   projects: string[];
@@ -358,7 +360,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     scriptFlowPanelReady = false;
-    scriptFlowPanel = vscode.window.createWebviewPanel("cortex.scriptFlow", "Cortex Script Flow", vscode.ViewColumn.One, {
+    scriptFlowPanel = vscode.window.createWebviewPanel("cortex.scriptFlow", "Cortex Script Flow", vscode.ViewColumn.Beside, {
       enableScripts: true,
       retainContextWhenHidden: true
     });
@@ -595,10 +597,18 @@ export async function activate(context: vscode.ExtensionContext) {
       await openLogsPanel();
     }),
     vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
-      await openScriptFlowPanel({ scope: "file" });
+      const editor = vscode.window.activeTextEditor;
+      await openScriptFlowPanel({
+        scope: "file",
+        ...(editor ? { documentUri: editor.document.uri } : {})
+      });
     }),
     vscode.commands.registerCommand("cortex.openScriptFlowForSelection", async () => {
-      await openScriptFlowPanel({ scope: "selection" });
+      const editor = vscode.window.activeTextEditor;
+      await openScriptFlowPanel({
+        scope: "selection",
+        ...(editor ? { documentUri: editor.document.uri, selection: new vscode.Range(editor.selection.start, editor.selection.end) } : {})
+      });
     }),
     vscode.commands.registerCommand("cortex.newNote", async () => {
       await openNotesPanel({ mode: "new" });
@@ -1089,17 +1099,15 @@ async function pickConnectionSettings(
 }
 
 async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<ScriptFlowDelivery> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    return {
-      type: "unsupported"
-    };
+  const document = await resolveScriptFlowDocument(request);
+  if (!document) {
+    return { type: "unsupported" };
   }
 
-  const documentPath = editor.document.uri.fsPath;
+  const documentPath = document.uri.fsPath;
   const language = resolveScriptFlowLanguage(documentPath);
 
-  if (request.scope === "selection" && editor.selection.isEmpty) {
+  if (request.scope === "selection" && (!request.selection || request.selection.isEmpty)) {
     return {
       type: "error",
       error: "Select a code range before opening Script Flow for the current selection."
@@ -1109,12 +1117,12 @@ async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<Scri
   if (!language) {
     return {
       type: "unsupported",
-      language: editor.document.languageId
+      language: document.languageId
     };
   }
 
   try {
-    const source = editor.document.getText();
+    const source = request.scope === "selection" && request.selection ? document.getText(request.selection) : document.getText();
     const startedAt = Date.now();
     const snapshot = await analyzeScriptFlowDocument({
       documentPath,
@@ -1130,7 +1138,7 @@ async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<Scri
       type: "snapshot",
       snapshot,
       parseMs: Date.now() - startedAt,
-      documentUri: editor.document.uri
+      documentUri: document.uri
     };
   } catch (error) {
     return {
@@ -1138,6 +1146,18 @@ async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<Scri
       error: String(error)
     };
   }
+}
+
+async function resolveScriptFlowDocument(request: ScriptFlowRequest): Promise<vscode.TextDocument | undefined> {
+  if (request.documentUri) {
+    try {
+      return await vscode.workspace.openTextDocument(request.documentUri);
+    } catch {
+      // fall through to active editor
+    }
+  }
+  const editor = vscode.window.activeTextEditor;
+  return editor?.document;
 }
 
 function formatCollectionMessage(

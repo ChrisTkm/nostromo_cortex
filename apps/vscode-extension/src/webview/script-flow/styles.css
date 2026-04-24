@@ -1,16 +1,69 @@
 .script-flow-app {
-  min-height: 100%;
-  padding: 24px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent), transparent 38%),
     linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%), var(--vscode-editor-background));
   color: var(--vscode-editor-foreground);
+  min-height: 0;
+}
+
+.script-flow-header--compact {
+  margin-bottom: 8px;
+}
+
+.script-flow-header--compact .script-flow-header__title {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 88%, transparent);
+}
+
+.script-flow-header--compact .script-flow-button {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.script-flow-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.script-flow-stats__file {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-editor-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.script-flow-stats__chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 40%, transparent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .script-flow-header,
 .script-flow-surface {
   display: grid;
-  gap: 18px;
+  gap: 12px;
+}
+
+.script-flow-surface {
+  flex: 1;
+  min-height: 0;
 }
 
 .script-flow-header {
@@ -48,7 +101,7 @@
 
 .script-flow-surface {
   grid-template-columns: minmax(0, 1fr) 320px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .script-flow-state-card,
@@ -62,7 +115,15 @@
 
 .script-flow-state-card,
 .script-flow-panel {
-  padding: 20px;
+  padding: 12px;
+}
+
+.script-flow-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .script-flow-state-card__text,
@@ -152,12 +213,6 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--vscode-badge-background) 82%, transparent);
   color: var(--vscode-badge-foreground);
-}
-
-.script-flow-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .script-flow-drawer {
@@ -311,13 +366,20 @@
 }
 
 .script-flow-canvas {
-  min-height: 640px;
-  border-radius: 18px;
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent), transparent 28%),
     color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%);
+}
+
+.script-flow-canvas .react-flow {
+  width: 100%;
+  height: 100%;
 }
 
 .script-flow-canvas .react-flow__renderer,
@@ -345,9 +407,10 @@
   min-width: 226px;
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  border: 2px solid currentColor;
+  background: color-mix(in srgb, var(--vscode-editor-background) 60%, #1e293b 40%);
+  color: var(--vscode-editor-foreground);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 .script-flow-node-card__header {
@@ -370,6 +433,7 @@
   font-size: 14px;
   line-height: 1.5;
   font-weight: 600;
+  color: var(--vscode-editor-foreground);
 }
 
 .script-flow-node-card__range {
@@ -425,11 +489,20 @@
   color: #94a3b8;
 }
 
-.script-flow-node-card--cte,
-.script-flow-node-card--select,
-.script-flow-node-card--join,
+.script-flow-node-card--cte {
+  color: #38bdf8;
+}
+
+.script-flow-node-card--select {
+  color: #22d3ee;
+}
+
+.script-flow-node-card--join {
+  color: #facc15;
+}
+
 .script-flow-node-card--subquery {
-  color: #64748b;
+  color: #a855f7;
 }
 
 .script-flow-boundary {

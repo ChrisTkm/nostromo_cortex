@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { Language, Node, Parser } from "web-tree-sitter";
@@ -66,17 +66,29 @@ async function initializePythonParser() {
   }
 
   try {
+    const wasmBinary = readFileSync(runtimeWasmPath);
     await Parser.init({
-      locateFile(scriptName) {
+      wasmBinary,
+      instantiateWasm(imports: WebAssembly.Imports, callback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void) {
+        WebAssembly.instantiate(wasmBinary, imports)
+          .then(({ instance, module }) => callback(instance, module))
+          .catch((err) => {
+            throw err;
+          });
+        return {};
+      },
+      locateFile(scriptName: string) {
         return path.join(extensionRoot, "media", scriptName);
       }
-    });
+    } as Parameters<typeof Parser.init>[0]);
   } catch (error) {
-    throw new Error(`Python analyzer failed to initialize tree-sitter runtime: ${String(error)}`);
+    const stack = error instanceof Error ? error.stack ?? error.message : String(error);
+    throw new Error(`Python analyzer failed to initialize tree-sitter runtime: ${stack}`);
   }
 
   if (!languagePromise) {
-    languagePromise = Language.load(pythonWasmPath).catch((error) => {
+    const languageBytes = readFileSync(pythonWasmPath);
+    languagePromise = Language.load(languageBytes).catch((error) => {
       languagePromise = undefined;
       throw new Error(`Python analyzer failed to load ${PYTHON_WASM}: ${String(error)}`);
     });

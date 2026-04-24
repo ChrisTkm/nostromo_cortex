@@ -10,6 +10,7 @@ import {
   type Node,
   type ReactFlowInstance
 } from "@xyflow/react";
+import { toPng } from "html-to-image";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -23,18 +24,7 @@ import {
 import { isScriptFlowSnapshot, type ScriptFlowNode, type ScriptFlowNodeKind, type ScriptFlowSnapshot } from "../../scriptFlow/types.js";
 import { AnalysisDrawer } from "./components/AnalysisDrawer";
 import { FlowNode, type FlowNodeData } from "./components/FlowNode";
-
-declare global {
-  interface Window {
-    acquireVsCodeApi(): {
-      postMessage(message: unknown): void;
-      setState(state: unknown): void;
-      getState(): unknown;
-    };
-  }
-}
-
-const vscode = window.acquireVsCodeApi();
+import { vscode } from "./vscodeApi";
 const nodeTypes = { scriptFlow: FlowNode };
 const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = { nodes: [], edges: [] };
 const NODE_WIDTH = 226;
@@ -169,57 +159,37 @@ export function ScriptFlowApp() {
 
   return (
     <div className={`script-flow-app script-flow-app--${state.status}`}>
-      <header className="script-flow-header">
-        <div>
-          <div className="script-flow-header__eyebrow">Extension host analyzer</div>
-          <h1 className="script-flow-header__title">Script Flow</h1>
-        </div>
+      <header className="script-flow-header script-flow-header--compact">
+        <h1 className="script-flow-header__title">Script Flow</h1>
         <div className="script-flow-header__actions">
+          {state.status === "snapshot" ? (
+            <button className="script-flow-button" onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)} type="button">
+              PNG
+            </button>
+          ) : null}
           <button className="script-flow-button" onClick={() => sendRefresh(vscode)} type="button">
-            Refresh flow
+            Refresh
           </button>
         </div>
       </header>
 
       <main className="script-flow-surface">
         <section className="script-flow-panel">
-          <div className="script-flow-panel__eyebrow">Bridge output</div>
           {state.status === "snapshot" ? (
             <>
-              <h3 className="script-flow-panel__title">Live TypeScript flow</h3>
-              <p className="script-flow-panel__text">Click a node or drawer item to jump to code and keep the flow centered.</p>
-              <dl className="script-flow-meta">
-                <div className="script-flow-meta__item">
-                  <dt>File</dt>
-                  <dd>{state.snapshot.metadata.path}</dd>
-                </div>
-                <div className="script-flow-meta__item">
-                  <dt>Language</dt>
-                  <dd>{state.snapshot.metadata.language}</dd>
-                </div>
-                <div className="script-flow-meta__item">
-                  <dt>Nodes</dt>
-                  <dd>{state.snapshot.nodes.length}</dd>
-                </div>
-                <div className="script-flow-meta__item">
-                  <dt>Edges</dt>
-                  <dd>{state.snapshot.edges.length}</dd>
-                </div>
-              </dl>
-              {selectedNode ? (
-                <div className="script-flow-detail-card">
-                  <div className="script-flow-detail-card__eyebrow">{KIND_LABELS[selectedNode.kind]}</div>
-                  <div className="script-flow-detail-card__title">{selectedNode.label}</div>
-                  {selectedNode.range ? <div className="script-flow-detail-card__text">{formatRangeLabel(selectedNode)}</div> : null}
-                </div>
-              ) : null}
+              <div className="script-flow-stats">
+                <span className="script-flow-stats__file" title={state.snapshot.metadata.path}>{shortFilename(state.snapshot.metadata.path)}</span>
+                <span className="script-flow-stats__chip">{state.snapshot.metadata.language}</span>
+                <span className="script-flow-stats__chip">{state.snapshot.nodes.length} nodes</span>
+                <span className="script-flow-stats__chip">{state.snapshot.edges.length} edges</span>
+              </div>
               <div className="script-flow-canvas">
                 <ReactFlow
                   fitView
                   edges={flow.edges}
                   nodes={flow.nodes}
                   nodeTypes={nodeTypes}
-                  nodesDraggable={false}
+                  nodesDraggable
                   onInit={setFlowInstance}
                   onNodeClick={(_, node) => {
                     setSelectedNodeId(node.id);
@@ -428,6 +398,33 @@ function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
     }),
     edges
   };
+}
+
+function shortFilename(p: string) {
+  const parts = p.split(/[\\/]/);
+  return parts[parts.length - 1] ?? p;
+}
+
+async function downloadFlowAsPng(sourcePath: string) {
+  const viewport = document.querySelector(".script-flow-canvas .react-flow__viewport") as HTMLElement | null;
+  const container = (document.querySelector(".script-flow-canvas .react-flow") as HTMLElement | null) ?? viewport;
+  if (!container) return;
+
+  const bg = getComputedStyle(document.body).backgroundColor || "#0c1724";
+  try {
+    const dataUrl = await toPng(container, {
+      backgroundColor: bg,
+      pixelRatio: 2,
+      cacheBust: true
+    });
+    const link = document.createElement("a");
+    const base = shortFilename(sourcePath).replace(/\.[^.]+$/, "");
+    link.download = `${base || "script-flow"}.png`;
+    link.href = dataUrl;
+    link.click();
+  } catch (err) {
+    console.error("Script Flow PNG export failed", err);
+  }
 }
 
 function formatRangeLabel(node: ScriptFlowNode) {

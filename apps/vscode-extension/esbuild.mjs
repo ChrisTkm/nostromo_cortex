@@ -45,7 +45,7 @@ const contexts = await Promise.all([
     entryPoints: ["src/extension.ts"],
     format: "cjs",
     outfile: "dist/extension.cjs",
-    external: ["vscode"]
+    external: ["vscode", "web-tree-sitter"]
   }),
   esbuild.context({
     ...browserBundle,
