@@ -42,9 +42,10 @@ VS Code Extension Host (Node)
    |     '-- buildGraphSnapshot (puro, en memoria)
    |
    '-- Webviews (esbuild, IIFE, minificado en prod)
-         |-- PERT Graph   (React + React Flow + Dagre)
-         |-- Notes Panel  (React + Markdown editor)
-         '-- Logs Panel   (React + listado paginado)
+         |-- PERT Graph    (React + React Flow + Dagre)
+         |-- Notes Panel   (React + Markdown editor)
+         |-- Logs Panel    (React + listado paginado)
+         '-- Script Flow   (TS / Python / SQL)
 ```
 
 El webview nunca habla directo con MongoDB. La extensión resuelve los datos en el host y envía snapshots JSON serializados.
@@ -77,7 +78,7 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Panels & keyboard shortcuts
 
-La extensión VS Code expone cuatro superficies. Todas viven sobre el mismo `SharedMongoClient` (sin handshakes por operación).
+La extensión VS Code expone cinco superficies. Todas viven sobre el mismo `SharedMongoClient` (sin handshakes por operación).
 
 | Superficie | Comando | Keybinding |
 |------------|---------|------------|
@@ -85,9 +86,48 @@ La extensión VS Code expone cuatro superficies. Todas viven sobre el mismo `Sha
 | PERT Graph | `cortex.openGraph` |  |
 | Notes | `cortex.openNotes` / `cortex.newNote` | `Ctrl+Alt+Shift+N` / `Ctrl+Alt+N` |
 | Logs | `cortex.openLogs` |  |
+| Script Flow | `cortex.openScriptFlow` / `cortex.openScriptFlowForSelection` |  |
 | Panel switcher | `cortex.switchPanel` |  |
 
 Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs y al resto de filtros.
+
+## v0.1.3
+
+La rama `v0.1.3` cierra el ciclo de Notes + Reminders + Script Flow dentro de la extensión.
+
+### Reminders en Notes
+
+- Cada nota puede guardar un `remindAt` one-shot desde el editor del panel Notes.
+- La campana en status bar muestra cuántos recordatorios siguen pendientes y abre Notes filtrado por recordatorios.
+- Al iniciar VS Code, la extensión ejecuta `fireDue(..., "startup")` y después reprograma timers con `scheduleAll(...)`, así que los reminders vencidos mientras VS Code estaba cerrado vuelven a dispararse al reabrir.
+- El flujo de reminder soporta `snooze` y `dismiss`: posponer mueve `remindAt` hacia adelante y limpia `remindedAt`; descartar marca `remindedAt` para evitar reprocesarlo.
+
+### Script Flow panel
+
+- El panel Script Flow ya analiza archivos `.ts`, `.tsx`, `.py` y `.sql`.
+- Se puede abrir con `Cortex: Open Script Flow` o desde el context menu del editor.
+- Si hay selección activa, `Cortex: Open Script Flow for Selection` limita el análisis al rango elegido.
+- El panel mantiene navegación por nodos, drawer analítico, telemetry de interacción y click-to-range sobre el editor.
+- SQL se resuelve en el extension host con `node-sql-parser`, intentando `postgresql` y luego `mysql` como fallback.
+
+### Comandos nuevos y relevantes
+
+- `cortex.openNotes`
+- `cortex.newNote`
+- `cortex.editNote`
+- `cortex.deleteNote`
+- `cortex.snoozeReminder`
+- `cortex.openLogs`
+- `cortex.openScriptFlow`
+- `cortex.openScriptFlowForSelection`
+- `cortex.togglePlanStatusFilter`
+
+### Limitaciones conocidas
+
+- Script Flow sigue siendo single-file: no resuelve imports ni dependencias cross-file.
+- SQL cubre el MVP de `WITH`/CTE, `SELECT`, `JOIN` y subqueries comunes; no intenta cobertura total del lenguaje.
+- Reminders son one-shot; no hay recurrencia ni calendario complejo.
+- Los smoke tests manuales de UX siguen siendo recomendables antes del merge final porque el bundle y los fixtures no sustituyen una corrida interactiva completa en VS Code.
 
 ### Notes
 
