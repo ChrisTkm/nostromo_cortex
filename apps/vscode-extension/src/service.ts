@@ -42,7 +42,7 @@ export class ExtensionTaskService {
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
       ...process.env,
-      MONGO_URL: this.config.get("mongoUrl", "mongodb://localhost:27017"),
+      MONGO_URL: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
       MONGO_DB_NAME: this.config.get("mongoDbName", "cortex"),
       MONGO_TASKS_COLLECTION: this.config.get("mongoTasksCollection", "tasks"),
       TELEMETRY_BACKEND: this.config.get("telemetryBackend", "sqlite"),
@@ -96,7 +96,7 @@ export class ExtensionTaskService {
 
   getConnectionSettings() {
     return {
-      mongoUrl: this.config.get("mongoUrl", "mongodb://localhost:27017"),
+      mongoUrl: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
       mongoDbName: this.config.get("mongoDbName", "cortex"),
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
       mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),

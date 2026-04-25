@@ -18,13 +18,14 @@ const vscode = window.acquireVsCodeApi();
 const REMINDER_SEARCH_TOKENS = new Set(["has:reminder", "is:reminder"]);
 
 export function useNotesController() {
+  const persistedState = useMemo(() => readPersistedState(), []);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<NotesViewMode>("list");
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [draft, setDraft] = useState<NoteDraft>(() => createEmptyDraft());
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedCode, setSelectedCode] = useState<string | null>(persistedState.selectedCode);
+  const [viewMode, setViewMode] = useState<NotesViewMode>(persistedState.viewMode);
+  const [editorOpen, setEditorOpen] = useState(persistedState.editorOpen);
+  const [draft, setDraft] = useState<NoteDraft>(persistedState.draft);
+  const [search, setSearch] = useState(persistedState.search);
+  const [debouncedSearch, setDebouncedSearch] = useState(persistedState.search.trim().toLowerCase());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,18 +85,19 @@ export function useNotesController() {
     });
   }, [notes, searchTerms]);
 
+  useEffect(() => {
+    persistState({
+      draft,
+      editorOpen,
+      search,
+      selectedCode,
+      viewMode
+    });
+  }, [draft, editorOpen, search, selectedCode, viewMode]);
+
   const handleMessage = useEffectEvent((message: NotesMessage) => {
     if (message.type === "notes:list" && Array.isArray(message.notes)) {
       setNotes(message.notes);
-
-      if (selectedCode && !message.notes.some((note) => note.code === selectedCode)) {
-        setSelectedCode(null);
-        setViewMode("list");
-        setEditorOpen(false);
-        setDraft(createEmptyDraft());
-        setError(null);
-        return;
-      }
 
       if (selectedCode && viewMode === "edit" && isDraftPristineForSelection(draft, selectedCode)) {
         const note = message.notes.find((entry) => entry.code === selectedCode);
@@ -138,6 +140,9 @@ export function useNotesController() {
           setDraft(note ? createDraftFromNote(note) : { ...createEmptyDraft(), code });
         },
         openList: () => {
+          if (editorOpen) {
+            return;
+          }
           setSelectedCode(null);
           setViewMode("list");
           setEditorOpen(false);
@@ -146,6 +151,10 @@ export function useNotesController() {
       });
     }
   });
+
+  useEffect(() => {
+    vscode.postMessage({ type: "ready" });
+  }, []);
 
   useEffect(() => {
     function onMessage(event: MessageEvent<NotesMessage>) {
@@ -157,7 +166,6 @@ export function useNotesController() {
     }
 
     window.addEventListener("message", onMessage);
-    vscode.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", onMessage);
   }, [handleMessage]);
 
@@ -167,18 +175,34 @@ export function useNotesController() {
       return;
     }
 
+    const nextDraft = createDraftFromNote(note);
+    persistState({
+      draft: nextDraft,
+      editorOpen: true,
+      search,
+      selectedCode: code,
+      viewMode: "edit"
+    });
     setSelectedCode(code);
     setViewMode("edit");
     setEditorOpen(true);
-    setDraft(createDraftFromNote(note));
+    setDraft(nextDraft);
     setError(null);
   }
 
   function createNote() {
+    const nextDraft = createEmptyDraft();
+    persistState({
+      draft: nextDraft,
+      editorOpen: true,
+      search,
+      selectedCode: null,
+      viewMode: "new"
+    });
     setSelectedCode(null);
     setViewMode("new");
     setEditorOpen(true);
-    setDraft(createEmptyDraft());
+    setDraft(nextDraft);
     setError(null);
   }
 
@@ -344,4 +368,72 @@ function areDraftsEquivalent(left: NoteDraft, right: NoteDraft) {
     left.remindedAt === right.remindedAt &&
     left.code === right.code
   );
+}
+
+type PersistedNotesState = {
+  draft: NoteDraft;
+  editorOpen: boolean;
+  search: string;
+  selectedCode: string | null;
+  viewMode: NotesViewMode;
+};
+
+function readPersistedState(): PersistedNotesState {
+  const fallback = createPersistedState();
+  const state = vscode.getState();
+  if (!state || typeof state !== "object") {
+    return fallback;
+  }
+
+  const notesState = (state as { notes?: Partial<PersistedNotesState> }).notes;
+  if (!notesState || typeof notesState !== "object") {
+    return fallback;
+  }
+
+  return {
+    draft: isNoteDraft(notesState.draft) ? notesState.draft : fallback.draft,
+    editorOpen: typeof notesState.editorOpen === "boolean" ? notesState.editorOpen : fallback.editorOpen,
+    search: typeof notesState.search === "string" ? notesState.search : fallback.search,
+    selectedCode: typeof notesState.selectedCode === "string" ? notesState.selectedCode : null,
+    viewMode: isNotesViewMode(notesState.viewMode) ? notesState.viewMode : fallback.viewMode
+  };
+}
+
+function persistState(nextState: PersistedNotesState) {
+  vscode.setState({
+    notes: nextState
+  });
+}
+
+function createPersistedState(): PersistedNotesState {
+  return {
+    draft: createEmptyDraft(),
+    editorOpen: false,
+    search: "",
+    selectedCode: null,
+    viewMode: "list"
+  };
+}
+
+function isNoteDraft(value: unknown): value is NoteDraft {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const draft = value as Partial<NoteDraft>;
+  return (
+    typeof draft.title === "string" &&
+    typeof draft.body === "string" &&
+    typeof draft.tags === "string" &&
+    typeof draft.taskCode === "string" &&
+    typeof draft.planCode === "string" &&
+    typeof draft.pinned === "boolean" &&
+    typeof draft.remindAt === "string" &&
+    typeof draft.remindedAt === "string" &&
+    typeof draft.code === "string"
+  );
+}
+
+function isNotesViewMode(value: unknown): value is NotesViewMode {
+  return value === "list" || value === "new" || value === "edit";
 }

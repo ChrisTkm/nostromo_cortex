@@ -2,7 +2,7 @@
   "name": "cortex",
   "displayName": "Cortex",
   "publisher": "cortex-local",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -204,7 +204,7 @@
       "properties": {
         "cortex.mongoUrl": {
           "type": "string",
-          "default": "mongodb://localhost:27017",
+          "default": "mongodb://127.0.0.1:27017",
           "description": "MongoDB connection string used by the extension host."
         },
         "cortex.mongoDbName": {

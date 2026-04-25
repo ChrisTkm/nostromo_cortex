@@ -289,10 +289,13 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     notesPanel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "ready") {
+        const wasReady = notesPanelReady;
         notesPanelReady = true;
         await postNotesList(pendingNotesSearch);
         pendingNotesSearch = undefined;
-        await postNotesMode(pendingNotesMode);
+        if (!wasReady) {
+          await postNotesMode(pendingNotesMode);
+        }
         return;
       }
       if (message?.type === "notes:save" && isNoteDocumentInput(message.input)) {

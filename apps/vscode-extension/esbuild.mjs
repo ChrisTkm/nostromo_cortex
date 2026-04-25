@@ -45,7 +45,13 @@ const contexts = await Promise.all([
     entryPoints: ["src/extension.ts"],
     format: "cjs",
     outfile: "dist/extension.cjs",
-    external: ["vscode", "web-tree-sitter"]
+    external: ["vscode"],
+    banner: {
+      js: "var __cortex_import_meta_url=require('node:url').pathToFileURL(__filename).toString();"
+    },
+    define: {
+      "import.meta.url": "__cortex_import_meta_url"
+    }
   }),
   esbuild.context({
     ...browserBundle,

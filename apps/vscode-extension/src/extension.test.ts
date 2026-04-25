@@ -239,7 +239,7 @@ vi.mock("./service.js", () => ({
       error: vi.fn()
     },
     getConnectionSettings: vi.fn(() => ({
-      mongoUrl: "mongodb://localhost:27017",
+      mongoUrl: "mongodb://127.0.0.1:27017",
       mongoDbName: "nostromo_cortex",
       mongoTasksCollection: "tasks",
       mongoNotesCollection: "notes",
@@ -579,6 +579,20 @@ describe("activate notes commands", () => {
 
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
     expect(listNotesMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not replay the initial notes mode on duplicate ready messages", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openNotes");
+
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "ready" });
+
+    const openMessages = panelState.panel?.webview.postMessage.mock.calls.filter(([message]) => {
+      return typeof message === "object" && message !== null && (message as { type?: string }).type === "open";
+    });
+
+    expect(openMessages).toHaveLength(1);
   });
 
   it("adds Logs to cortex.showOptions and opens the logs panel", async () => {
