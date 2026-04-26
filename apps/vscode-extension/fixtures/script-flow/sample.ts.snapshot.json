@@ -1,0 +1,134 @@
+{
+  "metadata": {
+    "path": "fixtures/script-flow/sample.ts",
+    "language": "typescript",
+    "hash": "23e70eaf4a100c4ebab37c6537bdac70fbabada6",
+    "parsedAt": "2026-04-21T02:55:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "entry:sample-ts",
+      "kind": "entry",
+      "label": "sample.ts",
+      "range": {
+        "startLine": 1,
+        "startCol": 1,
+        "endLine": 12,
+        "endCol": 2
+      }
+    },
+    {
+      "id": "fn:accumulate",
+      "kind": "function",
+      "label": "accumulate(limit)",
+      "range": {
+        "startLine": 1,
+        "startCol": 1,
+        "endLine": 12,
+        "endCol": 2
+      }
+    },
+    {
+      "id": "branch:if-limit-0",
+      "kind": "branch",
+      "label": "if limit <= 0",
+      "range": {
+        "startLine": 4,
+        "startCol": 3,
+        "endLine": 6,
+        "endCol": 4
+      },
+      "meta": {
+        "branches": 2
+      }
+    },
+    {
+      "id": "return:return-total",
+      "kind": "return",
+      "label": "return total",
+      "range": {
+        "startLine": 5,
+        "startCol": 5,
+        "endLine": 5,
+        "endCol": 17
+      }
+    },
+    {
+      "id": "loop:for-index-limit",
+      "kind": "loop",
+      "label": "for index < limit",
+      "range": {
+        "startLine": 8,
+        "startCol": 3,
+        "endLine": 10,
+        "endCol": 4
+      },
+      "meta": {
+        "kind": "for"
+      }
+    },
+    {
+      "id": "return:return-total-2",
+      "kind": "return",
+      "label": "return total",
+      "range": {
+        "startLine": 12,
+        "startCol": 3,
+        "endLine": 12,
+        "endCol": 15
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "entry:sample-ts",
+      "to": "fn:accumulate",
+      "kind": "flow"
+    },
+    {
+      "from": "fn:accumulate",
+      "to": "branch:if-limit-0",
+      "kind": "flow"
+    },
+    {
+      "from": "branch:if-limit-0",
+      "to": "return:return-total",
+      "kind": "flow",
+      "label": "then"
+    },
+    {
+      "from": "branch:if-limit-0",
+      "to": "loop:for-index-limit",
+      "kind": "flow",
+      "label": "else"
+    },
+    {
+      "from": "loop:for-index-limit",
+      "to": "return:return-total-2",
+      "kind": "flow"
+    }
+  ],
+  "analysis": {
+    "entryPoints": [
+      "fn:accumulate"
+    ],
+    "summary": "TypeScript flow with 1 function, 1 decision, 1 loop, and 2 returns.",
+    "decisions": [
+      {
+        "nodeId": "branch:if-limit-0",
+        "label": "if limit <= 0",
+        "branches": 2
+      }
+    ],
+    "loops": [
+      {
+        "nodeId": "loop:for-index-limit",
+        "label": "for index < limit",
+        "kind": "for"
+      }
+    ],
+    "observations": [
+      "2 return exits detected."
+    ]
+  }
+}

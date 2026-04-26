@@ -12,7 +12,7 @@ export interface CortexConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CortexConfig {
   return {
-    mongoUrl: env.MONGO_URL ?? "mongodb://localhost:27017",
+    mongoUrl: env.MONGO_URL ?? "mongodb://127.0.0.1:27017",
     mongoDbName: env.MONGO_DB_NAME ?? "cortex",
     mongoTasksCollection: env.MONGO_TASKS_COLLECTION ?? "tasks",
     telemetryBackend: env.TELEMETRY_BACKEND === "jsonl" ? "jsonl" : "sqlite",
@@ -23,4 +23,3 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CortexConfig {
     snapshotMaxTasks: Number(env.SNAPSHOT_MAX_TASKS ?? "500")
   };
 }
-

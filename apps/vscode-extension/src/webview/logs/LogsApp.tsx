@@ -1,5 +1,6 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
 
 type LogsMessage = {
   type: "logs:list";
@@ -36,12 +37,13 @@ export function LogsApp() {
       }
 
       setLogs(message.logs);
+      setLevel((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.level)));
+      setSource((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.source)));
+      setFolder((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.folder)));
       setSelectedKey((current) => {
-        if (current && message.logs.some((entry) => buildLogKey(entry) === current)) {
-          return current;
-        }
-        return message.logs[0] ? buildLogKey(message.logs[0]) : null;
+        return reconcileSelectedLogKey(current, message.logs);
       });
+      setDetailOpen((current) => (message.logs.length === 0 ? false : current));
     }
 
     window.addEventListener("message", onMessage);
@@ -84,6 +86,9 @@ export function LogsApp() {
     });
   }, [deferredSearch, folder, level, logs, source]);
 
+  const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all";
+  const emptyState = getLogsEmptyState(logs.length, filteredLogs.length, hasActiveFilters);
+
   const groupedLogs = useMemo(() => {
     const groups: Array<{ day: string; logs: LogRecord[] }> = [];
     for (const entry of filteredLogs) {
@@ -109,6 +114,13 @@ export function LogsApp() {
     setDetailOpen(true);
   }
 
+  function clearFilters() {
+    setSearch("");
+    setLevel("all");
+    setSource("all");
+    setFolder("all");
+  }
+
   return (
     <div className={`logs-app${detailOpen && selectedLog ? "" : " logs-app--list-only"}`}>
       <section className="logs-list-panel">
@@ -118,7 +130,9 @@ export function LogsApp() {
             <h1 className="logs-toolbar__title">Cortex Logs</h1>
           </div>
           <div className="logs-toolbar__actions">
-            <span className="logs-toolbar__count">{filteredLogs.length} visible</span>
+            <span className="logs-toolbar__count">
+              {filteredLogs.length} visible{logs.length !== filteredLogs.length ? ` of ${logs.length}` : ""}
+            </span>
             <button className="logs-button logs-button--primary" onClick={() => vscode.postMessage({ type: "logs:refresh" })} type="button">
               Refresh
             </button>
@@ -158,11 +172,22 @@ export function LogsApp() {
         </div>
 
         <div className="logs-list">
-          {groupedLogs.length === 0 ? (
+          {emptyState === "empty" ? (
+            <div className="logs-empty-state">
+              <div className="logs-toolbar__eyebrow">No data yet</div>
+              <h2 className="logs-empty-state__title">No logs available in the current collection.</h2>
+              <p className="logs-empty-state__text">Refresh the panel or verify the extension is pointed at the expected Mongo database.</p>
+            </div>
+          ) : emptyState === "filtered" ? (
             <div className="logs-empty-state">
               <div className="logs-toolbar__eyebrow">No matches</div>
               <h2 className="logs-empty-state__title">No logs match the current filters.</h2>
               <p className="logs-empty-state__text">Try clearing a filter or broadening the search query.</p>
+              {hasActiveFilters ? (
+                <button className="logs-button" onClick={clearFilters} type="button">
+                  Clear filters
+                </button>
+              ) : null}
             </div>
           ) : (
             groupedLogs.map((group) => (
@@ -241,10 +266,6 @@ export function LogsApp() {
       ) : null}
     </div>
   );
-}
-
-function buildLogKey(entry: LogRecord) {
-  return entry.id ?? `${entry.timestamp}:${entry.source}:${entry.level}:${entry.summary}`;
 }
 
 function formatDay(value: string) {

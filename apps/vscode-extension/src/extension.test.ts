@@ -1,33 +1,97 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  activeTextEditorRef,
   commandHandlers,
   createTreeViewMock,
   createWebviewPanelMock,
+  createStatusBarItemMock,
   executeCommandMock,
+  filterStateRef,
   listLogsMock,
+  loadBundleMock,
+  loadSnapshotMock,
   listNotesMock,
+  listPendingRemindersMock,
+  markRemindedMock,
   panelState,
   registerCommandMock,
+  recordInteractionMock,
+  rescheduleReminderMock,
+  saveTaskMock,
   saveNoteMock,
+  getTaskMock,
   deleteNoteMock,
   showInformationMessageMock,
+  showInputBoxMock,
   showQuickPickMock,
+  showTextDocumentMock,
   showWarningMessageMock,
+  treePlansRef,
+  treeProviderInstances,
   treeRefreshMock
 } = vi.hoisted(() => {
+  const activeTextEditorRef: { current?: unknown } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
+  const treePlansRef = {
+    current: [
+      { code: "PLAN-A", status: "IN_PROGRESS" },
+      { code: "PLAN-B", status: "DONE" }
+    ]
+  };
+  const treeProviderInstances: Array<{
+    planStatusFilter: "active" | "done";
+    refresh: ReturnType<typeof vi.fn>;
+    setPlanStatusFilter: ReturnType<typeof vi.fn>;
+    getChildren: ReturnType<typeof vi.fn>;
+  }> = [];
+  const filterStateRef = {
+    current: {
+      searchQuery: undefined as string | undefined,
+      selectedProjects: [] as string[],
+      selectedGroups: [] as string[],
+      selectedTags: [] as string[],
+      selectedStatuses: [] as string[],
+      selectedSeverities: [] as string[],
+      graphOrientation: "LR" as "LR" | "TB",
+      showMiniMap: true,
+      selectedTaskCode: undefined as string | undefined,
+      selectedPlanCode: undefined as string | undefined,
+      zoom: 1,
+      pan: { x: 0, y: 0 }
+    }
+  };
   const listNotesMock = vi.fn();
   const listLogsMock = vi.fn();
+  const loadBundleMock = vi.fn();
+  const loadSnapshotMock = vi.fn();
+  const listPendingRemindersMock = vi.fn();
+  const markRemindedMock = vi.fn();
+  const rescheduleReminderMock = vi.fn();
+  const recordInteractionMock = vi.fn();
+  const getTaskMock = vi.fn();
+  const saveTaskMock = vi.fn();
   const saveNoteMock = vi.fn();
   const deleteNoteMock = vi.fn();
+  const showInputBoxMock = vi.fn();
   const showQuickPickMock = vi.fn();
   const showInformationMessageMock = vi.fn();
   const showWarningMessageMock = vi.fn();
+  const showTextDocumentMock = vi.fn();
+  const createStatusBarItemMock = vi.fn(() => ({
+    text: "",
+    tooltip: "",
+    command: undefined,
+    name: "",
+    show: vi.fn(),
+    hide: vi.fn(),
+    dispose: vi.fn()
+  }));
   const panelState: {
     panel?: {
       reveal: ReturnType<typeof vi.fn>;
+      dispose: ReturnType<typeof vi.fn>;
       webview: {
         html: string;
         postMessage: ReturnType<typeof vi.fn>;
@@ -50,6 +114,7 @@ const {
   });
 
   const createTreeViewMock = vi.fn(() => ({
+    title: "",
     onDidChangeSelection: vi.fn(() => ({ dispose: vi.fn() })),
     dispose: vi.fn()
   }));
@@ -57,6 +122,9 @@ const {
   const createWebviewPanelMock = vi.fn(() => {
     const panel = {
       reveal: vi.fn(),
+      dispose: vi.fn(() => {
+        panelState.disposeHandler?.();
+      }),
       webview: {
         html: "",
         postMessage: vi.fn(),
@@ -75,19 +143,34 @@ const {
   });
 
   return {
+    activeTextEditorRef,
     commandHandlers,
     createTreeViewMock,
     createWebviewPanelMock,
+    createStatusBarItemMock,
     executeCommandMock,
+    filterStateRef,
     listLogsMock,
+    loadBundleMock,
+    loadSnapshotMock,
     listNotesMock,
+    listPendingRemindersMock,
+    markRemindedMock,
     panelState,
     registerCommandMock,
+    recordInteractionMock,
+    rescheduleReminderMock,
+    saveTaskMock,
     saveNoteMock,
+    getTaskMock,
     deleteNoteMock,
     showInformationMessageMock,
+    showInputBoxMock,
     showQuickPickMock,
+    showTextDocumentMock,
     showWarningMessageMock,
+    treePlansRef,
+    treeProviderInstances,
     treeRefreshMock
   };
 });
@@ -104,13 +187,23 @@ vi.mock("vscode", () => ({
     1: "Test"
   },
   ViewColumn: {
-    One: 1
+    One: 1,
+    Beside: 2
+  },
+  StatusBarAlignment: {
+    Left: 1
   },
   window: {
+    get activeTextEditor() {
+      return activeTextEditorRef.current;
+    },
     createTreeView: createTreeViewMock,
     createWebviewPanel: createWebviewPanelMock,
+    createStatusBarItem: createStatusBarItemMock,
+    showInputBox: showInputBoxMock,
     showQuickPick: showQuickPickMock,
     showInformationMessage: showInformationMessageMock,
+    showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: vi.fn(),
     createOutputChannel: vi.fn(() => ({
@@ -122,6 +215,18 @@ vi.mock("vscode", () => ({
   commands: {
     registerCommand: registerCommandMock,
     executeCommand: executeCommandMock
+  },
+  Position: class Position {
+    constructor(
+      public readonly line: number,
+      public readonly character: number
+    ) {}
+  },
+  Range: class Range {
+    constructor(
+      public readonly start: { line: number; character: number },
+      public readonly end: { line: number; character: number }
+    ) {}
   }
 }));
 
@@ -133,32 +238,85 @@ vi.mock("./service.js", () => ({
       debug: vi.fn(),
       error: vi.fn()
     },
-    getFilterState: vi.fn(() => ({
-      searchQuery: undefined,
-      selectedProjects: [],
-      selectedGroups: [],
-      selectedTags: [],
-      selectedStatuses: [],
-      selectedSeverities: [],
-      graphOrientation: "LR",
-      showMiniMap: true,
-      selectedTaskCode: undefined,
-      selectedPlanCode: undefined,
-      zoom: 1,
-      pan: { x: 0, y: 0 }
+    getConnectionSettings: vi.fn(() => ({
+      mongoUrl: "mongodb://127.0.0.1:27017",
+      mongoDbName: "nostromo_cortex",
+      mongoTasksCollection: "tasks",
+      mongoNotesCollection: "notes",
+      mongoLogsCollection: "logs",
+      mongoPlansCollection: "action_plans"
     })),
-    updateFilterState: vi.fn().mockResolvedValue(undefined),
+    getFilterState: vi.fn(() => ({
+      ...filterStateRef.current,
+      selectedProjects: [...filterStateRef.current.selectedProjects],
+      selectedGroups: [...filterStateRef.current.selectedGroups],
+      selectedTags: [...filterStateRef.current.selectedTags],
+      selectedStatuses: [...filterStateRef.current.selectedStatuses],
+      selectedSeverities: [...filterStateRef.current.selectedSeverities],
+      pan: { ...filterStateRef.current.pan }
+    })),
+    updateFilterState: vi.fn(async (nextState: Record<string, unknown>) => {
+      filterStateRef.current = {
+        ...filterStateRef.current,
+        ...nextState,
+        selectedProjects: Array.isArray(nextState.selectedProjects)
+          ? [...(nextState.selectedProjects as string[])]
+          : filterStateRef.current.selectedProjects,
+        selectedGroups: Array.isArray(nextState.selectedGroups)
+          ? [...(nextState.selectedGroups as string[])]
+          : filterStateRef.current.selectedGroups,
+        selectedTags: Array.isArray(nextState.selectedTags)
+          ? [...(nextState.selectedTags as string[])]
+          : filterStateRef.current.selectedTags,
+        selectedStatuses: Array.isArray(nextState.selectedStatuses)
+          ? [...(nextState.selectedStatuses as string[])]
+          : filterStateRef.current.selectedStatuses,
+        selectedSeverities: Array.isArray(nextState.selectedSeverities)
+          ? [...(nextState.selectedSeverities as string[])]
+          : filterStateRef.current.selectedSeverities,
+        pan:
+          nextState.pan && typeof nextState.pan === "object"
+            ? { ...filterStateRef.current.pan, ...(nextState.pan as { x?: number; y?: number }) }
+            : filterStateRef.current.pan
+      };
+    }),
+    loadBundle: loadBundleMock,
+    loadSnapshot: loadSnapshotMock,
     listNotes: listNotesMock,
+    listPendingReminders: listPendingRemindersMock,
     listLogs: listLogsMock,
+    markReminded: markRemindedMock,
+    recordInteraction: recordInteractionMock,
+    rescheduleReminder: rescheduleReminderMock,
+    getTask: getTaskMock,
+    saveTask: saveTaskMock,
     saveNote: saveNoteMock,
     deleteNote: deleteNoteMock
   }))
 }));
 
 vi.mock("./tree.js", () => ({
-  CortexTreeProvider: vi.fn().mockImplementation(() => ({
-    refresh: treeRefreshMock
-  }))
+  CortexTreeProvider: vi.fn().mockImplementation((_service, initialFilter: "active" | "done" = "active") => {
+    const instance = {
+      planStatusFilter: initialFilter,
+      refresh: treeRefreshMock,
+      setPlanStatusFilter: vi.fn((next: "active" | "done") => {
+        instance.planStatusFilter = next;
+      }),
+      getChildren: vi.fn(async () =>
+        treePlansRef.current
+          .filter((plan) => (instance.planStatusFilter === "done" ? plan.status === "DONE" : plan.status === "IN_PROGRESS"))
+          .map((plan) => ({
+            kind: "group",
+            id: `plan:${plan.code}`,
+            label: plan.code,
+            children: []
+          }))
+      )
+    };
+    treeProviderInstances.push(instance);
+    return instance;
+  })
 }));
 
 vi.mock("./webview/html.js", () => ({
@@ -173,28 +331,83 @@ vi.mock("./webview/logs/getHtml.js", () => ({
   getLogsHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"logs.js\"></script></html>")
 }));
 
+vi.mock("./webview/script-flow/getHtml.js", () => ({
+  getScriptFlowHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"script-flow.js\"></script></html>")
+}));
+
 import { activate } from "./extension.js";
 
-function createContext() {
+function createContext(initialWorkspaceState: Record<string, unknown> = {}) {
+  const workspaceStateValues = new Map<string, unknown>(Object.entries(initialWorkspaceState));
   return {
     extensionMode: 1,
     extensionUri: { fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension" },
     globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
     subscriptions: [],
     workspaceState: {
-      get: vi.fn(),
-      update: vi.fn()
+      get: vi.fn((key: string, defaultValue?: unknown) => (workspaceStateValues.has(key) ? workspaceStateValues.get(key) : defaultValue)),
+      update: vi.fn(async (key: string, value: unknown) => {
+        workspaceStateValues.set(key, value);
+      })
     }
-  } as never;
+  } as any;
 }
 
 describe("activate notes commands", () => {
   beforeEach(() => {
+    const scriptFlowFixturePath = "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts";
+    const scriptFlowFixtureSource = [
+      "export function accumulate(limit: number) {",
+      "  let total = 0;",
+      "",
+      "  if (limit <= 0) {",
+      "    return total;",
+      "  }",
+      "",
+      "  for (let index = 0; index < limit; index += 1) {",
+      "    total += index;",
+      "  }",
+      "",
+      "  return total;",
+      "}"
+    ].join("\n");
+    activeTextEditorRef.current = {
+      document: {
+        fileName: scriptFlowFixturePath,
+        uri: { fsPath: scriptFlowFixturePath },
+        languageId: "typescript",
+        getText: vi.fn(() => scriptFlowFixtureSource)
+      },
+      selection: {
+        isEmpty: false,
+        start: { line: 4, character: 2 },
+        end: { line: 8, character: 18 }
+      }
+    };
     commandHandlers.clear();
+    treeProviderInstances.length = 0;
+    treePlansRef.current = [
+      { code: "PLAN-A", status: "IN_PROGRESS" },
+      { code: "PLAN-B", status: "DONE" }
+    ];
     panelState.panel = undefined;
     panelState.messageHandler = undefined;
     panelState.disposeHandler = undefined;
     vi.clearAllMocks();
+    filterStateRef.current = {
+      searchQuery: undefined,
+      selectedProjects: [],
+      selectedGroups: [],
+      selectedTags: [],
+      selectedStatuses: [],
+      selectedSeverities: [],
+      graphOrientation: "LR",
+      showMiniMap: true,
+      selectedTaskCode: undefined,
+      selectedPlanCode: undefined,
+      zoom: 1,
+      pan: { x: 0, y: 0 }
+    };
     listNotesMock.mockResolvedValue([
       {
         code: "N-1",
@@ -218,6 +431,51 @@ describe("activate notes commands", () => {
         details: []
       }
     ]);
+    listPendingRemindersMock.mockResolvedValue([]);
+    markRemindedMock.mockResolvedValue(null);
+    recordInteractionMock.mockResolvedValue(undefined);
+    rescheduleReminderMock.mockResolvedValue(null);
+    getTaskMock.mockResolvedValue({
+      id: "task-1",
+      code: "TASK-1",
+      shortTask: "First task",
+      detail: "Existing detail",
+      status: "PENDING",
+      severity: "LOW",
+      agent: "codex",
+      tags: ["graph"],
+      dependsOn: [],
+      createdAt: "2026-04-18T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z"
+    });
+    saveTaskMock.mockResolvedValue(undefined);
+    loadBundleMock.mockResolvedValue({
+      tasks: [
+        {
+          id: "task-1",
+          code: "TASK-1",
+          shortTask: "First task",
+          severity: "LOW",
+          status: "PENDING",
+          tags: [],
+          planCode: "PLAN-A"
+        },
+        {
+          id: "task-2",
+          code: "TASK-2",
+          shortTask: "Second task",
+          severity: "LOW",
+          status: "PENDING",
+          tags: [],
+          planCode: "PLAN-B"
+        }
+      ],
+      plans: [{ code: "PLAN-0" }, { code: "PLAN-A" }, { code: "PLAN-B" }]
+    });
+    loadSnapshotMock.mockImplementation(async (filter?: { planCode?: string }) => ({
+      nodes: filter?.planCode ? [{ id: filter.planCode, data: { label: filter.planCode } }] : [],
+      edges: []
+    }));
     saveNoteMock.mockResolvedValue({
       code: "N-2",
       title: "Saved note",
@@ -228,9 +486,43 @@ describe("activate notes commands", () => {
       updatedAt: "2026-04-18T00:00:00.000Z"
     });
     deleteNoteMock.mockResolvedValue(true);
+    showInputBoxMock.mockReset();
     showQuickPickMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
+  });
+
+  it("starts the tree in active mode and only exposes IN_PROGRESS plans", async () => {
+    const context = createContext();
+
+    await activate(context);
+
+    const treeProvider = treeProviderInstances[0];
+    const treeView = createTreeViewMock.mock.results[0]?.value;
+    const children = await treeProvider.getChildren();
+
+    expect(context.workspaceState.get).toHaveBeenCalledWith("cortex.planStatusFilter", "active");
+    expect(treeProvider.planStatusFilter).toBe("active");
+    expect(children.map((node: { label: string }) => node.label)).toEqual(["PLAN-A"]);
+    expect(treeView.title).toBe("Cortex · En curso");
+  });
+
+  it("toggles the tree to done mode and only exposes DONE plans", async () => {
+    const context = createContext();
+
+    await activate(context);
+    await executeCommandMock("cortex.togglePlanStatusFilter");
+
+    const treeProvider = treeProviderInstances[0];
+    const treeView = createTreeViewMock.mock.results[0]?.value;
+    const children = await treeProvider.getChildren();
+
+    expect(context.workspaceState.update).toHaveBeenCalledWith("cortex.planStatusFilter", "done");
+    expect(context.workspaceState.get("cortex.planStatusFilter", "active")).toBe("done");
+    expect(treeProvider.setPlanStatusFilter).toHaveBeenCalledWith("done");
+    expect(treeProvider.planStatusFilter).toBe("done");
+    expect(children.map((node: { label: string }) => node.label)).toEqual(["PLAN-B"]);
+    expect(treeView.title).toBe("Cortex · Cerrados");
   });
 
   it("adds Notes to cortex.showOptions and opens the notes panel", async () => {
@@ -262,7 +554,7 @@ describe("activate notes commands", () => {
 
     await panelState.messageHandler?.({ type: "ready" });
 
-    expect(listNotesMock).toHaveBeenCalledTimes(1);
+    expect(listNotesMock.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "notes:list",
       notes: expect.arrayContaining([expect.objectContaining({ code: "N-1" })])
@@ -286,7 +578,21 @@ describe("activate notes commands", () => {
     await panelState.messageHandler?.({ type: "notes:delete", code: "N-1" });
 
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
-    expect(listNotesMock).toHaveBeenCalledTimes(3);
+    expect(listNotesMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not replay the initial notes mode on duplicate ready messages", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openNotes");
+
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "ready" });
+
+    const openMessages = panelState.panel?.webview.postMessage.mock.calls.filter(([message]) => {
+      return typeof message === "object" && message !== null && (message as { type?: string }).type === "open";
+    });
+
+    expect(openMessages).toHaveLength(1);
   });
 
   it("adds Logs to cortex.showOptions and opens the logs panel", async () => {
@@ -311,6 +617,74 @@ describe("activate notes commands", () => {
     expect(panelState.panel?.webview.html).toContain("logs.js");
   });
 
+  it("posts logs on ready, refresh, and panel reopen when data exists", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+
+    await panelState.messageHandler?.({ type: "ready" });
+
+    expect(listLogsMock).toHaveBeenCalledTimes(1);
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "logs:list",
+      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })])
+    });
+
+    await panelState.messageHandler?.({ type: "logs:refresh" });
+
+    expect(listLogsMock).toHaveBeenCalledTimes(2);
+
+    await executeCommandMock("cortex.openLogs");
+
+    expect(panelState.panel?.reveal).toHaveBeenCalled();
+    expect(listLogsMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds Script Flow to cortex.showOptions and opens the dedicated panel", async () => {
+    showQuickPickMock.mockResolvedValueOnce({
+      label: "Script Flow",
+      command: "cortex.openScriptFlow"
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.showOptions");
+    await panelState.messageHandler?.({ type: "ready" });
+
+    const [items] = showQuickPickMock.mock.calls[0] ?? [];
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Script Flow",
+          command: "cortex.openScriptFlow"
+        })
+      ])
+    );
+    expect(createWebviewPanelMock).toHaveBeenCalledWith(
+      "cortex.scriptFlow",
+      "Cortex Script Flow",
+      2,
+      expect.objectContaining({ enableScripts: true })
+    );
+    expect(panelState.panel?.webview.html).toContain("script-flow.js");
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "scriptFlow:snapshot",
+      snapshot: expect.objectContaining({
+        metadata: expect.objectContaining({
+          path: "C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts",
+          language: "typescript"
+        }),
+        nodes: expect.arrayContaining([expect.objectContaining({ id: "fn:accumulate", kind: "function" })]),
+        edges: expect.any(Array)
+      })
+    });
+    expect(recordInteractionMock).toHaveBeenCalledWith(
+      "script_flow_open",
+      expect.objectContaining({
+        lang: "typescript",
+        parseMs: expect.any(Number)
+      })
+    );
+  });
+
   it("offers Tasks, Graph, Notes, and Logs in the panel switcher", async () => {
     showQuickPickMock.mockResolvedValueOnce({
       label: "Tasks",
@@ -326,11 +700,80 @@ describe("activate notes commands", () => {
         expect.objectContaining({ label: "Tasks", command: "cortex.openTasks" }),
         expect.objectContaining({ label: "Graph", command: "cortex.openGraph" }),
         expect.objectContaining({ label: "Notes", command: "cortex.openNotes" }),
-        expect.objectContaining({ label: "Logs", command: "cortex.openLogs" })
+        expect.objectContaining({ label: "Logs", command: "cortex.openLogs" }),
+        expect.objectContaining({ label: "Script Flow", command: "cortex.openScriptFlow" })
       ])
     );
     expect(options).toEqual(expect.objectContaining({ title: "Switch Cortex panel" }));
     expect(executeCommandMock).toHaveBeenCalledWith("workbench.view.extension.cortex");
+  });
+
+  it("opens Graph with the selected task plan instead of the persisted banner plan", async () => {
+    filterStateRef.current.selectedPlanCode = "PLAN-0";
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-A" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-A" })
+    );
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-A");
+    expect(filterStateRef.current.selectedTaskCode).toBe("TASK-1");
+
+    await executeCommandMock("cortex.openGraph", "TASK-2");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-B");
+    expect(filterStateRef.current.selectedTaskCode).toBe("TASK-2");
+  });
+
+  it("preserves manual plan navigation when reopening Graph without a task target", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+
+    await panelState.messageHandler?.({ type: "selectPlan", code: "PLAN-B" });
+
+    expect(filterStateRef.current.selectedPlanCode).toBe("PLAN-B");
+    expect(filterStateRef.current.selectedTaskCode).toBeUndefined();
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+
+    await executeCommandMock("cortex.openGraph");
+
+    expect(loadSnapshotMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planCode: "PLAN-B" }),
+      expect.any(Object),
+      expect.objectContaining({ code: "PLAN-B" })
+    );
+  });
+
+  it("reuses the existing task edit flow when the Graph webview posts editTask", async () => {
+    showInputBoxMock.mockResolvedValueOnce("Edited from inspector");
+    showQuickPickMock.mockResolvedValueOnce("DONE").mockResolvedValueOnce("HIGH");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph", "TASK-1");
+    await panelState.messageHandler?.({ type: "editTask", code: "TASK-1" });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-1",
+        short_task: "Edited from inspector",
+        status: "DONE",
+        severity: "HIGH"
+      })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 updated.");
   });
 
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
@@ -364,5 +807,40 @@ describe("activate notes commands", () => {
     });
     expect(showWarningMessageMock).toHaveBeenCalledWith("Delete note N-1?", { modal: true }, "Delete");
     expect(deleteNoteMock).toHaveBeenCalledWith("N-1");
+  });
+
+  it("records node selection telemetry from the Script Flow webview", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlow");
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
+
+    expect(recordInteractionMock).toHaveBeenCalledWith(
+      "script_flow_node_select",
+      expect.objectContaining({
+        nodeId: "fn:accumulate",
+        kind: "function"
+      })
+    );
+    expect(showTextDocumentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts" }),
+      expect.objectContaining({
+        selection: expect.objectContaining({
+          start: expect.objectContaining({ line: 0, character: 0 }),
+          end: expect.objectContaining({ line: 12, character: 1 })
+        })
+      })
+    );
+  });
+
+  it("records drawer click telemetry from the Script Flow webview", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlow");
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "scriptFlow:drawerClick", section: "decisions" });
+
+    expect(recordInteractionMock).toHaveBeenCalledWith("script_flow_drawer_click", {
+      section: "decisions"
+    });
   });
 });

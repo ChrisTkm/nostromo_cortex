@@ -2,7 +2,7 @@
   "name": "cortex",
   "displayName": "Cortex",
   "publisher": "cortex-local",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -18,7 +18,9 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:cortex.overview",
-    "onCommand:cortex.openGraph"
+    "onCommand:cortex.openGraph",
+    "onCommand:cortex.openScriptFlow",
+    "onCommand:cortex.openScriptFlowForSelection"
   ],
   "contributes": {
     "commands": [
@@ -39,6 +41,11 @@
         "title": "Cortex: Open PERT graph"
       },
       {
+        "command": "cortex.togglePlanStatusFilter",
+        "title": "Cortex: Toggle plan status filter",
+        "icon": "$(filter)"
+      },
+      {
         "command": "cortex.showOptions",
         "title": "Cortex: Options"
       },
@@ -51,6 +58,14 @@
         "title": "Cortex: Open logs panel"
       },
       {
+        "command": "cortex.openScriptFlow",
+        "title": "Cortex: Open Script Flow"
+      },
+      {
+        "command": "cortex.openScriptFlowForSelection",
+        "title": "Cortex: Open Script Flow for Selection"
+      },
+      {
         "command": "cortex.newNote",
         "title": "Cortex: New note"
       },
@@ -61,6 +76,10 @@
       {
         "command": "cortex.deleteNote",
         "title": "Cortex: Delete note"
+      },
+      {
+        "command": "cortex.snoozeReminder",
+        "title": "Cortex: Snooze reminder"
       },
       {
         "command": "cortex.setSearchQuery",
@@ -145,9 +164,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "cortex.showOptions",
+          "command": "cortex.togglePlanStatusFilter",
           "when": "view == cortex.overview",
           "group": "navigation@3"
+        },
+        {
+          "command": "cortex.showOptions",
+          "when": "view == cortex.overview",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -161,6 +185,18 @@
           "when": "view == cortex.overview && viewItem == cortex.task",
           "group": "inline@2"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "cortex.openScriptFlow",
+          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "group": "navigation@10"
+        },
+        {
+          "command": "cortex.openScriptFlowForSelection",
+          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "group": "navigation@11"
+        }
       ]
     },
     "configuration": {
@@ -168,7 +204,7 @@
       "properties": {
         "cortex.mongoUrl": {
           "type": "string",
-          "default": "mongodb://localhost:27017",
+          "default": "mongodb://127.0.0.1:27017",
           "description": "MongoDB connection string used by the extension host."
         },
         "cortex.mongoDbName": {
@@ -224,13 +260,17 @@
     "@cortex/telemetry": "workspace:*",
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.2",
+    "html-to-image": "^1.11.13",
+    "node-sql-parser": "^5.4.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.100.0",
-    "esbuild": "^0.25.2"
+    "esbuild": "^0.25.2",
+    "tree-sitter-python": "^0.25.0"
   }
 }

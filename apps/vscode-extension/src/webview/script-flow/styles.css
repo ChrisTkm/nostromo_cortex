@@ -1,0 +1,538 @@
+.script-flow-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent), transparent 38%),
+    linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%), var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  min-height: 0;
+}
+
+.script-flow-header--compact {
+  margin-bottom: 8px;
+}
+
+.script-flow-header--compact .script-flow-header__title {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 88%, transparent);
+}
+
+.script-flow-header--compact .script-flow-button {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.script-flow-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.script-flow-stats__file {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-editor-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.script-flow-stats__chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 40%, transparent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.script-flow-header,
+.script-flow-surface {
+  display: grid;
+  gap: 12px;
+}
+
+.script-flow-surface {
+  flex: 1;
+  min-height: 0;
+}
+
+.script-flow-header {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.script-flow-header__eyebrow,
+.script-flow-panel__eyebrow,
+.script-flow-state-card__label,
+.script-flow-boundary__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 84%, transparent);
+}
+
+.script-flow-header__title,
+.script-flow-state-card__title,
+.script-flow-panel__title,
+.script-flow-boundary__title {
+  margin: 6px 0 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.script-flow-header__actions,
+.script-flow-boundary__actions,
+.script-flow-pill-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.script-flow-surface {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: stretch;
+}
+
+.script-flow-state-card,
+.script-flow-panel,
+.script-flow-boundary {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, #0c1724 12%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+.script-flow-state-card,
+.script-flow-panel {
+  padding: 12px;
+}
+
+.script-flow-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.script-flow-state-card__text,
+.script-flow-panel__text,
+.script-flow-boundary__text,
+.script-flow-selection__text {
+  margin: 12px 0 0;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.6;
+}
+
+.script-flow-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.script-flow-meta__item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 28%, transparent);
+}
+
+.script-flow-meta__item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-meta__item dd {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.script-flow-selection {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 14%, transparent);
+}
+
+.script-flow-selection__title {
+  font-weight: 600;
+}
+
+.script-flow-detail-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 78%, transparent);
+}
+
+.script-flow-detail-card__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-detail-card__title {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.script-flow-detail-card__text {
+  margin-top: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.script-flow-observations {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.6;
+}
+
+.script-flow-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-badge-background) 82%, transparent);
+  color: var(--vscode-badge-foreground);
+}
+
+.script-flow-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 640px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, #0c1724 12%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+.script-flow-drawer--collapsed {
+  min-height: 0;
+}
+
+.script-flow-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.script-flow-drawer__eyebrow,
+.script-flow-drawer-section__title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-drawer__title {
+  margin: 6px 0 0;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.script-flow-drawer__toggle {
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.script-flow-drawer__toggle:hover {
+  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+}
+
+.script-flow-drawer__chevron {
+  display: inline-block;
+  transform: rotate(180deg);
+  transition: transform 160ms ease;
+}
+
+.script-flow-drawer__chevron--open {
+  transform: rotate(0deg);
+}
+
+.script-flow-drawer__content {
+  display: grid;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.script-flow-drawer-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 14%, transparent);
+}
+
+.script-flow-drawer-summary,
+.script-flow-drawer-observations,
+.script-flow-drawer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.script-flow-drawer-summary p,
+.script-flow-drawer-observations p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.script-flow-drawer-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.script-flow-drawer-item:hover {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 36%, transparent);
+}
+
+.script-flow-drawer-item--active {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 48%, transparent);
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+}
+
+.script-flow-drawer-item__meta,
+.script-flow-drawer-empty {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 90%, transparent);
+}
+
+.script-flow-app--unsupported .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 38%, transparent);
+}
+
+.script-flow-app--snapshot .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+}
+
+.script-flow-app--error .script-flow-state-card,
+.script-flow-boundary {
+  border-color: color-mix(in srgb, var(--vscode-editorError-foreground) 44%, transparent);
+}
+
+.script-flow-app--empty .script-flow-state-card {
+  border-color: color-mix(in srgb, var(--vscode-panel-border) 92%, transparent);
+}
+
+.script-flow-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.script-flow-button:hover {
+  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+}
+
+.script-flow-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent), transparent 28%),
+    color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%);
+}
+
+.script-flow-canvas .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.script-flow-canvas .react-flow__renderer,
+.script-flow-canvas .react-flow__pane {
+  cursor: grab;
+}
+
+.script-flow-canvas .react-flow__controls,
+.script-flow-canvas .react-flow__minimap {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.script-flow-canvas .react-flow__controls-button {
+  background: transparent;
+  color: inherit;
+}
+
+.script-flow-canvas .react-flow__attribution {
+  display: none;
+}
+
+.script-flow-node-card {
+  min-width: 226px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 2px solid currentColor;
+  background: color-mix(in srgb, var(--vscode-editor-background) 60%, #1e293b 40%);
+  color: var(--vscode-editor-foreground);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.script-flow-node-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.script-flow-node-card__kind,
+.script-flow-node-card__range {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+}
+
+.script-flow-node-card__label {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--vscode-editor-foreground);
+}
+
+.script-flow-node-card__range {
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+
+.script-flow-node-card__accent {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.script-flow-node-card__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--vscode-editor-background) 40%, black 60%);
+  background: currentColor;
+}
+
+.script-flow-node-card--selected {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+}
+
+.script-flow-node-card--entry {
+  color: #22d3ee;
+}
+
+.script-flow-node-card--function {
+  color: #60a5fa;
+}
+
+.script-flow-node-card--branch {
+  color: #facc15;
+}
+
+.script-flow-node-card--loop {
+  color: #a855f7;
+}
+
+.script-flow-node-card--return {
+  color: #22c55e;
+}
+
+.script-flow-node-card--tryCatch {
+  color: #f97316;
+}
+
+.script-flow-node-card--call {
+  color: #94a3b8;
+}
+
+.script-flow-node-card--cte {
+  color: #38bdf8;
+}
+
+.script-flow-node-card--select {
+  color: #22d3ee;
+}
+
+.script-flow-node-card--join {
+  color: #facc15;
+}
+
+.script-flow-node-card--subquery {
+  color: #a855f7;
+}
+
+.script-flow-boundary {
+  min-height: 100%;
+  padding: 32px;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vscode-editorError-foreground) 16%, transparent), transparent 42%),
+    color-mix(in srgb, var(--vscode-editor-background) 90%, #190d0d 10%);
+}
+
+@media (max-width: 900px) {
+  .script-flow-app {
+    padding: 18px;
+  }
+
+  .script-flow-header,
+  .script-flow-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .script-flow-surface {
+    grid-template-columns: 1fr;
+  }
+
+  .script-flow-drawer {
+    min-height: 0;
+  }
+}

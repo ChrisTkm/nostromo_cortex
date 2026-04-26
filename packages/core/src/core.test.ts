@@ -338,6 +338,8 @@ describe("note normalization", () => {
       taskCode: "TASK-1",
       planCode: "PLAN-1",
       pinned: true,
+      remindAt: "2026-04-12T02:00:00.000Z",
+      remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
       updatedAt: new Date("2026-04-12T01:00:00.000Z")
     } as never);
@@ -351,6 +353,8 @@ describe("note normalization", () => {
       taskCode: "TASK-1",
       planCode: "PLAN-1",
       pinned: true,
+      remindAt: "2026-04-12T02:00:00.000Z",
+      remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
       updatedAt: "2026-04-12T01:00:00.000Z"
     });
@@ -493,6 +497,8 @@ describe("shared mongo client support", () => {
       pinned: true,
       task_code: "TASK-3",
       plan_code: "PLAN-3",
+      remind_at: "2026-04-12T12:00:00.000Z",
+      reminded_at: "2026-04-12T13:00:00.000Z",
       created_at: "2026-04-12T10:00:00.000Z",
       updated_at: "2026-04-12T11:00:00.000Z"
     });
@@ -532,7 +538,9 @@ describe("shared mongo client support", () => {
       code: "n3",
       tags: ["a", "z"],
       taskCode: "TASK-3",
-      planCode: "PLAN-3"
+      planCode: "PLAN-3",
+      remindAt: "2026-04-12T12:00:00.000Z",
+      remindedAt: "2026-04-12T13:00:00.000Z"
     });
     expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "n3" });
     expect(deleted).toBe(true);
@@ -540,6 +548,7 @@ describe("shared mongo client support", () => {
       { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
+      { key: { remind_at: 1, reminded_at: 1 }, name: "reminder_due_idx" },
       { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
     ]);
   });
@@ -649,6 +658,45 @@ describe("shared mongo client support", () => {
       { key: { status: 1 }, name: "status_idx" }
     ]);
   });
+
+  it("drops legacy task indexes before recreating the supported set", async () => {
+    const taskClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const taskStore = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient: taskClient
+    });
+
+    await taskStore.ensureIndexes();
+
+    expect(taskClient.collectionApi.dropIndex.mock.calls).toEqual([
+      ["tasks_code_unique"],
+      ["tasks_status_created_at"],
+      ["tasks_tags"],
+      ["tasks_plan_code"]
+    ]);
+    expect(taskClient.collectionApi.dropIndex.mock.invocationCallOrder[3]).toBeLessThan(
+      taskClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    );
+  });
+
+  it("drops legacy note indexes before recreating the supported set", async () => {
+    const noteClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const noteStore = new MongoNoteStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "notes",
+      sharedClient: noteClient
+    });
+
+    await noteStore.ensureIndexes();
+
+    expect(noteClient.collectionApi.dropIndex.mock.calls).toEqual([["notes_created_at"], ["notes_tags"]]);
+    expect(noteClient.collectionApi.dropIndex.mock.invocationCallOrder[1]).toBeLessThan(
+      noteClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    );
+  });
 });
 
 function createSharedClient(items: unknown[]) {
@@ -659,6 +707,7 @@ function createSharedClient(items: unknown[]) {
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
   const updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0 });
   const deleteOne = vi.fn().mockResolvedValue({ deletedCount: 0 });
+  const dropIndex = vi.fn().mockResolvedValue(undefined);
   const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
     sort,
@@ -669,6 +718,7 @@ function createSharedClient(items: unknown[]) {
     bulkWrite,
     createIndexes,
     deleteOne,
+    dropIndex,
     find,
     findOne,
     updateOne
@@ -685,6 +735,7 @@ function createSharedClient(items: unknown[]) {
       bulkWrite,
       createIndexes,
       deleteOne,
+      dropIndex,
       find,
       findOne,
       sort,

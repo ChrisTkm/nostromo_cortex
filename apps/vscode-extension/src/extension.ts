@@ -10,19 +10,34 @@ import {
 } from "@cortex/core";
 import * as vscode from "vscode";
 
+import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { ExtensionTaskService } from "./service.js";
+import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFlow/analyzers/index.js";
+import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
+import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
-import { CortexTreeProvider, type TaskTreeNode } from "./tree.js";
+import { CortexTreeProvider, type PlanStatusFilter, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
+import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
 type NotesPanelMode = "list" | "new" | { type: "edit"; code: string };
+type NotesPanelRequest = {
+  mode: NotesPanelMode;
+  search?: string;
+};
 type PlanQuickPickItem = vscode.QuickPickItem & { planCode?: string | undefined };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
+type ScriptFlowScope = "file" | "selection";
+type ScriptFlowRequest = {
+  scope: ScriptFlowScope;
+  documentUri?: vscode.Uri;
+  selection?: vscode.Range;
+};
 type FilterCatalog = {
   projects: string[];
   groups: string[];
@@ -30,8 +45,13 @@ type FilterCatalog = {
   statuses: string[];
   severities: string[];
 };
+type ScriptFlowDelivery =
+  | { type: "snapshot"; snapshot: ScriptFlowSnapshot; parseMs: number; documentUri: vscode.Uri }
+  | { type: "error"; error: string }
+  | { type: "unsupported"; language?: string };
 
 let activeService: ExtensionTaskService | undefined;
+const PLAN_STATUS_FILTER_KEY = "cortex.planStatusFilter";
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -53,11 +73,19 @@ export async function activate(context: vscode.ExtensionContext) {
     throw err;
   }
 
-  const treeProvider = new CortexTreeProvider(service);
+  const reminderStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 30);
+  reminderStatusBar.name = "Cortex Note Reminders";
+  context.subscriptions.push(reminderStatusBar, { dispose: disposeReminderTimers });
+  await fireDue(service, reminderStatusBar, "startup");
+  await scheduleAll(service, reminderStatusBar);
+
+  let planStatusFilter = normalizePlanStatusFilter(context.workspaceState.get<PlanStatusFilter>(PLAN_STATUS_FILTER_KEY, "active"));
+  const treeProvider = new CortexTreeProvider(service, planStatusFilter);
   const treeView = vscode.window.createTreeView("cortex.overview", {
     treeDataProvider: treeProvider,
     showCollapseAll: true
   });
+  treeView.title = titleForPlanStatusFilter(planStatusFilter);
   context.subscriptions.push(treeView);
 
   let graphPanel: vscode.WebviewPanel | undefined;
@@ -65,7 +93,13 @@ export async function activate(context: vscode.ExtensionContext) {
   let logsPanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
   let notesPanelReady = false;
+  let scriptFlowPanel: vscode.WebviewPanel | undefined;
+  let scriptFlowPanelReady = false;
+  let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
+  let currentScriptFlowDocumentUri: vscode.Uri | undefined;
   let pendingNotesMode: NotesPanelMode = "list";
+  let pendingNotesSearch: string | undefined;
+  let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -83,6 +117,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     const availablePlanCodes = new Set(bundle.plans.map((plan) => plan.code));
     const selectedPlanCode = resolveSelectedPlanCode(bundle.tasks, persistedState, availablePlanCodes, selectedTaskCode);
+    const nextSelectedTaskCode = resolveSelectedTaskCode(bundle.tasks, persistedState, selectedPlanCode, selectedTaskCode);
     const selectedPlan = selectedPlanCode ? bundle.plans.find((plan) => plan.code === selectedPlanCode) ?? null : null;
     const catalog = buildFilterCatalog(
       selectedPlanCode ? bundle.tasks.filter((task) => task.planCode === selectedPlanCode) : bundle.tasks
@@ -90,7 +125,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const state = sanitizeFilterState(
       {
         ...persistedState,
-        ...(selectedPlanCode ? { selectedPlanCode } : {})
+        selectedPlanCode,
+        selectedTaskCode: nextSelectedTaskCode
       },
       catalog,
       availablePlanCodes
@@ -120,7 +156,7 @@ export async function activate(context: vscode.ExtensionContext) {
       state: {
         orientation: state.graphOrientation,
         showMiniMap: state.showMiniMap,
-        selectedTaskCode: selectedTaskCode ?? state.selectedTaskCode,
+        selectedTaskCode: state.selectedTaskCode,
         zoom: state.zoom,
         pan: state.pan
       },
@@ -144,37 +180,81 @@ export async function activate(context: vscode.ExtensionContext) {
     await postSnapshot();
   }
 
-  async function postNotesList() {
-    if (!notesPanel) {
+  async function postNotesList(search?: string) {
+    const panel = notesPanel;
+    if (!panel) {
       return;
     }
     const notes = await service.listNotes();
-    await notesPanel.webview.postMessage({
+    if (notesPanel !== panel) {
+      return;
+    }
+    await panel.webview.postMessage({
       type: "notes:list",
-      notes
+      notes,
+      ...(search?.trim() ? { search: search.trim() } : {})
     });
   }
 
   async function postLogsList() {
-    if (!logsPanel) {
+    const panel = logsPanel;
+    if (!panel) {
       return;
     }
 
     const logs = await service.listLogs();
-    await logsPanel.webview.postMessage({
+    if (logsPanel !== panel) {
+      return;
+    }
+    await panel.webview.postMessage({
       type: "logs:list",
       logs
     });
   }
 
   async function postNotesMode(mode: NotesPanelMode) {
-    if (!notesPanel) {
+    const panel = notesPanel;
+    if (!panel) {
       return;
     }
-    await notesPanel.webview.postMessage({
+    await panel.webview.postMessage({
       type: "open",
       mode
     });
+  }
+
+  async function postScriptFlowInit(request: ScriptFlowRequest) {
+    const panel = scriptFlowPanel;
+    if (!panel) {
+      return;
+    }
+
+    currentScriptFlowSnapshot = undefined;
+    currentScriptFlowDocumentUri = undefined;
+    const delivery = await buildScriptFlowDelivery(request);
+    if (scriptFlowPanel !== panel) {
+      return;
+    }
+
+    if (delivery.type === "snapshot") {
+      currentScriptFlowSnapshot = delivery.snapshot;
+      currentScriptFlowDocumentUri = delivery.documentUri;
+      await sendSnapshot(panel.webview, delivery.snapshot);
+      await service.recordInteraction("script_flow_open", {
+        lang: delivery.snapshot.metadata.language,
+        nodeCount: delivery.snapshot.nodes.length,
+        edgeCount: delivery.snapshot.edges.length,
+        parseMs: delivery.parseMs
+      });
+      return;
+    }
+
+    if (delivery.type === "error") {
+      await sendError(panel.webview, delivery.error);
+      return;
+    }
+
+    await sendUnsupported(panel.webview, delivery.language);
   }
 
   async function refreshNotesPanel() {
@@ -184,11 +264,16 @@ export async function activate(context: vscode.ExtensionContext) {
     await postNotesList();
   }
 
-  async function openNotesPanel(mode: NotesPanelMode) {
-    pendingNotesMode = mode;
+  async function openNotesPanel(request: NotesPanelRequest) {
+    pendingNotesMode = request.mode;
+    pendingNotesSearch = request.search?.trim() || undefined;
     if (notesPanel) {
       notesPanel.reveal(vscode.ViewColumn.One);
-      await postNotesMode(mode);
+      if (pendingNotesSearch) {
+        await postNotesList(pendingNotesSearch);
+        pendingNotesSearch = undefined;
+      }
+      await postNotesMode(request.mode);
       return;
     }
 
@@ -204,25 +289,34 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     notesPanel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "ready") {
+        const wasReady = notesPanelReady;
         notesPanelReady = true;
-        await postNotesList();
-        await postNotesMode(pendingNotesMode);
+        await postNotesList(pendingNotesSearch);
+        pendingNotesSearch = undefined;
+        if (!wasReady) {
+          await postNotesMode(pendingNotesMode);
+        }
         return;
       }
       if (message?.type === "notes:save" && isNoteDocumentInput(message.input)) {
+        const panel = notesPanel;
         const saved = await service.saveNote(message.input);
-        if (notesPanel) {
-          await notesPanel.webview.postMessage({
+        if (panel && notesPanel === panel) {
+          await panel.webview.postMessage({
             type: "notes:saved",
             note: saved
           });
         }
         await refreshNotesPanel();
+        await fireDue(service, reminderStatusBar, "live");
+        await scheduleAll(service, reminderStatusBar);
         return;
       }
       if (message?.type === "notes:delete" && typeof message.code === "string" && message.code.trim()) {
         await service.deleteNote(message.code.trim());
         await refreshNotesPanel();
+        await fireDue(service, reminderStatusBar, "live");
+        await scheduleAll(service, reminderStatusBar);
       }
     });
   }
@@ -250,6 +344,76 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "ready" || message?.type === "logs:refresh") {
         logsPanelReady = true;
         await postLogsList();
+      }
+    });
+  }
+
+  async function openScriptFlowPanel(request: ScriptFlowRequest, options?: { forceReload?: boolean }) {
+    pendingScriptFlowRequest = request;
+    if (options?.forceReload && scriptFlowPanel) {
+      const panel = scriptFlowPanel;
+      scriptFlowPanel = undefined;
+      scriptFlowPanelReady = false;
+      panel.dispose();
+    }
+
+    if (scriptFlowPanel) {
+      scriptFlowPanel.reveal(vscode.ViewColumn.One);
+      if (scriptFlowPanelReady) {
+        await postScriptFlowInit(request);
+      }
+      return;
+    }
+
+    scriptFlowPanelReady = false;
+    scriptFlowPanel = vscode.window.createWebviewPanel("cortex.scriptFlow", "Cortex Script Flow", vscode.ViewColumn.Beside, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    scriptFlowPanel.webview.html = getScriptFlowHtml(scriptFlowPanel.webview, context.extensionUri, nonce());
+    scriptFlowPanel.onDidDispose(() => {
+      scriptFlowPanel = undefined;
+      scriptFlowPanelReady = false;
+      currentScriptFlowSnapshot = undefined;
+      currentScriptFlowDocumentUri = undefined;
+    });
+    scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
+      if (!isScriptFlowWebviewMessage(message)) {
+        return;
+      }
+      if (message.type === "ready") {
+        scriptFlowPanelReady = true;
+        await postScriptFlowInit(pendingScriptFlowRequest);
+        return;
+      }
+      if (message.type === "scriptFlow:refresh") {
+        await openScriptFlowPanel(pendingScriptFlowRequest, { forceReload: true });
+        return;
+      }
+      if (message.type === "scriptFlow:drawerClick") {
+        await service.recordInteraction("script_flow_drawer_click", {
+          section: message.section
+        });
+        return;
+      }
+      if (message.type === "scriptFlow:selectNode") {
+        const selectedNode = currentScriptFlowSnapshot?.nodes.find((node) => node.id === message.nodeId);
+        if (!selectedNode) {
+          return;
+        }
+        await service.recordInteraction("script_flow_node_select", {
+          nodeId: selectedNode.id,
+          kind: selectedNode.kind
+        });
+        if (!currentScriptFlowDocumentUri || !selectedNode.range) {
+          return;
+        }
+        await vscode.window.showTextDocument(currentScriptFlowDocumentUri, {
+          selection: new vscode.Range(
+            new vscode.Position(selectedNode.range.startLine - 1, selectedNode.range.startCol - 1),
+            new vscode.Position(selectedNode.range.endLine - 1, selectedNode.range.endCol - 1)
+          )
+        });
       }
     });
   }
@@ -301,7 +465,8 @@ export async function activate(context: vscode.ExtensionContext) {
           if (typeof message.code === "string" && message.code.trim()) {
             await service.updateFilterState({
               selectedPlanCode: message.code.trim(),
-              selectedProjects: []
+              selectedProjects: [],
+              selectedTaskCode: undefined
             });
             await refreshView();
             return;
@@ -368,9 +533,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     graphPanel.reveal(vscode.ViewColumn.One);
-    if (selectedTaskCode) {
-      await service.updateFilterState({ selectedTaskCode });
-    }
     await postSnapshot(selectedTaskCode);
   }
 
@@ -383,7 +545,8 @@ export async function activate(context: vscode.ExtensionContext) {
       { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
       { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
       { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
-      { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" }
+      { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+      { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" }
     ];
     const picked = await vscode.window.showQuickPick(items, {
       title: "Switch Cortex panel",
@@ -403,12 +566,19 @@ export async function activate(context: vscode.ExtensionContext) {
       return openGraph(code);
     }),
     vscode.commands.registerCommand("cortex.refresh", refreshView),
+    vscode.commands.registerCommand("cortex.togglePlanStatusFilter", async () => {
+      planStatusFilter = planStatusFilter === "active" ? "done" : "active";
+      await context.workspaceState.update(PLAN_STATUS_FILTER_KEY, planStatusFilter);
+      treeProvider.setPlanStatusFilter(planStatusFilter);
+      treeView.title = titleForPlanStatusFilter(planStatusFilter);
+    }),
     vscode.commands.registerCommand("cortex.showOptions", async () => {
       const items: OptionsQuickPickItem[] = [
         { label: "Tasks", description: "Focus the Task Navigator sidebar", command: "cortex.openTasks" },
         { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
         { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
         { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+        { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" },
         { label: "Search query", description: "Update search text", command: "cortex.setSearchQuery" },
         { label: "Tag filter", description: "Select task tags", command: "cortex.setTagFilter" },
         { label: "Project filter", description: "Select projects", command: "cortex.setProjectFilter" },
@@ -428,14 +598,32 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       await vscode.commands.executeCommand(picked.command);
     }),
-    vscode.commands.registerCommand("cortex.openNotes", async () => {
-      await openNotesPanel("list");
+    vscode.commands.registerCommand("cortex.openNotes", async (arg?: string | { search?: string }) => {
+      const search = typeof arg === "string" ? arg : typeof arg?.search === "string" ? arg.search : undefined;
+      await openNotesPanel({
+        mode: "list",
+        ...(search ? { search } : {})
+      });
     }),
     vscode.commands.registerCommand("cortex.openLogs", async () => {
       await openLogsPanel();
     }),
+    vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
+      const editor = vscode.window.activeTextEditor;
+      await openScriptFlowPanel({
+        scope: "file",
+        ...(editor ? { documentUri: editor.document.uri } : {})
+      });
+    }),
+    vscode.commands.registerCommand("cortex.openScriptFlowForSelection", async () => {
+      const editor = vscode.window.activeTextEditor;
+      await openScriptFlowPanel({
+        scope: "selection",
+        ...(editor ? { documentUri: editor.document.uri, selection: new vscode.Range(editor.selection.start, editor.selection.end) } : {})
+      });
+    }),
     vscode.commands.registerCommand("cortex.newNote", async () => {
-      await openNotesPanel("new");
+      await openNotesPanel({ mode: "new" });
     }),
     vscode.commands.registerCommand("cortex.editNote", async (arg?: string | { code?: string }) => {
       const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
@@ -449,7 +637,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!code) {
         return;
       }
-      await openNotesPanel({ type: "edit", code });
+      await openNotesPanel({ mode: { type: "edit", code } });
     }),
     vscode.commands.registerCommand("cortex.deleteNote", async (arg?: string | { code?: string }) => {
       const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
@@ -476,7 +664,30 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       await refreshNotesPanel();
+      await fireDue(service, reminderStatusBar, "live");
+      await scheduleAll(service, reminderStatusBar);
       void vscode.window.showInformationMessage(`Note ${code} deleted.`);
+    }),
+    vscode.commands.registerCommand("cortex.snoozeReminder", async (arg?: string | { code?: string }) => {
+      const requestedCode = typeof arg === "string" ? arg : typeof arg?.code === "string" ? arg.code : undefined;
+      const code = requestedCode ?? (await pickPendingReminderCode());
+      if (!code) {
+        return;
+      }
+
+      const updated = await service.rescheduleReminder(code, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+      if (!updated) {
+        void vscode.window.showWarningMessage(`Note ${code} not found.`);
+        return;
+      }
+
+      await service.recordInteraction("note_reminder_snoozed", {
+        code,
+        source: "command"
+      });
+      await refreshNotesPanel();
+      await scheduleAll(service, reminderStatusBar);
+      void vscode.window.showInformationMessage(`Reminder for ${code} moved by 1 hour.`);
     }),
     vscode.commands.registerCommand("cortex.setSearchQuery", async () => {
       const current = service.getFilterState().searchQuery ?? "";
@@ -649,6 +860,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
+  disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
 }
@@ -757,17 +969,15 @@ function resolveSelectedPlanCode(
   planCodes: ReadonlySet<string>,
   nextSelectedTaskCode?: string
 ) {
+  if (nextSelectedTaskCode) {
+    const selectedTask = tasks.find((task) => task.code === nextSelectedTaskCode || task.id === nextSelectedTaskCode);
+    const selectedTaskPlanCode = selectedTask?.planCode;
+    return selectedTaskPlanCode && planCodes.has(selectedTaskPlanCode) ? selectedTaskPlanCode : undefined;
+  }
+
   const current = state.selectedPlanCode;
   if (!current || !planCodes.has(current)) {
     return undefined;
-  }
-
-  const taskCode = nextSelectedTaskCode ?? state.selectedTaskCode;
-  if (taskCode) {
-    const selectedTask = tasks.find((task) => task.code === taskCode || task.id === taskCode);
-    if (selectedTask && selectedTask.planCode !== current) {
-      return undefined;
-    }
   }
 
   if (state.selectedProjects.length > 0) {
@@ -783,8 +993,39 @@ function resolveSelectedPlanCode(
   return current;
 }
 
+function resolveSelectedTaskCode(
+  tasks: TaskRecord[],
+  state: ReturnType<ExtensionTaskService["getFilterState"]>,
+  selectedPlanCode?: string,
+  nextSelectedTaskCode?: string
+) {
+  const taskCode = nextSelectedTaskCode ?? state.selectedTaskCode;
+  if (!taskCode) {
+    return undefined;
+  }
+
+  const selectedTask = tasks.find((task) => task.code === taskCode || task.id === taskCode);
+  if (!selectedTask) {
+    return undefined;
+  }
+
+  if (selectedPlanCode && selectedTask.planCode !== selectedPlanCode) {
+    return undefined;
+  }
+
+  return taskCode;
+}
+
 function sameArray(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function normalizePlanStatusFilter(value: PlanStatusFilter | undefined): PlanStatusFilter {
+  return value === "done" ? "done" : "active";
+}
+
+function titleForPlanStatusFilter(filter: PlanStatusFilter) {
+  return filter === "done" ? "Cortex · Cerrados" : "Cortex · En curso";
 }
 
 async function pickConnectionSettings(
@@ -875,6 +1116,68 @@ async function pickConnectionSettings(
     mongoTasksCollection,
     mongoPlansCollection: current.mongoPlansCollection
   };
+}
+
+async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<ScriptFlowDelivery> {
+  const document = await resolveScriptFlowDocument(request);
+  if (!document) {
+    return { type: "unsupported" };
+  }
+
+  const documentPath = document.uri.fsPath;
+  const language = resolveScriptFlowLanguage(documentPath);
+
+  if (request.scope === "selection" && (!request.selection || request.selection.isEmpty)) {
+    return {
+      type: "error",
+      error: "Select a code range before opening Script Flow for the current selection."
+    };
+  }
+
+  if (!language) {
+    return {
+      type: "unsupported",
+      language: document.languageId
+    };
+  }
+
+  try {
+    const source = request.scope === "selection" && request.selection ? document.getText(request.selection) : document.getText();
+    const startedAt = Date.now();
+    const snapshot = await analyzeScriptFlowDocument({
+      documentPath,
+      source
+    });
+    if (!snapshot) {
+      return {
+        type: "unsupported",
+        language
+      };
+    }
+    return {
+      type: "snapshot",
+      snapshot,
+      parseMs: Date.now() - startedAt,
+      documentUri: document.uri
+    };
+  } catch (error) {
+    return {
+      type: "error",
+      error: String(error)
+    };
+  }
+}
+
+async function resolveScriptFlowDocument(request: ScriptFlowRequest): Promise<vscode.TextDocument | undefined> {
+  if (request.documentUri) {
+    try {
+      return await vscode.workspace.openTextDocument(request.documentUri);
+    } catch {
+      // fall through to active editor
+    }
+  }
+  const editor = vscode.window.activeTextEditor;
+  return editor?.document;
 }
 
 function formatCollectionMessage(
@@ -1005,6 +1308,33 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
     created_at: task.createdAt,
     updated_at: new Date().toISOString()
   };
+}
+
+async function pickPendingReminderCode() {
+  const notes = await activeService?.listNotes();
+  const reminderNotes = (notes ?? []).filter((note) => note.remindAt && !note.remindedAt);
+  if (reminderNotes.length === 0) {
+    void vscode.window.showInformationMessage("No pending reminders available to snooze.");
+    return undefined;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    reminderNotes
+      .sort((left, right) => left.code.localeCompare(right.code))
+      .map((note) => ({
+        label: note.code,
+        description: note.title,
+        detail: note.remindAt
+      })),
+    {
+      title: "Select a reminder to snooze",
+      placeHolder: "Choose a note code",
+      matchOnDescription: true,
+      matchOnDetail: true
+    }
+  );
+
+  return picked?.label;
 }
 
 function splitCsv(value: string) {

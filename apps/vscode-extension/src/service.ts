@@ -42,7 +42,7 @@ export class ExtensionTaskService {
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
       ...process.env,
-      MONGO_URL: this.config.get("mongoUrl", "mongodb://localhost:27017"),
+      MONGO_URL: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
       MONGO_DB_NAME: this.config.get("mongoDbName", "cortex"),
       MONGO_TASKS_COLLECTION: this.config.get("mongoTasksCollection", "tasks"),
       TELEMETRY_BACKEND: this.config.get("telemetryBackend", "sqlite"),
@@ -96,7 +96,7 @@ export class ExtensionTaskService {
 
   getConnectionSettings() {
     return {
-      mongoUrl: this.config.get("mongoUrl", "mongodb://localhost:27017"),
+      mongoUrl: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
       mongoDbName: this.config.get("mongoDbName", "cortex"),
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
       mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
@@ -165,6 +165,53 @@ export class ExtensionTaskService {
 
   async deleteNote(code: string): Promise<boolean> {
     return this.getNotesStore().deleteNote(code);
+  }
+
+  async listPendingReminders(options: { now: string | Date }): Promise<NoteRecord[]> {
+    const now = normalizeReminderIso(options.now);
+    const notes = await this.listNotes();
+
+    return notes
+      .filter((note) => note.remindAt && !note.remindedAt && note.remindAt <= now)
+      .sort((left, right) => String(left.remindAt).localeCompare(String(right.remindAt)));
+  }
+
+  async markReminded(code: string, when: string | Date): Promise<NoteRecord | null> {
+    const note = await this.getNote(code);
+    if (!note) {
+      return null;
+    }
+
+    return this.saveNote({
+      code: note.code,
+      title: note.title,
+      body: note.body,
+      tags: note.tags,
+      ...(note.taskCode ? { task_code: note.taskCode } : {}),
+      ...(note.planCode ? { plan_code: note.planCode } : {}),
+      ...(note.pinned ? { pinned: true } : {}),
+      ...(note.remindAt ? { remind_at: note.remindAt } : {}),
+      reminded_at: normalizeReminderIso(when)
+    });
+  }
+
+  async rescheduleReminder(code: string, remindAt: string | Date): Promise<NoteRecord | null> {
+    const note = await this.getNote(code);
+    if (!note) {
+      return null;
+    }
+
+    return this.saveNote({
+      code: note.code,
+      title: note.title,
+      body: note.body,
+      tags: note.tags,
+      ...(note.taskCode ? { task_code: note.taskCode } : {}),
+      ...(note.planCode ? { plan_code: note.planCode } : {}),
+      ...(note.pinned ? { pinned: true } : {}),
+      remind_at: normalizeReminderIso(remindAt),
+      reminded_at: null
+    });
   }
 
   async listLogs(limit = 500): Promise<LogRecord[]> {
@@ -385,4 +432,8 @@ export class ExtensionTaskService {
       await store.close();
     }
   }
+}
+
+function normalizeReminderIso(value: string | Date) {
+  return new Date(value).toISOString();
 }

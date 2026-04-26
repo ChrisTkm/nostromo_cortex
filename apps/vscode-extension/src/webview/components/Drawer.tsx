@@ -10,6 +10,7 @@ export function Drawer(props: {
   onClearFilters(): void;
   onClose(): void;
   onClosePromptPanel(): void;
+  onEditTask(): void;
   onOpenPromptPanel(): void;
   onSelectDependency(code: string): void;
   onTabChange(tab: "inspector" | "filters"): void;
@@ -58,6 +59,11 @@ export function Drawer(props: {
                   {typeof props.selectedNode.durationEstimate === "number" ? (
                     <span className="drawer-badge">{formatHours(props.selectedNode.durationEstimate)}</span>
                   ) : null}
+                </div>
+                <div className="drawer-task-actions">
+                  <button className="app-toolbar__button" onClick={props.onEditTask} type="button">
+                    Edit task
+                  </button>
                 </div>
               </header>
               <div className="drawer-divider" />

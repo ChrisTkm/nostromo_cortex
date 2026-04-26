@@ -8,7 +8,7 @@ Cortex separa claramente almacenamiento de tareas, visualización y automatizaci
 flowchart LR
   Mongo[(MongoDB tasks)]
   ExtHost["VS Code extension host"]
-  Webview["PERT webview (Cytoscape + dagre)"]
+  Webview["PERT / Notes / Logs / Script Flow webviews"]
   MCP["MCP server"]
   Telemetry[(SQLite / JSONL telemetry)]
 
@@ -52,14 +52,15 @@ El webview no abre conexiones a Mongo. El flujo es:
 
 Esto reduce superficie de ataque, simplifica permisos y mantiene la lógica crítica fuera del DOM.
 
-### 4. Cytoscape + dagre
+### 4. React Flow + webviews especializados
 
-Se eligió Cytoscape.js con dagre porque:
+La extensión divide la UI en superficies separadas que comparten snapshots desde el host:
 
-- soporta DAG jerárquico estable
-- tolera refrescos frecuentes mejor que layouts físicos
-- permite resaltar upstream/downstream fácilmente
-- es suficiente para MVP sin introducir una arquitectura visual más pesada
+- `Task Graph` sigue usando React Flow + Dagre para el DAG principal.
+- `Notes` y `Logs` viven en bundles dedicados para no contaminar el panel principal.
+- `Script Flow` es otro webview dedicado, con renderer común de nodos/aristas y analyzers por lenguaje en el extension host.
+
+Esto mantiene el acceso a Mongo y el parseo fuera del DOM, y permite evolucionar cada panel con su propio bundle esbuild.
 
 ### 5. MCP con herramientas pequeñas
 
@@ -88,7 +89,11 @@ Las respuestas se serializan con orden estable para reducir ruido entre corridas
 
 Esto evita hardcodes dispersos y permite actualizar precios sin tocar toda la base.
 
+## Modulos v0.1.3
+
 - **Notes & Logs panels**  Webviews independientes sobre el mismo SharedMongoClient. Notes permite CRUD; Logs es read-only. Ambos tienen su bundle esbuild minificado propio (`media/notes.js`, `media/logs.js`).
+- **Reminders flow**  La lógica corre en el extension host. `activate()` dispara `fireDue(..., "startup")`, actualiza la campana en status bar y luego agenda timers con `scheduleAll(...)`. Cuando el usuario pospone o descarta, el estado vuelve a Mongo y se recalcula la programación sin reiniciar la extensión.
+- **Script Flow module**  `src/scriptFlow/` centraliza tipos, bridge host/webview y analyzers por lenguaje. TypeScript usa el analyzer de referencia existente; Python parsea con `web-tree-sitter@0.26.8` apoyado por `tree-sitter-python.wasm`; SQL usa `node-sql-parser` con fallback `postgresql -> mysql`. El resultado común es un `ScriptFlowSnapshot` que el webview renderiza con colores por `kind`, drawer analítico y navegación editor-panel.
 
 ## Modelo de datos
 
