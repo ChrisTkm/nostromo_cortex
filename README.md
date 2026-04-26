@@ -91,6 +91,15 @@ La extensión VS Code expone cinco superficies. Todas viven sobre el mismo `Shar
 
 Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs y al resto de filtros.
 
+## v0.1.4
+
+Release de mantenimiento sobre 0.1.3. Sin features nuevas, foco en estabilidad del bundle y de la conexión a Mongo.
+
+- **Mongo URL por defecto** pasa de `mongodb://localhost:27017` a `mongodb://127.0.0.1:27017` (config, settings, service y tests). Evita la latencia/timeout que aparece cuando el resolver de Node intenta IPv6 primero en hosts dual-stack y Mongo solo escucha en IPv4.
+- **esbuild CJS bundle**: `web-tree-sitter` se empaqueta inline en `dist/extension.cjs`. Se quita del array `external` y se inyecta un shim de `import.meta.url` vía `banner` + `define` para que el módulo ESM funcione dentro del bundle CommonJS de la extension host.
+- **Notes panel**: el handler del mensaje `ready` del webview ya no re-emite el modo inicial cuando llega un replay del mismo evento. Se cubre con un test que verifica que `open` se postea una sola vez ante múltiples `ready`.
+- Refactor interno de `useNotesController.ts` y rebuild de `media/notes.js`.
+
 ## v0.1.3
 
 La rama `v0.1.3` cierra el ciclo de Notes + Reminders + Script Flow dentro de la extensión.
