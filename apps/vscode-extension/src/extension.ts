@@ -18,6 +18,7 @@ import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } 
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import { CortexTreeProvider, type GroupTreeNode, type PlanStatusFilter, type TaskTreeNode } from "./tree.js";
+import { getArchiveHtml } from "./webview/archive/getHtml.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
@@ -98,15 +99,20 @@ export async function activate(context: vscode.ExtensionContext) {
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
   let logsPanelReady = false;
+  let archivePanel: vscode.WebviewPanel | undefined;
+  let archivePanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
   let notesPanelReady = false;
   let scriptFlowPanel: vscode.WebviewPanel | undefined;
   let scriptFlowPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
+  let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
+  const cortexOutput = vscode.window.createOutputChannel("Cortex");
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
+  context.subscriptions.push(cortexOutput);
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -147,6 +153,7 @@ export async function activate(context: vscode.ExtensionContext) {
       snapshotFilter
     });
     const snapshot = await service.loadSnapshot(snapshotFilter, bundle, selectedPlan);
+    currentGraphOrphans = snapshot.warnings?.orphans ?? [];
     service.logger.debug("postSnapshot snapshot nodes/edges", {
       nodeCount: snapshot.nodes.length,
       edgeCount: snapshot.edges.length
@@ -216,6 +223,22 @@ export async function activate(context: vscode.ExtensionContext) {
     await panel.webview.postMessage({
       type: "logs:list",
       logs
+    });
+  }
+
+  async function postArchiveList() {
+    const panel = archivePanel;
+    if (!panel) {
+      return;
+    }
+
+    const plans = await service.listArchivedPlans();
+    if (archivePanel !== panel) {
+      return;
+    }
+    await panel.webview.postMessage({
+      type: "archive:list",
+      plans
     });
   }
 
@@ -357,6 +380,39 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
+  async function openArchivePanel() {
+    if (archivePanel) {
+      archivePanel.reveal(vscode.ViewColumn.One);
+      if (archivePanelReady) {
+        await postArchiveList();
+      }
+      return;
+    }
+
+    archivePanelReady = false;
+    archivePanel = vscode.window.createWebviewPanel("cortex.archive", "Cortex Archive", vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    setWebviewPanelIcon(context, archivePanel, "cortex-archive.svg");
+    archivePanel.webview.html = getArchiveHtml(archivePanel.webview, context.extensionUri, nonce());
+    archivePanel.onDidDispose(() => {
+      archivePanel = undefined;
+      archivePanelReady = false;
+    });
+    archivePanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready" || message?.type === "archive:refresh") {
+        archivePanelReady = true;
+        await postArchiveList();
+        return;
+      }
+      if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(message.jsonPath.trim()));
+        await vscode.window.showTextDocument(document);
+      }
+    });
+  }
+
   async function openScriptFlowPanel(request: ScriptFlowRequest, options?: { forceReload?: boolean }) {
     pendingScriptFlowRequest = request;
     if (options?.forceReload && scriptFlowPanel) {
@@ -472,6 +528,14 @@ export async function activate(context: vscode.ExtensionContext) {
           await refreshView();
           return;
         }
+        if (message.type === "showOrphanWarnings") {
+          cortexOutput.clear();
+          for (const orphan of currentGraphOrphans) {
+            cortexOutput.appendLine(`WARN orphan dep: task=${orphan.taskCode} missing=${orphan.missing}`);
+          }
+          cortexOutput.show(true);
+          return;
+        }
         if (message.type === "selectPlan") {
           if (typeof message.code === "string" && message.code.trim()) {
             await service.updateFilterState({
@@ -557,6 +621,7 @@ export async function activate(context: vscode.ExtensionContext) {
       { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
       { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
       { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+      { label: "Archive", description: "Open the archived plans panel", command: "cortex.openArchive" },
       { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" }
     ];
     const picked = await vscode.window.showQuickPick(items, {
@@ -589,6 +654,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Graph", description: "Open the PERT graph panel", command: "cortex.openGraph" },
         { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
         { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
+        { label: "Archive", description: "Open the archived plans panel", command: "cortex.openArchive" },
         { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" },
         { label: "Search query", description: "Update search text", command: "cortex.setSearchQuery" },
         { label: "Tag filter", description: "Select task tags", command: "cortex.setTagFilter" },
@@ -618,6 +684,9 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("cortex.openLogs", async () => {
       await openLogsPanel();
+    }),
+    vscode.commands.registerCommand("cortex.openArchive", async () => {
+      await openArchivePanel();
     }),
     vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
       const editor = vscode.window.activeTextEditor;

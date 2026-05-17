@@ -21,12 +21,17 @@ Copiar `.env.example` a `.env` si quieres personalizar rutas y conexiones.
 
 Variables clave:
 
-- `MONGO_URL`
-- `MONGO_DB_NAME`
-- `MONGO_TASKS_COLLECTION`
-- `TELEMETRY_BACKEND`
-- `TELEMETRY_SQLITE_PATH`
-- `TELEMETRY_JSONL_PATH`
+- `MONGO_URL` (default: `mongodb://127.0.0.1:27017`)
+- `MONGO_DB_NAME` (default: `cortex`)
+- `MONGO_TASKS_COLLECTION` (default: `tasks`)
+- `TELEMETRY_BACKEND` (default: `sqlite`; usa `jsonl` para archivo JSONL)
+- `TELEMETRY_SQLITE_PATH` (default: `./data/telemetry/cortex-telemetry.db`)
+- `TELEMETRY_JSONL_PATH` (default: `./data/telemetry/cortex-telemetry.jsonl`)
+- `LOG_LEVEL` (default: `info`)
+- `LOG_FORMAT` (default: `pretty`; usa `json` para logs estructurados)
+- `SNAPSHOT_MAX_TASKS` (default: `500`)
+
+La extensión de VS Code guarda la Mongo URL en SecretStorage mediante `Cortex: Set Mongo URL`; estas variables aplican principalmente al MCP server, scripts y configuración compartida de `@cortex/core`.
 
 ## Levantar Mongo local
 
@@ -103,4 +108,3 @@ pnpm check:cycles
 ## Registro del MCP en Codex
 
 Usa el archivo de ejemplo `.codex/config.toml.example`.
-

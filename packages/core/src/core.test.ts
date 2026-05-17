@@ -201,6 +201,26 @@ describe("graph algorithms", () => {
     expect(getReadyTasks(tasks).map((task) => task.code)).toEqual(["S5a"]);
   });
 
+  it("reports orphan dependencies without creating graph edges", () => {
+    const graph = buildTaskGraph(
+      normalizeTasks([
+        {
+          ...sampleTasks[0]!,
+          code: "A",
+          depends_on: ["MISSING"]
+        },
+        {
+          ...sampleTasks[1]!,
+          code: "B",
+          depends_on: ["A"]
+        }
+      ])
+    );
+
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["A->B"]);
+    expect(graph.warnings.orphans).toEqual([{ taskCode: "A", missing: "MISSING" }]);
+  });
+
   it("returns direct blockers for a task", () => {
     expect(getTaskBlockers(tasks, "S5b").map((task) => task.code)).toEqual(["S2.1", "S5a"]);
   });
@@ -263,6 +283,7 @@ describe("graph algorithms", () => {
 
     expect(snapshot.nodes.map((node) => node.code)).toEqual(["PLAN-A", "PLAN-B"]);
     expect(snapshot.edges.map((edge) => edge.id)).toEqual(["PLAN-A->PLAN-B"]);
+    expect(snapshot.warnings.orphans).toEqual([]);
     expect(snapshot.planContext?.code).toBe("PLAN-X");
   });
 

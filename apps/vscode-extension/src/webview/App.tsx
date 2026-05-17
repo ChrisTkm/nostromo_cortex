@@ -212,6 +212,12 @@ export function App() {
     vscode.postMessage({ type: "refresh" });
   }
 
+  function handleShowOrphanWarnings() {
+    vscode.postMessage({ type: "showOrphanWarnings" });
+  }
+
+  const orphanCount = snapshot?.warnings?.orphans.length ?? 0;
+
   return (
     <div className="app-shell">
       <Toolbar
@@ -235,6 +241,11 @@ export function App() {
           onRefresh={handleRefreshGraph}
           planContext={snapshot.planContext}
         />
+      ) : null}
+      {orphanCount > 0 ? (
+        <button className="graph-warning-banner" onClick={handleShowOrphanWarnings} type="button">
+          {orphanCount} dependencias huérfanas detectadas
+        </button>
       ) : null}
       <div className="app-graph">
         <Graph

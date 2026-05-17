@@ -139,6 +139,23 @@
   overflow: hidden;
 }
 
+.graph-warning-banner {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--status-blocked) 28%, transparent);
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--status-blocked) 10%, var(--cortex-bg));
+  color: var(--cortex-text);
+  cursor: pointer;
+  font-size: var(--cortex-text-xs);
+  text-align: left;
+}
+
+.graph-warning-banner:hover {
+  color: var(--status-blocked);
+  background: color-mix(in srgb, var(--status-blocked) 14%, var(--cortex-bg));
+}
+
 .plan-banner {
   display: grid;
   gap: 6px;
@@ -339,9 +356,9 @@
   min-width: 244px;
   min-height: 112px;
   padding: 12px;
-  border: 1px solid var(--cortex-border);
+  border: 1px solid var(--vscode-widget-border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--cortex-surface-strong) 90%, transparent);
+  background: var(--vscode-editorWidget-background);
   box-shadow: var(--cortex-shadow);
   backdrop-filter: blur(12px);
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;

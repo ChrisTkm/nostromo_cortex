@@ -4,11 +4,13 @@ const {
   activeTextEditorRef,
   commandHandlers,
   createTreeViewMock,
+  createOutputChannelMock,
   createWebviewPanelMock,
   createStatusBarItemMock,
   executeCommandMock,
   filterStateRef,
   listLogsMock,
+  listArchivedPlansMock,
   loadBundleMock,
   loadPlansMock,
   loadSnapshotMock,
@@ -38,6 +40,10 @@ const {
   showQuickPickMock,
   showTextDocumentMock,
   showWarningMessageMock,
+  openTextDocumentMock,
+  outputAppendLineMock,
+  outputClearMock,
+  outputShowMock,
   treePlansRef,
   treeProviderInstances,
   treeRefreshMock
@@ -75,6 +81,7 @@ const {
   };
   const listNotesMock = vi.fn();
   const listLogsMock = vi.fn();
+  const listArchivedPlansMock = vi.fn();
   const loadBundleMock = vi.fn();
   const loadPlansMock = vi.fn();
   const loadSnapshotMock = vi.fn();
@@ -104,6 +111,16 @@ const {
   const showInformationMessageMock = vi.fn();
   const showWarningMessageMock = vi.fn();
   const showTextDocumentMock = vi.fn();
+  const openTextDocumentMock = vi.fn();
+  const outputAppendLineMock = vi.fn();
+  const outputClearMock = vi.fn();
+  const outputShowMock = vi.fn();
+  const createOutputChannelMock = vi.fn(() => ({
+    appendLine: outputAppendLineMock,
+    clear: outputClearMock,
+    dispose: vi.fn(),
+    show: outputShowMock
+  }));
   const createStatusBarItemMock = vi.fn(() => ({
     text: "",
     tooltip: "",
@@ -172,11 +189,13 @@ const {
     activeTextEditorRef,
     commandHandlers,
     createTreeViewMock,
+    createOutputChannelMock,
     createWebviewPanelMock,
     createStatusBarItemMock,
     executeCommandMock,
     filterStateRef,
     listLogsMock,
+    listArchivedPlansMock,
     loadBundleMock,
     loadPlansMock,
     loadSnapshotMock,
@@ -206,6 +225,10 @@ const {
     showQuickPickMock,
     showTextDocumentMock,
     showWarningMessageMock,
+    openTextDocumentMock,
+    outputAppendLineMock,
+    outputClearMock,
+    outputShowMock,
     treePlansRef,
     treeProviderInstances,
     treeRefreshMock
@@ -247,11 +270,7 @@ vi.mock("vscode", () => ({
     showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: showErrorMessageMock,
-    createOutputChannel: vi.fn(() => ({
-      clear: vi.fn(),
-      appendLine: vi.fn(),
-      show: vi.fn()
-    }))
+    createOutputChannel: createOutputChannelMock
   },
   commands: {
     registerCommand: registerCommandMock,
@@ -284,9 +303,7 @@ vi.mock("vscode", () => ({
       get: getConfigMock,
       update: updateConfigMock
     })),
-    openTextDocument: vi.fn(async () => {
-      throw new Error("No mocked document");
-    })
+    openTextDocument: openTextDocumentMock
   }
 }));
 
@@ -345,6 +362,7 @@ vi.mock("./service.js", () => ({
     listNotes: listNotesMock,
     listPendingReminders: listPendingRemindersMock,
     listLogs: listLogsMock,
+    listArchivedPlans: listArchivedPlansMock,
     markReminded: markRemindedMock,
     recordInteraction: recordInteractionMock,
     rescheduleReminder: rescheduleReminderMock,
@@ -399,6 +417,10 @@ vi.mock("./webview/notes/getHtml.js", () => ({
 
 vi.mock("./webview/logs/getHtml.js", () => ({
   getLogsHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"logs.js\"></script></html>")
+}));
+
+vi.mock("./webview/archive/getHtml.js", () => ({
+  getArchiveHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"archive.js\"></script></html>")
 }));
 
 vi.mock("./webview/script-flow/getHtml.js", () => ({
@@ -517,6 +539,32 @@ describe("activate notes commands", () => {
         details: []
       }
     ]);
+    listArchivedPlansMock.mockResolvedValue([
+      {
+        code: "PLAN-B",
+        title: "Done plan",
+        completedAt: "2026-04-18T00:00:00.000Z",
+        archivedAt: "2026-04-19T00:00:00.000Z",
+        tags: ["archive"],
+        taskCount: 2,
+        noteCount: 1,
+        jsonPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json",
+        tasks: [
+          {
+            code: "TASK-2",
+            shortTask: "Second task",
+            status: "DONE"
+          }
+        ],
+        notes: [
+          {
+            title: "Archive note",
+            body: "Stored note",
+            tags: []
+          }
+        ]
+      }
+    ]);
     listPendingRemindersMock.mockResolvedValue([]);
     markRemindedMock.mockResolvedValue(null);
     recordInteractionMock.mockResolvedValue(undefined);
@@ -586,7 +634,10 @@ describe("activate notes commands", () => {
     });
     loadSnapshotMock.mockImplementation(async (filter?: { planCode?: string }) => ({
       nodes: filter?.planCode ? [{ id: filter.planCode, data: { label: filter.planCode } }] : [],
-      edges: []
+      edges: [],
+      warnings: {
+        orphans: []
+      }
     }));
     saveNoteMock.mockResolvedValue({
       code: "N-2",
@@ -603,6 +654,7 @@ describe("activate notes commands", () => {
     showErrorMessageMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
+    openTextDocumentMock.mockRejectedValue(new Error("No mocked document"));
   });
 
   it("starts the tree in active mode and only exposes IN_PROGRESS plans", async () => {
@@ -861,6 +913,29 @@ describe("activate notes commands", () => {
     expect(listLogsMock).toHaveBeenCalledTimes(3);
   });
 
+  it("opens the archive panel, posts archived plans, and opens JSON snapshots", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openArchive");
+    await panelState.messageHandler?.({ type: "ready" });
+
+    expect(createWebviewPanelMock).toHaveBeenCalledWith("cortex.archive", "Cortex Archive", 1, expect.objectContaining({ enableScripts: true }));
+    expect(panelState.panel?.webview.html).toContain("archive.js");
+    expect(listArchivedPlansMock).toHaveBeenCalledTimes(1);
+    expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
+      type: "archive:list",
+      plans: expect.arrayContaining([expect.objectContaining({ code: "PLAN-B" })])
+    });
+
+    openTextDocumentMock.mockResolvedValueOnce({ uri: { fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json" } });
+    await panelState.messageHandler?.({
+      type: "archive:openJson",
+      jsonPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json"
+    });
+
+    expect(openTextDocumentMock).toHaveBeenCalledWith({ fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json" });
+    expect(showTextDocumentMock).toHaveBeenCalledWith(expect.objectContaining({ uri: expect.objectContaining({ fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json" }) }));
+  });
+
   it("adds Script Flow to cortex.showOptions and opens the dedicated panel", async () => {
     showQuickPickMock.mockResolvedValueOnce({
       label: "Script Flow",
@@ -923,6 +998,7 @@ describe("activate notes commands", () => {
         expect.objectContaining({ label: "Graph", command: "cortex.openGraph" }),
         expect.objectContaining({ label: "Notes", command: "cortex.openNotes" }),
         expect.objectContaining({ label: "Logs", command: "cortex.openLogs" }),
+        expect.objectContaining({ label: "Archive", command: "cortex.openArchive" }),
         expect.objectContaining({ label: "Script Flow", command: "cortex.openScriptFlow" })
       ])
     );
@@ -976,6 +1052,25 @@ describe("activate notes commands", () => {
       expect.any(Object),
       expect.objectContaining({ code: "PLAN-B" })
     );
+  });
+
+  it("writes orphan dependency warnings from the Graph webview to the Cortex output channel", async () => {
+    loadSnapshotMock.mockResolvedValueOnce({
+      nodes: [],
+      edges: [],
+      warnings: {
+        orphans: [{ taskCode: "TASK-2", missing: "TASK-404" }]
+      }
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openGraph");
+    await panelState.messageHandler?.({ type: "showOrphanWarnings" });
+
+    expect(createOutputChannelMock).toHaveBeenCalledWith("Cortex");
+    expect(outputClearMock).toHaveBeenCalled();
+    expect(outputAppendLineMock).toHaveBeenCalledWith("WARN orphan dep: task=TASK-2 missing=TASK-404");
+    expect(outputShowMock).toHaveBeenCalledWith(true);
   });
 
   it("reuses the existing task edit flow when the Graph webview posts editTask", async () => {

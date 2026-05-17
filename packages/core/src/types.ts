@@ -129,6 +129,15 @@ export interface CycleInfo {
   message: string;
 }
 
+export interface OrphanDependencyWarning {
+  taskCode: string;
+  missing: string;
+}
+
+export interface GraphWarnings {
+  orphans: OrphanDependencyWarning[];
+}
+
 export interface TaskGraph {
   tasks: TaskRecord[];
   nodes: TaskGraphNode[];
@@ -137,6 +146,7 @@ export interface TaskGraph {
   reverseAdjacency: Map<string, string[]>;
   topologicalOrder: string[];
   cycles: CycleInfo[];
+  warnings: GraphWarnings;
   metrics: {
     nodeCount: number;
     edgeCount: number;
@@ -198,6 +208,7 @@ export interface GraphSnapshot {
     readyEstimatedDuration: number;
   };
   cycles: CycleInfo[];
+  warnings: GraphWarnings;
   planContext?: ActionPlanRecord;
 }
 

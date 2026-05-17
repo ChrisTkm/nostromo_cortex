@@ -42,6 +42,32 @@ type ArchivePlanResult = {
   planCode: string;
   taskCount: number;
 };
+export type ArchivedTaskSummary = {
+  code: string;
+  shortTask: string;
+  status?: string;
+  completedAt?: string;
+  completionNote?: string;
+  commitHash?: string;
+};
+export type ArchivedNoteSummary = {
+  title: string;
+  body: string;
+  createdAt?: string;
+  tags: string[];
+};
+export type ArchivedPlanSummary = {
+  code: string;
+  title: string;
+  completedAt?: string;
+  archivedAt?: string;
+  tags: string[];
+  taskCount: number;
+  noteCount: number;
+  jsonPath: string;
+  tasks: ArchivedTaskSummary[];
+  notes: ArchivedNoteSummary[];
+};
 
 export class ExtensionTaskService {
   readonly logger;
@@ -219,9 +245,14 @@ export class ExtensionTaskService {
       ),
       "utf8"
     );
+    const archivedPlan = {
+      ...plan,
+      archived_at: archivedAt,
+      json_path: jsonPath
+    };
 
     const runArchiveWrites = async (session?: ClientSession) => {
-      await archiveDocuments(archivedPlans, [plan], session);
+      await archiveDocuments(archivedPlans, [archivedPlan], session);
       await archiveDocuments(archivedTasks, tasks, session);
       await archiveDocuments(archivedNotes, notes, session);
       const deletedNotes = await notesCollection.deleteMany({ _id: { $in: notes.map((note) => note._id) } }, session ? { session } : undefined);
@@ -262,6 +293,58 @@ export class ExtensionTaskService {
       planCode: code,
       taskCount: tasks.length
     };
+  }
+
+  async listArchivedPlans(): Promise<ArchivedPlanSummary[]> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const [plans, tasks, notes] = await Promise.all([
+      db.collection("archived_plans").find({}).toArray(),
+      db.collection("archived_tasks").find({}).toArray(),
+      db.collection("archived_notes").find({}).toArray()
+    ]);
+    const archivePath = this.resolveArchivePath();
+
+    return plans
+      .map((plan) => {
+        const code = stringField(plan, "code");
+        const planTasks = tasks.filter((task) => stringField(task, "plan_code") === code);
+        const taskCodes = new Set(planTasks.map((task) => stringField(task, "code")).filter(Boolean));
+        const planNotes = notes.filter((note) => stringField(note, "plan_code") === code || taskCodes.has(stringField(note, "task_code")));
+        const jsonPath = stringField(plan, "json_path") || path.join(archivePath, "plans", `${code}.json`);
+
+        return {
+          code,
+          title: stringField(plan, "title"),
+          completedAt: optionalStringField(plan, "completed_at"),
+          archivedAt: optionalStringField(plan, "archived_at"),
+          tags: stringArrayField(plan, "tags"),
+          taskCount: planTasks.length,
+          noteCount: planNotes.length,
+          jsonPath,
+          tasks: planTasks
+            .map((task) => ({
+              code: stringField(task, "code"),
+              shortTask: stringField(task, "short_task"),
+              status: optionalStringField(task, "status"),
+              completedAt: optionalStringField(task, "completed_at"),
+              completionNote: optionalStringField(task, "completion_note"),
+              commitHash: optionalStringField(task, "commit_hash")
+            }))
+            .sort((left, right) => left.code.localeCompare(right.code)),
+          notes: planNotes
+            .map((note) => ({
+              title: stringField(note, "title"),
+              body: stringField(note, "body"),
+              createdAt: optionalStringField(note, "created_at"),
+              tags: stringArrayField(note, "tags")
+            }))
+            .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))
+        } satisfies ArchivedPlanSummary;
+      })
+      .filter((plan) => plan.code)
+      .sort((left, right) => (right.archivedAt ?? right.completedAt ?? "").localeCompare(left.archivedAt ?? left.completedAt ?? ""));
   }
 
   async listNotes(): Promise<NoteRecord[]> {
@@ -596,4 +679,22 @@ async function archiveDocuments(
       })
     )
   );
+}
+
+function stringField(document: Document, key: string) {
+  const value = document[key];
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return typeof value === "string" ? value : "";
+}
+
+function optionalStringField(document: Document, key: string) {
+  const value = stringField(document, key);
+  return value || undefined;
+}
+
+function stringArrayField(document: Document, key: string) {
+  const value = document[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").sort((left, right) => left.localeCompare(right)) : [];
 }

@@ -9,6 +9,7 @@ import type {
   TaskGraph,
   TaskGraphEdge,
   TaskGraphNode,
+  OrphanDependencyWarning,
   TaskRecord
 } from "./types.js";
 
@@ -27,9 +28,14 @@ function buildIndexes(tasks: TaskRecord[]) {
   }
 
   const edges: TaskGraphEdge[] = [];
+  const orphans: OrphanDependencyWarning[] = [];
   for (const task of tasks) {
     for (const dependency of task.dependsOn) {
       if (!byCode.has(dependency)) {
+        orphans.push({
+          taskCode: task.code,
+          missing: dependency
+        });
         continue;
       }
       adjacency.get(dependency)?.push(task.code);
@@ -49,7 +55,15 @@ function buildIndexes(tasks: TaskRecord[]) {
     reverseAdjacency.set(code, stableArray(values, (value) => value));
   }
 
-  return { byCode, adjacency, reverseAdjacency, edges: stableArray(edges, (edge) => edge.id) };
+  return {
+    byCode,
+    adjacency,
+    reverseAdjacency,
+    edges: stableArray(edges, (edge) => edge.id),
+    warnings: {
+      orphans: stableArray(orphans, (orphan) => `${orphan.taskCode}->${orphan.missing}`)
+    }
+  };
 }
 
 function detectCycles(adjacency: Map<string, string[]>): CycleInfo[] {
@@ -138,7 +152,7 @@ export function isTaskReady(task: TaskRecord, tasksByCode: Map<string, TaskRecor
 }
 
 export function buildTaskGraph(tasks: TaskRecord[]): TaskGraph {
-  const { byCode, adjacency, reverseAdjacency, edges } = buildIndexes(tasks);
+  const { byCode, adjacency, reverseAdjacency, edges, warnings } = buildIndexes(tasks);
   const cycles = detectCycles(adjacency);
 
   const downstreamCache = new Map<string, Set<string>>();
@@ -182,6 +196,7 @@ export function buildTaskGraph(tasks: TaskRecord[]): TaskGraph {
     reverseAdjacency,
     topologicalOrder,
     cycles,
+    warnings,
     metrics: {
       nodeCount: nodes.length,
       edgeCount: edges.length,
@@ -337,6 +352,7 @@ export function buildGraphSnapshot(
       readyEstimatedDuration: nodes.filter((node) => node.ready).reduce((total, node) => total + (node.durationEstimate ?? 0), 0)
     },
     cycles: graph.cycles,
+    warnings: graph.warnings,
     ...(filter.planCode && context?.plan?.code === filter.planCode ? { planContext: context.plan } : {})
   };
 }

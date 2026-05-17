@@ -1,0 +1,214 @@
+.archive-app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-font-family), sans-serif;
+}
+
+.archive-header,
+.archive-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.archive-header__eyebrow {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.archive-header__title {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.archive-toolbar {
+  align-items: flex-start;
+}
+
+.archive-input,
+.archive-button,
+.archive-chip {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editor-foreground);
+  font: inherit;
+}
+
+.archive-input {
+  width: min(420px, 42vw);
+  min-width: 220px;
+  padding: 8px 10px;
+}
+
+.archive-button,
+.archive-chip {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.archive-button--primary,
+.archive-chip--selected {
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-textLink-foreground);
+}
+
+.archive-chip--static {
+  cursor: default;
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+.archive-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.archive-table {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 14px 18px;
+}
+
+.archive-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(220px, 2fr) minmax(140px, 1fr) minmax(140px, 1fr) 72px 72px 92px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.archive-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-background);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.archive-plan {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: var(--vscode-editorWidget-background);
+}
+
+.archive-row--button {
+  border: 0;
+  border-radius: 0;
+  padding: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.archive-row--button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.archive-code {
+  color: var(--vscode-textLink-foreground);
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-weight: 700;
+}
+
+.archive-row__hint,
+.archive-muted {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.archive-empty {
+  padding: 28px;
+  border: 1px dashed var(--vscode-widget-border);
+  border-radius: 8px;
+}
+
+.archive-empty h2 {
+  margin: 0 0 6px;
+}
+
+.archive-empty p,
+.archive-note p,
+.archive-task p {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.archive-details {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+  border-top: 1px solid var(--vscode-widget-border);
+}
+
+.archive-details__toolbar,
+.archive-task__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.archive-detail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.archive-detail-section h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.archive-task-list,
+.archive-note-list {
+  display: grid;
+  gap: 8px;
+}
+
+.archive-task,
+.archive-note {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 70%, transparent);
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+}
+
+@media (max-width: 900px) {
+  .archive-toolbar {
+    display: grid;
+  }
+
+  .archive-input {
+    width: 100%;
+  }
+
+  .archive-row {
+    grid-template-columns: minmax(110px, 1fr) minmax(180px, 1.5fr) 68px 68px 78px;
+  }
+
+  .archive-row > span:nth-child(3),
+  .archive-row > span:nth-child(4) {
+    display: none;
+  }
+}

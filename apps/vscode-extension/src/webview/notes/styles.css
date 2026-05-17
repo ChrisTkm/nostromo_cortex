@@ -12,16 +12,22 @@
 
 .notes-app--list-only {
   grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
 }
 
 .notes-app--list-only .notes-sidebar {
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
   justify-content: center;
+  min-height: 0;
+  overflow: hidden;
   padding: 0 16px;
 }
 
 .notes-app--list-only .notes-list {
   width: min(100%, 760px);
+  min-height: 0;
 }
 
 .notes-sidebar,
@@ -39,6 +45,7 @@
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   height: 100%;
+  min-height: 0;
   padding: 16px;
   gap: 14px;
 }
@@ -197,7 +204,8 @@
   display: grid;
   gap: 8px;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 4px;
   justify-items: stretch;
 }

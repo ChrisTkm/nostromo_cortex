@@ -19,6 +19,7 @@
     "onStartupFinished",
     "onView:cortex.overview",
     "onCommand:cortex.openGraph",
+    "onCommand:cortex.openArchive",
     "onCommand:cortex.openScriptFlow",
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
@@ -59,6 +60,10 @@
       {
         "command": "cortex.openLogs",
         "title": "Cortex: Open logs panel"
+      },
+      {
+        "command": "cortex.openArchive",
+        "title": "Cortex: Open Archive"
       },
       {
         "command": "cortex.openScriptFlow",
