@@ -2,7 +2,7 @@
   "name": "cortex",
   "displayName": "Cortex",
   "publisher": "cortex-local",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
