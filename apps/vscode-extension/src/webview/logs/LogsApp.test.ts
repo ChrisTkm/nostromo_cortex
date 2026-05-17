@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
 
 const sampleLogs = [
   {
@@ -43,5 +43,37 @@ describe("LogsApp helpers", () => {
     expect(getLogsEmptyState(0, 0, false)).toBe("empty");
     expect(getLogsEmptyState(2, 0, true)).toBe("filtered");
     expect(getLogsEmptyState(2, 2, false)).toBe("ready");
+  });
+
+  it("groups logs by execution id and keeps legacy logs ungrouped at the end", () => {
+    const groups = buildExecutionGroups([
+      {
+        ...sampleLogs[0]!,
+        timestamp: "2026-04-20T10:00:00.000Z",
+        executionId: "exec-1",
+        tag: "BEGIN",
+        className: "Loader",
+        methodName: "run"
+      },
+      {
+        ...sampleLogs[0]!,
+        timestamp: "2026-04-20T10:00:03.000Z",
+        executionId: "exec-1",
+        tag: "END",
+        className: "Loader",
+        methodName: "run"
+      },
+      sampleLogs[1]!
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({
+      id: "exec-1",
+      classMethod: "Loader.run",
+      durationMs: 3000,
+      isUngrouped: false
+    });
+    expect(groups[0]?.logs.map((entry) => entry.tag)).toEqual(["END", "BEGIN"]);
+    expect(groups[1]).toMatchObject({ id: "ungrouped", isUngrouped: true });
   });
 });

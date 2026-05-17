@@ -610,7 +610,9 @@ export class ExtensionTaskService {
         logsCollection.createIndexes([
           { key: { source: 1, timestamp: -1 }, name: "logs_source_timestamp" },
           { key: { level: 1, timestamp: -1 }, name: "logs_level_timestamp" },
-          { key: { process: 1, timestamp: -1 }, name: "logs_process_timestamp", partialFilterExpression: { process: { $type: "string" } } }
+          { key: { process: 1, timestamp: -1 }, name: "logs_process_timestamp", partialFilterExpression: { process: { $type: "string" } } },
+          { key: { execution_id: 1, timestamp: -1 }, name: "logs_execution_timestamp", partialFilterExpression: { execution_id: { $type: "string" } } },
+          { key: { tag: 1, timestamp: -1 }, name: "logs_tag_timestamp", partialFilterExpression: { tag: { $type: "string" } } }
         ])
       ]);
     } finally {

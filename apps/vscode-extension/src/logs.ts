@@ -6,20 +6,39 @@ export type LogDetail = {
 
 export type LogRecord = {
   id?: string;
+  className?: string;
   day: string;
   event?: string;
+  executionId?: string;
   folder: string;
+  methodName?: string;
   level: string;
   loggerName?: string;
   message: string;
   process?: string;
   source: string;
   summary: string;
+  tag?: string;
   timestamp: string;
+  title?: string;
   details: LogDetail[];
 };
 
-const CORE_KEYS = new Set(["_id", "timestamp", "level", "source", "logger_name", "process", "event", "message"]);
+const CORE_KEYS = new Set([
+  "_id",
+  "timestamp",
+  "level",
+  "source",
+  "logger_name",
+  "process",
+  "event",
+  "message",
+  "execution_id",
+  "tag",
+  "class",
+  "method",
+  "title"
+]);
 const PRIORITY_DETAIL_KEYS = ["file", "schema", "table", "periodo", "rows", "duration_ms", "endpoint", "status", "tipo", "test_run"];
 
 export function normalizeLogCollection(items: unknown[]): LogRecord[] {
@@ -36,23 +55,33 @@ export function normalizeLogCollection(items: unknown[]): LogRecord[] {
 }
 
 export function normalizeLogDocument(record: Record<string, unknown>): LogRecord {
-  const source = firstString(record.source, record.logger_name, record.process) ?? "unknown";
+  const className = optionalString(record.class);
+  const methodName = optionalString(record.method);
+  const classMethod = [className, methodName].filter(Boolean).join(".");
+  const source = firstString(record.source, record.logger_name, classMethod, record.process) ?? "unknown";
   const timestamp = normalizeTimestamp(record.timestamp);
   const event = optionalString(record.event);
-  const message = firstString(record.message, event) ?? "No message";
+  const tag = firstString(record.tag, event);
+  const title = optionalString(record.title);
+  const message = firstString(record.message, title, event) ?? "No message";
 
   return {
     ...(stringifyUnknown(record._id) ? { id: stringifyUnknown(record._id) } : {}),
+    ...(className ? { className } : {}),
     day: timestamp.slice(0, 10),
     ...(event ? { event } : {}),
+    ...(optionalString(record.execution_id) ? { executionId: optionalString(record.execution_id) } : {}),
     folder: inferFolder(source),
     level: (firstString(record.level) ?? "INFO").toUpperCase(),
     ...(optionalString(record.logger_name) ? { loggerName: optionalString(record.logger_name) } : {}),
     message,
+    ...(methodName ? { methodName } : {}),
     ...(optionalString(record.process) ? { process: optionalString(record.process) } : {}),
     source,
-    summary: buildSummary({ event, message, process: optionalString(record.process), source }),
+    summary: buildSummary({ event, message, process: optionalString(record.process), source, tag, title }),
+    ...(tag ? { tag } : {}),
     timestamp,
+    ...(title ? { title } : {}),
     details: buildDetails(record)
   };
 }
@@ -94,8 +123,9 @@ function buildDetails(record: Record<string, unknown>): LogDetail[] {
   return details;
 }
 
-function buildSummary(parts: { event?: string; message: string; process?: string; source: string }) {
-  const lead = parts.event && parts.event !== parts.message ? `${parts.event} - ${parts.message}` : parts.message;
+function buildSummary(parts: { event?: string; message: string; process?: string; source: string; tag?: string; title?: string }) {
+  const label = parts.title ?? parts.tag ?? parts.event;
+  const lead = label && label !== parts.message ? `${label} - ${parts.message}` : parts.message;
   return parts.process ? `${lead} (${parts.process})` : `${lead} (${parts.source})`;
 }
 
