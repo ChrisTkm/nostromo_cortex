@@ -20,7 +20,10 @@
     "onView:cortex.overview",
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openScriptFlow",
-    "onCommand:cortex.openScriptFlowForSelection"
+    "onCommand:cortex.openScriptFlowForSelection",
+    "onCommand:cortex.archivePlan",
+    "onCommand:cortex.setMongoUrl",
+    "onCommand:cortex.clearMongoUrl"
   ],
   "contributes": {
     "commands": [
@@ -102,6 +105,14 @@
         "title": "Cortex: Select Mongo database"
       },
       {
+        "command": "cortex.setMongoUrl",
+        "title": "Cortex: Set Mongo URL"
+      },
+      {
+        "command": "cortex.clearMongoUrl",
+        "title": "Cortex: Clear Mongo URL"
+      },
+      {
         "command": "cortex.bootstrapDatabase",
         "title": "Cortex: Create sample local database"
       },
@@ -116,6 +127,10 @@
       {
         "command": "cortex.selectPlan",
         "title": "Cortex: Select Action Plan"
+      },
+      {
+        "command": "cortex.archivePlan",
+        "title": "Cortex: Archive Plan"
       },
       {
         "command": "cortex.listCycles",
@@ -184,6 +199,11 @@
           "command": "cortex.openGraph",
           "when": "view == cortex.overview && viewItem == cortex.task",
           "group": "inline@2"
+        },
+        {
+          "command": "cortex.archivePlan",
+          "when": "view == cortex.overview && viewItem == cortex.plan.done",
+          "group": "inline@1"
         }
       ],
       "editor/context": [
@@ -205,7 +225,8 @@
         "cortex.mongoUrl": {
           "type": "string",
           "default": "mongodb://127.0.0.1:27017",
-          "description": "MongoDB connection string used by the extension host."
+          "description": "MongoDB connection string used by the extension host.",
+          "deprecationMessage": "Use the 'Cortex: Set Mongo URL' command instead. The URL is now stored securely in VS Code SecretStorage."
         },
         "cortex.mongoDbName": {
           "type": "string",
@@ -231,6 +252,11 @@
           "type": "string",
           "default": "action_plans",
           "description": "Colección de action_plans en Mongo"
+        },
+        "cortex.archivePath": {
+          "type": "string",
+          "default": "",
+          "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
         },
         "cortex.telemetryBackend": {
           "type": "string",
@@ -261,6 +287,7 @@
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.2",
     "html-to-image": "^1.11.13",
+    "mongodb": "^6.16.0",
     "node-sql-parser": "^5.4.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

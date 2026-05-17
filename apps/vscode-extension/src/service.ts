@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -17,10 +19,14 @@ import {
   type TaskRecord
 } from "@cortex/core";
 import { createLogger, JsonlTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
+import type { ClientSession, Collection, Document } from "mongodb";
 import * as vscode from "vscode";
 
 import { normalizeLogCollection, type LogRecord } from "./logs.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
+
+const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
+const DEFAULT_MONGO_URL = "mongodb://127.0.0.1:27017";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type ExtensionFilterStatePatch = {
@@ -30,19 +36,26 @@ type TaskBundle = {
   tasks: TaskRecord[];
   plans: ActionPlanRecord[];
 };
+type ArchivePlanResult = {
+  jsonPath: string;
+  noteCount: number;
+  planCode: string;
+  taskCount: number;
+};
 
 export class ExtensionTaskService {
   readonly logger;
   telemetry!: TelemetryRecorder;
   private readonly telemetryJsonlPath: string;
   private readonly config = vscode.workspace.getConfiguration("cortex");
+  private mongoUrl = DEFAULT_MONGO_URL;
   private sharedClient: SharedMongoClient | undefined;
   private notesStore: MongoNoteStore | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
       ...process.env,
-      MONGO_URL: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
+      MONGO_URL: DEFAULT_MONGO_URL,
       MONGO_DB_NAME: this.config.get("mongoDbName", "cortex"),
       MONGO_TASKS_COLLECTION: this.config.get("mongoTasksCollection", "tasks"),
       TELEMETRY_BACKEND: this.config.get("telemetryBackend", "sqlite"),
@@ -59,6 +72,7 @@ export class ExtensionTaskService {
 
   async initialize() {
     await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
+    await this.refreshMongoUrlFromSecrets();
     const telemetryStore = new JsonlTelemetryStore(this.telemetryJsonlPath);
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
@@ -96,7 +110,7 @@ export class ExtensionTaskService {
 
   getConnectionSettings() {
     return {
-      mongoUrl: this.config.get("mongoUrl", "mongodb://127.0.0.1:27017"),
+      mongoUrl: this.mongoUrl,
       mongoDbName: this.config.get("mongoDbName", "cortex"),
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
       mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
@@ -149,6 +163,105 @@ export class ExtensionTaskService {
 
   async getPlan(code: string): Promise<ActionPlanRecord | null> {
     return this.withPlanStore(this.getConnectionSettings(), (store) => store.getPlan(code));
+  }
+
+  async archivePlan(planCode: string): Promise<ArchivePlanResult> {
+    const code = planCode.trim();
+    if (!code) {
+      throw new Error("Plan code is required.");
+    }
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const plans = db.collection(settings.mongoPlansCollection);
+    const tasksCollection = db.collection(settings.mongoTasksCollection);
+    const notesCollection = db.collection(settings.mongoNotesCollection);
+    const archivedPlans = db.collection("archived_plans");
+    const archivedTasks = db.collection("archived_tasks");
+    const archivedNotes = db.collection("archived_notes");
+
+    const plan = await plans.findOne({ code });
+    if (!plan) {
+      throw new Error(`Plan ${code} not found.`);
+    }
+    if (String((plan as { status?: unknown }).status).toUpperCase() !== "DONE") {
+      throw new Error(`Plan ${code} is not DONE.`);
+    }
+
+    const tasks = await tasksCollection.find({ plan_code: code }).toArray();
+    const taskCodes = tasks.map((task) => (typeof task.code === "string" ? task.code : undefined)).filter((value): value is string => Boolean(value));
+    const notes = await notesCollection
+      .find({
+        $or: [
+          { plan_code: code },
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
+        ]
+      })
+      .toArray();
+
+    const archivedAt = new Date().toISOString();
+    const archivePath = this.resolveArchivePath();
+    const plansArchivePath = path.join(archivePath, "plans");
+    await fs.mkdir(plansArchivePath, { recursive: true });
+    const jsonPath = path.join(plansArchivePath, `${code}.json`);
+    await fs.writeFile(
+      jsonPath,
+      JSON.stringify(
+        {
+          archived_at: archivedAt,
+          plan,
+          tasks,
+          notes
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const runArchiveWrites = async (session?: ClientSession) => {
+      await archiveDocuments(archivedPlans, [plan], session);
+      await archiveDocuments(archivedTasks, tasks, session);
+      await archiveDocuments(archivedNotes, notes, session);
+      const deletedNotes = await notesCollection.deleteMany({ _id: { $in: notes.map((note) => note._id) } }, session ? { session } : undefined);
+      const deletedTasks = await tasksCollection.deleteMany({ _id: { $in: tasks.map((task) => task._id) } }, session ? { session } : undefined);
+      const deletedPlan = await plans.deleteOne({ _id: plan._id }, session ? { session } : undefined);
+      if (deletedNotes.deletedCount !== notes.length || deletedTasks.deletedCount !== tasks.length || deletedPlan.deletedCount !== 1) {
+        this.logger.warn("archivePlan delete count mismatch", {
+          planCode: code,
+          expectedNotes: notes.length,
+          deletedNotes: deletedNotes.deletedCount,
+          expectedTasks: tasks.length,
+          deletedTasks: deletedTasks.deletedCount,
+          expectedPlans: 1,
+          deletedPlans: deletedPlan.deletedCount
+        });
+      }
+    };
+
+    const client = sharedClient.get();
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await runArchiveWrites(session);
+      });
+    } catch (error) {
+      this.logger.warn("archivePlan transaction failed; falling back to ordered writes", {
+        planCode: code,
+        error: String(error)
+      });
+      await runArchiveWrites();
+    } finally {
+      await session.endSession();
+    }
+
+    return {
+      jsonPath,
+      noteCount: notes.length,
+      planCode: code,
+      taskCount: tasks.length
+    };
   }
 
   async listNotes(): Promise<NoteRecord[]> {
@@ -255,7 +368,7 @@ export class ExtensionTaskService {
     };
 
     if (next.mongoUrl) {
-      await this.config.update("mongoUrl", next.mongoUrl, vscode.ConfigurationTarget.Workspace);
+      await this.storeMongoUrl(next.mongoUrl);
     }
     if (next.mongoDbName) {
       await this.config.update("mongoDbName", next.mongoDbName, vscode.ConfigurationTarget.Workspace);
@@ -276,6 +389,15 @@ export class ExtensionTaskService {
     if (next.mongoUrl || next.mongoDbName || next.mongoNotesCollection) {
       this.notesStore = this.createNotesStore(updatedSettings);
     }
+  }
+
+  async clearMongoUrl() {
+    await this.context.secrets.delete(MONGO_URL_SECRET_KEY);
+    await this.refreshSharedClient();
+  }
+
+  async saveMongoUrl(mongoUrl: string) {
+    await this.storeMongoUrl(mongoUrl);
   }
 
   async bootstrapSampleDatabase(overrides?: Partial<ConnectionSettings>) {
@@ -355,6 +477,7 @@ export class ExtensionTaskService {
   }
 
   private async refreshSharedClient() {
+    await this.refreshMongoUrlFromSecrets();
     const settings = this.getConnectionSettings();
     if (this.sharedClient?.mongoUrl === settings.mongoUrl) {
       return;
@@ -364,6 +487,18 @@ export class ExtensionTaskService {
     this.sharedClient = new SharedMongoClient(settings.mongoUrl);
     await this.sharedClient.connect();
     this.notesStore = this.createNotesStore(settings);
+  }
+
+  private async refreshMongoUrlFromSecrets() {
+    this.mongoUrl = (await this.context.secrets.get(MONGO_URL_SECRET_KEY)) || DEFAULT_MONGO_URL;
+  }
+
+  private async storeMongoUrl(mongoUrl: string) {
+    await this.context.secrets.store(MONGO_URL_SECRET_KEY, mongoUrl);
+    this.mongoUrl = mongoUrl;
+    this.notesStore = undefined;
+    await this.sharedClient?.close();
+    this.sharedClient = undefined;
   }
 
   private async ensureMongoIndexes() {
@@ -401,15 +536,25 @@ export class ExtensionTaskService {
   }
 
   private async getLogsCollection(settings: ConnectionSettings = this.getConnectionSettings()) {
+    const sharedClient = await this.requireSharedClient(settings);
+    return sharedClient.db(settings.mongoDbName).collection<Record<string, unknown>>(settings.mongoLogsCollection);
+  }
+
+  private async requireSharedClient(settings: ConnectionSettings) {
     let sharedClient = this.getSharedClient(settings);
     if (!sharedClient) {
       await this.refreshSharedClient();
       sharedClient = this.getSharedClient(this.getConnectionSettings());
     }
     if (!sharedClient) {
-      throw new Error("Mongo client unavailable for logs collection");
+      throw new Error("Mongo client unavailable");
     }
-    return sharedClient.db(settings.mongoDbName).collection<Record<string, unknown>>(settings.mongoLogsCollection);
+    return sharedClient;
+  }
+
+  private resolveArchivePath() {
+    const configured = this.config.get<string>("archivePath", "").trim();
+    return configured || path.join(os.homedir(), "cortex-archive");
   }
 
   private async withTaskStore<T>(settings: ConnectionSettings, handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>): Promise<T> {
@@ -436,4 +581,19 @@ export class ExtensionTaskService {
 
 function normalizeReminderIso(value: string | Date) {
   return new Date(value).toISOString();
+}
+
+async function archiveDocuments(
+  collection: Collection<Document>,
+  documents: Document[],
+  session?: ClientSession
+) {
+  await Promise.all(
+    documents.map((document) =>
+      collection.replaceOne({ _id: document._id }, document, {
+        upsert: true,
+        ...(session ? { session } : {})
+      })
+    )
+  );
 }

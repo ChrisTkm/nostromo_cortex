@@ -1,7 +1,7 @@
 export const TASK_STATUSES = ["PENDING", "IN_PROGRESS", "BLOCKED", "DONE", "FAILED"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-export const PLAN_STATUSES = ["PLANNING", "IN_PROGRESS", "COMPLETED", "PAUSED", "ARCHIVED"] as const;
+export const PLAN_STATUSES = ["PLANNING", "IN_PROGRESS", "DONE", "COMPLETED", "PAUSED", "ARCHIVED"] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
 
 export const TASK_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;

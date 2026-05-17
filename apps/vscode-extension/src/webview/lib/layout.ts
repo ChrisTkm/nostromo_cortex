@@ -18,8 +18,10 @@ export function computeLayout(
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   graph.setGraph({
     rankdir: direction,
-    nodesep: direction === "LR" ? 46 : 54,
-    ranksep: direction === "LR" ? 96 : 112
+    nodesep: 56,
+    ranksep: 100,
+    marginx: 20,
+    marginy: 20
   });
 
   for (const node of nodes) {

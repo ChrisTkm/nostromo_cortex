@@ -15,9 +15,11 @@ interface BaseTreeNode {
   label: string;
 }
 
-interface GroupTreeNode extends BaseTreeNode {
+export interface GroupTreeNode extends BaseTreeNode {
   kind: "group";
   description?: string;
+  planCode?: string;
+  planStatus?: string;
   children: Array<GroupTreeNode | TaskTreeNode>;
 }
 
@@ -97,6 +99,7 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded);
       item.id = element.id;
       item.description = element.description;
+      item.contextValue = element.planCode ? (String(element.planStatus).toUpperCase() === "DONE" ? "cortex.plan.done" : "cortex.plan") : "cortex.group";
       return item;
     }
 
@@ -133,13 +136,17 @@ function toPlanChildren(
 ): GroupTreeNode[] {
   const plansByCode = new Map(plans.map((plan) => [plan.code, plan]));
 
-  return groups.map(([planKey, tasks]) => ({
-    kind: "group",
-    id: `plan:${planKey}`,
-    label: planKey === NO_PLAN_KEY ? "No plan" : planKey,
-    description: describePlanGroup(planKey, plansByCode, tasks.length),
-    children: toNestedChildren(planKey, tasks, groupLabelForTask)
-  }));
+  return groups.map(([planKey, tasks]) => {
+    const plan = plansByCode.get(planKey);
+    return {
+      kind: "group",
+      id: `plan:${planKey}`,
+      label: planKey === NO_PLAN_KEY ? "No plan" : planKey,
+      description: describePlanGroup(planKey, plansByCode, tasks.length),
+      ...(planKey !== NO_PLAN_KEY && plan ? { planCode: plan.code, planStatus: plan.status } : {}),
+      children: toNestedChildren(planKey, tasks, groupLabelForTask)
+    };
+  });
 }
 
 function toNestedChildren(group: string, tasks: TaskGraphNode[], nestedSelector: (task: TaskGraphNode) => string) {

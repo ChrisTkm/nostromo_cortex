@@ -8,6 +8,7 @@ import {
   type TaskFilter,
   type TaskRecord
 } from "@cortex/core";
+import { MongoClient } from "mongodb";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -16,7 +17,7 @@ import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFl
 import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
-import { CortexTreeProvider, type PlanStatusFilter, type TaskTreeNode } from "./tree.js";
+import { CortexTreeProvider, type GroupTreeNode, type PlanStatusFilter, type TaskTreeNode } from "./tree.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
@@ -52,12 +53,18 @@ type ScriptFlowDelivery =
 
 let activeService: ExtensionTaskService | undefined;
 const PLAN_STATUS_FILTER_KEY = "cortex.planStatusFilter";
+const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
 
 function nonce() {
   return Math.random().toString(36).slice(2);
 }
 
+function setWebviewPanelIcon(context: vscode.ExtensionContext, panel: vscode.WebviewPanel, iconName: string) {
+  panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "icons", iconName);
+}
+
 export async function activate(context: vscode.ExtensionContext) {
+  await migrateLegacyMongoUrlSetting(context);
   const service = new ExtensionTaskService(context);
   activeService = service;
   service.logger.debug("activate", {
@@ -282,6 +289,7 @@ export async function activate(context: vscode.ExtensionContext) {
       enableScripts: true,
       retainContextWhenHidden: true
     });
+    setWebviewPanelIcon(context, notesPanel, "cortex-notes.svg");
     notesPanel.webview.html = getNotesHtml(notesPanel.webview, context.extensionUri, nonce());
     notesPanel.onDidDispose(() => {
       notesPanel = undefined;
@@ -335,6 +343,7 @@ export async function activate(context: vscode.ExtensionContext) {
       enableScripts: true,
       retainContextWhenHidden: true
     });
+    setWebviewPanelIcon(context, logsPanel, "cortex-logs.svg");
     logsPanel.webview.html = getLogsHtml(logsPanel.webview, context.extensionUri, nonce());
     logsPanel.onDidDispose(() => {
       logsPanel = undefined;
@@ -370,6 +379,7 @@ export async function activate(context: vscode.ExtensionContext) {
       enableScripts: true,
       retainContextWhenHidden: true
     });
+    setWebviewPanelIcon(context, scriptFlowPanel, "cortex-script-flow.svg");
     scriptFlowPanel.webview.html = getScriptFlowHtml(scriptFlowPanel.webview, context.extensionUri, nonce());
     scriptFlowPanel.onDidDispose(() => {
       scriptFlowPanel = undefined;
@@ -452,6 +462,7 @@ export async function activate(context: vscode.ExtensionContext) {
         enableScripts: true,
         retainContextWhenHidden: true
       });
+      setWebviewPanelIcon(context, graphPanel, "cortex-pert.svg");
       graphPanel.webview.html = getGraphHtml(graphPanel.webview, context.extensionUri, nonce());
       graphPanel.onDidDispose(() => {
         graphPanel = undefined;
@@ -764,6 +775,71 @@ export async function activate(context: vscode.ExtensionContext) {
       await service.updateFilterState({ selectedPlanCode: picked.planCode });
       await refreshView();
     }),
+    vscode.commands.registerCommand("cortex.archivePlan", async (arg?: string | { planCode?: string; kind?: string; label?: string }) => {
+      const planCode = await resolveArchivePlanCode(service, arg);
+      if (!planCode) {
+        return;
+      }
+
+      const plan = await service.getPlan(planCode);
+      if (!plan) {
+        void vscode.window.showErrorMessage(`Plan ${planCode} not found.`);
+        return;
+      }
+      if (String(plan.status).toUpperCase() !== "DONE") {
+        void vscode.window.showErrorMessage(`Plan ${planCode} is not DONE.`);
+        return;
+      }
+
+      try {
+        const result = await service.archivePlan(planCode);
+        treeProvider.refresh();
+        await postSnapshot();
+        const picked = await vscode.window.showInformationMessage(
+          `Plan ${result.planCode} archived (${result.taskCount} tasks, ${result.noteCount} notes).`,
+          "Open JSON"
+        );
+        if (picked === "Open JSON") {
+          await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(result.jsonPath));
+        }
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Could not archive plan ${planCode}: ${String(error)}`);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.setMongoUrl", async () => {
+      const current = service.getConnectionSettings();
+      const input = await vscode.window.showInputBox({
+        prompt: "Mongo connection string",
+        value: current.mongoUrl,
+        ignoreFocusOut: true
+      });
+      const mongoUrl = input?.trim();
+      if (!mongoUrl) {
+        return;
+      }
+
+      if (!/^mongodb(\+srv)?:\/\/.+/.test(mongoUrl)) {
+        void vscode.window.showErrorMessage("URL inválida: debe empezar con mongodb:// o mongodb+srv://");
+        return;
+      }
+
+      if (!(await canConnectToMongoUrl(mongoUrl))) {
+        const picked = await vscode.window.showWarningMessage("No se pudo conectar. ¿Guardar igual?", "Guardar", "Cancelar");
+        if (picked !== "Guardar") {
+          return;
+        }
+      }
+
+      await service.saveMongoUrl(mongoUrl);
+      treeProvider.refresh();
+      void vscode.window.showInformationMessage("Mongo URL guardada.");
+    }),
+    vscode.commands.registerCommand("cortex.clearMongoUrl", async () => {
+      await service.clearMongoUrl();
+      treeProvider.refresh();
+      await postSnapshot();
+      void vscode.window.showInformationMessage("Cortex Mongo URL cleared.");
+    }),
     vscode.commands.registerCommand("cortex.selectDatabase", async () => {
       const previous = service.getConnectionSettings();
       const picked = await pickConnectionSettings(service);
@@ -1026,6 +1102,69 @@ function normalizePlanStatusFilter(value: PlanStatusFilter | undefined): PlanSta
 
 function titleForPlanStatusFilter(filter: PlanStatusFilter) {
   return filter === "done" ? "Cortex · Cerrados" : "Cortex · En curso";
+}
+
+async function resolveArchivePlanCode(
+  service: ExtensionTaskService,
+  arg?: string | { planCode?: string; kind?: string; label?: string }
+) {
+  if (typeof arg === "string" && arg.trim()) {
+    return arg.trim();
+  }
+
+  const candidate = arg as Partial<GroupTreeNode> | undefined;
+  if (candidate?.planCode?.trim()) {
+    return candidate.planCode.trim();
+  }
+
+  const donePlans = (await service.loadPlans())
+    .filter((plan) => String(plan.status).toUpperCase() === "DONE")
+    .sort((left, right) => left.code.localeCompare(right.code));
+  if (donePlans.length === 0) {
+    void vscode.window.showInformationMessage("No DONE plans available to archive.");
+    return undefined;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    donePlans.map((plan) => ({
+      label: plan.code,
+      description: plan.title,
+      detail: `${plan.progress.done}/${plan.progress.total} done`,
+      planCode: plan.code
+    })),
+    {
+      title: "Archive DONE plan",
+      placeHolder: "Select a completed plan to archive"
+    }
+  );
+  return picked?.planCode;
+}
+
+async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
+  const config = vscode.workspace.getConfiguration("cortex");
+  const legacyMongoUrl = config.get<string>("mongoUrl")?.trim();
+  if (!legacyMongoUrl || (await context.secrets.get(MONGO_URL_SECRET_KEY))) {
+    return;
+  }
+
+  await context.secrets.store(MONGO_URL_SECRET_KEY, legacyMongoUrl);
+  await Promise.all([
+    config.update("mongoUrl", undefined, vscode.ConfigurationTarget.Workspace),
+    config.update("mongoUrl", undefined, vscode.ConfigurationTarget.Global)
+  ]);
+  void vscode.window.showInformationMessage("Cortex migrated the Mongo URL to secure storage. Use 'Cortex: Set Mongo URL' to update it.");
+}
+
+async function canConnectToMongoUrl(url: string) {
+  const client = new MongoClient(url, { serverSelectionTimeoutMS: 3000 });
+  try {
+    await client.connect();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
 }
 
 async function pickConnectionSettings(

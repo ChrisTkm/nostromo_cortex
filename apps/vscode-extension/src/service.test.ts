@@ -21,6 +21,9 @@ const {
   sharedDb,
   sharedClose,
   logsCreateIndexes,
+  secretGet,
+  secretStore,
+  secretDelete,
   createDirectory,
   getConfig,
   updateConfig,
@@ -75,6 +78,9 @@ const {
       startRun: vi.fn()
     })),
     logsCreateIndexes: vi.fn(),
+    secretGet: vi.fn(),
+    secretStore: vi.fn(),
+    secretDelete: vi.fn(),
     sharedConnect: vi.fn(),
     sharedDb: vi.fn(),
     sharedClose: vi.fn(),
@@ -149,6 +155,9 @@ describe("ExtensionTaskService.initialize", () => {
       }))
     }));
     sharedClose.mockResolvedValue(undefined);
+    secretGet.mockResolvedValue(undefined);
+    secretStore.mockResolvedValue(undefined);
+    secretDelete.mockResolvedValue(undefined);
     taskEnsureIndexes.mockResolvedValue(undefined);
     taskClose.mockResolvedValue(undefined);
     planEnsureIndexes.mockResolvedValue(undefined);
@@ -175,6 +184,11 @@ describe("ExtensionTaskService.initialize", () => {
       workspaceState: {
         get: vi.fn(),
         update: vi.fn()
+      },
+      secrets: {
+        get: secretGet,
+        store: secretStore,
+        delete: secretDelete
       }
     } as never);
 
@@ -216,6 +230,11 @@ describe("ExtensionTaskService.initialize", () => {
       workspaceState: {
         get: vi.fn(),
         update: vi.fn()
+      },
+      secrets: {
+        get: secretGet,
+        store: secretStore,
+        delete: secretDelete
       }
     } as never);
 

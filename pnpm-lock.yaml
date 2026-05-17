@@ -81,6 +81,9 @@ importers:
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
+      mongodb:
+        specifier: ^6.16.0
+        version: 6.21.0
       node-sql-parser:
         specifier: ^5.4.0
         version: 5.4.0

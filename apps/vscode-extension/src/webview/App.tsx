@@ -43,6 +43,7 @@ export function App() {
   const [centerTaskCode, setCenterTaskCode] = useState<string | undefined>();
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [planFocusRequest, setPlanFocusRequest] = useState<{ code: string; nonce: number } | undefined>();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const lastPlanTaskCodeRef = useRef<string | undefined>();
 
@@ -59,6 +60,7 @@ export function App() {
       }
 
       setSnapshot(event.data.snapshot);
+      setIsRefreshing(false);
       setPlans(event.data.plans);
       setPlanTasks(event.data.planTasks);
       setTotalTaskCount(event.data.totals.totalTaskCount);
@@ -205,6 +207,11 @@ export function App() {
     });
   }
 
+  function handleRefreshGraph() {
+    setIsRefreshing(true);
+    vscode.postMessage({ type: "refresh" });
+  }
+
   return (
     <div className="app-shell">
       <Toolbar
@@ -220,7 +227,15 @@ export function App() {
         selectedPlanCode={snapshot?.planContext?.code ?? filters.planCode}
         totalHours={snapshot?.stats.totalEstimatedDuration ?? 0}
       />
-      {snapshot?.planContext ? <PlanBanner onFocusTask={handleFocusPlanTask} onOpenPlan={() => handleOpenPlanViewer(snapshot.planContext?.code)} planContext={snapshot.planContext} /> : null}
+      {snapshot?.planContext ? (
+        <PlanBanner
+          isRefreshing={isRefreshing}
+          onFocusTask={handleFocusPlanTask}
+          onOpenPlan={() => handleOpenPlanViewer(snapshot.planContext?.code)}
+          onRefresh={handleRefreshGraph}
+          planContext={snapshot.planContext}
+        />
+      ) : null}
       <div className="app-graph">
         <Graph
           centerTaskCode={centerTaskCode}

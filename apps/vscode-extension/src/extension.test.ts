@@ -10,6 +10,7 @@ const {
   filterStateRef,
   listLogsMock,
   loadBundleMock,
+  loadPlansMock,
   loadSnapshotMock,
   listNotesMock,
   listPendingRemindersMock,
@@ -21,7 +22,17 @@ const {
   saveTaskMock,
   saveNoteMock,
   getTaskMock,
+  getPlanMock,
+  archivePlanMock,
+  getConfigMock,
   deleteNoteMock,
+  updateConfigMock,
+  updateConnectionSettingsMock,
+  saveMongoUrlMock,
+  mongoClientMock,
+  mongoConnectMock,
+  mongoCloseMock,
+  showErrorMessageMock,
   showInformationMessageMock,
   showInputBoxMock,
   showQuickPickMock,
@@ -65,17 +76,31 @@ const {
   const listNotesMock = vi.fn();
   const listLogsMock = vi.fn();
   const loadBundleMock = vi.fn();
+  const loadPlansMock = vi.fn();
   const loadSnapshotMock = vi.fn();
   const listPendingRemindersMock = vi.fn();
   const markRemindedMock = vi.fn();
   const rescheduleReminderMock = vi.fn();
   const recordInteractionMock = vi.fn();
   const getTaskMock = vi.fn();
+  const getPlanMock = vi.fn();
+  const archivePlanMock = vi.fn();
+  const getConfigMock = vi.fn();
   const saveTaskMock = vi.fn();
   const saveNoteMock = vi.fn();
   const deleteNoteMock = vi.fn();
+  const updateConfigMock = vi.fn();
+  const updateConnectionSettingsMock = vi.fn();
+  const saveMongoUrlMock = vi.fn();
+  const mongoConnectMock = vi.fn();
+  const mongoCloseMock = vi.fn();
+  const mongoClientMock = vi.fn(() => ({
+    connect: mongoConnectMock,
+    close: mongoCloseMock
+  }));
   const showInputBoxMock = vi.fn();
   const showQuickPickMock = vi.fn();
+  const showErrorMessageMock = vi.fn();
   const showInformationMessageMock = vi.fn();
   const showWarningMessageMock = vi.fn();
   const showTextDocumentMock = vi.fn();
@@ -136,7 +161,8 @@ const {
       onDidDispose: vi.fn((handler: () => unknown) => {
         panelState.disposeHandler = handler;
         return { dispose: vi.fn() };
-      })
+      }),
+      iconPath: undefined
     };
     panelState.panel = panel;
     return panel;
@@ -152,6 +178,7 @@ const {
     filterStateRef,
     listLogsMock,
     loadBundleMock,
+    loadPlansMock,
     loadSnapshotMock,
     listNotesMock,
     listPendingRemindersMock,
@@ -163,7 +190,17 @@ const {
     saveTaskMock,
     saveNoteMock,
     getTaskMock,
+    getPlanMock,
+    archivePlanMock,
+    getConfigMock,
     deleteNoteMock,
+    updateConfigMock,
+    updateConnectionSettingsMock,
+    saveMongoUrlMock,
+    mongoClientMock,
+    mongoConnectMock,
+    mongoCloseMock,
+    showErrorMessageMock,
     showInformationMessageMock,
     showInputBoxMock,
     showQuickPickMock,
@@ -179,6 +216,10 @@ vi.mock("@cortex/core", () => ({
   TASK_SEVERITIES: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
   TASK_STATUSES: ["PENDING", "IN_PROGRESS", "BLOCKED", "DONE", "FAILED"],
   buildTaskGraph: vi.fn(() => ({ cycles: [] }))
+}));
+
+vi.mock("mongodb", () => ({
+  MongoClient: mongoClientMock
 }));
 
 vi.mock("vscode", () => ({
@@ -205,7 +246,7 @@ vi.mock("vscode", () => ({
     showInformationMessage: showInformationMessageMock,
     showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
-    showErrorMessage: vi.fn(),
+    showErrorMessage: showErrorMessageMock,
     createOutputChannel: vi.fn(() => ({
       clear: vi.fn(),
       appendLine: vi.fn(),
@@ -227,6 +268,25 @@ vi.mock("vscode", () => ({
       public readonly start: { line: number; character: number },
       public readonly end: { line: number; character: number }
     ) {}
+  },
+  Uri: {
+    file: vi.fn((fsPath: string) => ({ fsPath })),
+    joinPath: vi.fn((base: { fsPath: string }, ...segments: string[]) => ({
+      fsPath: [base.fsPath, ...segments].join("\\")
+    }))
+  },
+  ConfigurationTarget: {
+    Global: 1,
+    Workspace: 2
+  },
+  workspace: {
+    getConfiguration: vi.fn(() => ({
+      get: getConfigMock,
+      update: updateConfigMock
+    })),
+    openTextDocument: vi.fn(async () => {
+      throw new Error("No mocked document");
+    })
   }
 }));
 
@@ -289,9 +349,19 @@ vi.mock("./service.js", () => ({
     recordInteraction: recordInteractionMock,
     rescheduleReminder: rescheduleReminderMock,
     getTask: getTaskMock,
+    getPlan: getPlanMock,
+    archivePlan: archivePlanMock,
     saveTask: saveTaskMock,
     saveNote: saveNoteMock,
-    deleteNote: deleteNoteMock
+    deleteNote: deleteNoteMock,
+    clearMongoUrl: vi.fn().mockResolvedValue(undefined),
+    listDatabaseNames: vi.fn().mockResolvedValue([]),
+    listCollectionNames: vi.fn().mockResolvedValue([]),
+    inspectCollection: vi.fn().mockResolvedValue({ documentCount: 0, validTaskCount: 0, skippedCount: 0 }),
+    updateConnectionSettings: updateConnectionSettingsMock,
+    saveMongoUrl: saveMongoUrlMock,
+    bootstrapSampleDatabase: vi.fn().mockResolvedValue(undefined),
+    loadPlans: loadPlansMock
   }))
 }));
 
@@ -339,6 +409,7 @@ import { activate } from "./extension.js";
 
 function createContext(initialWorkspaceState: Record<string, unknown> = {}) {
   const workspaceStateValues = new Map<string, unknown>(Object.entries(initialWorkspaceState));
+  const secretValues = new Map<string, string>();
   return {
     extensionMode: 1,
     extensionUri: { fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension" },
@@ -348,6 +419,15 @@ function createContext(initialWorkspaceState: Record<string, unknown> = {}) {
       get: vi.fn((key: string, defaultValue?: unknown) => (workspaceStateValues.has(key) ? workspaceStateValues.get(key) : defaultValue)),
       update: vi.fn(async (key: string, value: unknown) => {
         workspaceStateValues.set(key, value);
+      })
+    },
+    secrets: {
+      get: vi.fn(async (key: string) => secretValues.get(key)),
+      store: vi.fn(async (key: string, value: string) => {
+        secretValues.set(key, value);
+      }),
+      delete: vi.fn(async (key: string) => {
+        secretValues.delete(key);
       })
     }
   } as any;
@@ -394,6 +474,12 @@ describe("activate notes commands", () => {
     panelState.messageHandler = undefined;
     panelState.disposeHandler = undefined;
     vi.clearAllMocks();
+    getConfigMock.mockReturnValue(undefined);
+    updateConfigMock.mockResolvedValue(undefined);
+    updateConnectionSettingsMock.mockResolvedValue(undefined);
+    saveMongoUrlMock.mockResolvedValue(undefined);
+    mongoConnectMock.mockResolvedValue(undefined);
+    mongoCloseMock.mockResolvedValue(undefined);
     filterStateRef.current = {
       searchQuery: undefined,
       selectedProjects: [],
@@ -435,6 +521,32 @@ describe("activate notes commands", () => {
     markRemindedMock.mockResolvedValue(null);
     recordInteractionMock.mockResolvedValue(undefined);
     rescheduleReminderMock.mockResolvedValue(null);
+    loadPlansMock.mockResolvedValue([]);
+    archivePlanMock.mockResolvedValue({
+      jsonPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json",
+      noteCount: 1,
+      planCode: "PLAN-B",
+      taskCount: 2
+    });
+    getPlanMock.mockResolvedValue({
+      code: "PLAN-B",
+      title: "Done plan",
+      description: "",
+      goal: "",
+      context: "",
+      status: "DONE",
+      tags: [],
+      progress: {
+        total: 2,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 2,
+        failed: 0
+      },
+      createdAt: "2026-04-18T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z"
+    });
     getTaskMock.mockResolvedValue({
       id: "task-1",
       code: "TASK-1",
@@ -488,6 +600,7 @@ describe("activate notes commands", () => {
     deleteNoteMock.mockResolvedValue(true);
     showInputBoxMock.mockReset();
     showQuickPickMock.mockReset();
+    showErrorMessageMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
   });
@@ -505,6 +618,115 @@ describe("activate notes commands", () => {
     expect(treeProvider.planStatusFilter).toBe("active");
     expect(children.map((node: { label: string }) => node.label)).toEqual(["PLAN-A"]);
     expect(treeView.title).toBe("Cortex · En curso");
+  });
+
+  it("migrates a legacy Mongo URL setting into SecretStorage on activation", async () => {
+    getConfigMock.mockReturnValueOnce("mongodb://legacy.example:27017");
+    const context = createContext();
+
+    await activate(context);
+
+    expect(context.secrets.store).toHaveBeenCalledWith("cortex.mongoUrl", "mongodb://legacy.example:27017");
+    expect(updateConfigMock).toHaveBeenCalledWith("mongoUrl", undefined, 2);
+    expect(updateConfigMock).toHaveBeenCalledWith("mongoUrl", undefined, 1);
+    expect(showInformationMessageMock).toHaveBeenCalledWith(expect.stringContaining("migrated the Mongo URL"));
+  });
+
+  it("rejects invalid Mongo URLs before pinging or saving", async () => {
+    showInputBoxMock.mockResolvedValueOnce("https://mongo.example");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.setMongoUrl");
+
+    expect(showErrorMessageMock).toHaveBeenCalledWith("URL inválida: debe empezar con mongodb:// o mongodb+srv://");
+    expect(mongoClientMock).not.toHaveBeenCalled();
+    expect(saveMongoUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("saves a Mongo URL after a successful ping", async () => {
+    showInputBoxMock.mockResolvedValueOnce(" mongodb://mongo.example:27017 ");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.setMongoUrl");
+
+    expect(mongoClientMock).toHaveBeenCalledWith("mongodb://mongo.example:27017", { serverSelectionTimeoutMS: 3000 });
+    expect(mongoConnectMock).toHaveBeenCalledTimes(1);
+    expect(mongoCloseMock).toHaveBeenCalledTimes(1);
+    expect(saveMongoUrlMock).toHaveBeenCalledWith("mongodb://mongo.example:27017");
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Mongo URL guardada.");
+  });
+
+  it("does not save a Mongo URL when ping fails and the user cancels", async () => {
+    mongoConnectMock.mockRejectedValueOnce(new Error("offline"));
+    showInputBoxMock.mockResolvedValueOnce("mongodb+srv://mongo.example/db");
+    showWarningMessageMock.mockResolvedValueOnce("Cancelar");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.setMongoUrl");
+
+    expect(showWarningMessageMock).toHaveBeenCalledWith("No se pudo conectar. ¿Guardar igual?", "Guardar", "Cancelar");
+    expect(saveMongoUrlMock).not.toHaveBeenCalled();
+    expect(showInformationMessageMock).not.toHaveBeenCalledWith("Mongo URL guardada.");
+  });
+
+  it("saves a Mongo URL when ping fails and the user confirms", async () => {
+    mongoConnectMock.mockRejectedValueOnce(new Error("offline"));
+    showInputBoxMock.mockResolvedValueOnce("mongodb://mongo.example:27017");
+    showWarningMessageMock.mockResolvedValueOnce("Guardar");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.setMongoUrl");
+
+    expect(showWarningMessageMock).toHaveBeenCalledWith("No se pudo conectar. ¿Guardar igual?", "Guardar", "Cancelar");
+    expect(saveMongoUrlMock).toHaveBeenCalledWith("mongodb://mongo.example:27017");
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Mongo URL guardada.");
+  });
+
+  it("archives a DONE plan from a tree context argument and opens the JSON on request", async () => {
+    showInformationMessageMock.mockResolvedValueOnce("Open JSON");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.archivePlan", {
+      kind: "group",
+      planCode: "PLAN-B",
+      label: "PLAN-B"
+    });
+
+    expect(getPlanMock).toHaveBeenCalledWith("PLAN-B");
+    expect(archivePlanMock).toHaveBeenCalledWith("PLAN-B");
+    expect(treeRefreshMock).toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Plan PLAN-B archived (2 tasks, 1 notes).", "Open JSON");
+    expect(executeCommandMock).toHaveBeenCalledWith("vscode.open", {
+      fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json"
+    });
+  });
+
+  it("aborts archivePlan when the selected plan is not DONE", async () => {
+    getPlanMock.mockResolvedValueOnce({
+      code: "PLAN-A",
+      title: "Active plan",
+      description: "",
+      goal: "",
+      context: "",
+      status: "IN_PROGRESS",
+      tags: [],
+      progress: {
+        total: 1,
+        pending: 0,
+        in_progress: 1,
+        blocked: 0,
+        done: 0,
+        failed: 0
+      },
+      createdAt: "2026-04-18T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z"
+    });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.archivePlan", "PLAN-A");
+
+    expect(showErrorMessageMock).toHaveBeenCalledWith("Plan PLAN-A is not DONE.");
+    expect(archivePlanMock).not.toHaveBeenCalled();
   });
 
   it("toggles the tree to done mode and only exposes DONE plans", async () => {
