@@ -446,8 +446,8 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  async function openMdxGraphPanel(rootUri?: vscode.Uri) {
-    const selectedRoot = rootUri ?? currentMdxGraphRoot ?? (await pickMdxGraphRoot());
+  async function openMdxGraphPanel(rootUri?: vscode.Uri, options?: { promptWhenMissing?: boolean }) {
+    const selectedRoot = rootUri ?? currentMdxGraphRoot ?? (await resolveConfiguredBrainRoot()) ?? (options?.promptWhenMissing === false ? undefined : await pickMdxGraphRoot());
     if (!selectedRoot) {
       return;
     }
@@ -784,10 +784,7 @@ export async function activate(context: vscode.ExtensionContext) {
       await openArchivePanel();
     }),
     vscode.commands.registerCommand("cortex.openBrain", async () => {
-      const picked = await pickMdxGraphRoot();
-      if (picked) {
-        await openMdxGraphPanel(picked);
-      }
+      await openMdxGraphPanel(undefined, { promptWhenMissing: true });
     }),
     vscode.commands.registerCommand("cortex.openMdxGraph", async () => {
       await vscode.commands.executeCommand("cortex.openBrain");
@@ -1322,6 +1319,21 @@ async function pickMdxGraphRoot() {
     title: "Choose a Markdown / MDX knowledge folder"
   });
   return picked?.[0];
+}
+
+async function resolveConfiguredBrainRoot() {
+  const configured = vscode.workspace.getConfiguration("cortex").get<string>("brainRootPath")?.trim();
+  if (!configured) {
+    return undefined;
+  }
+  const uri = vscode.Uri.file(configured);
+  try {
+    const stat = await vscode.workspace.fs.stat(uri);
+    return stat.type === vscode.FileType.Directory ? uri : undefined;
+  } catch {
+    void vscode.window.showWarningMessage(`Cortex Brain root not found: ${configured}`);
+    return undefined;
+  }
 }
 
 async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {

@@ -3,5 +3,6 @@
   "cortex.telemetrySqlitePath": "./data/telemetry/cortex-telemetry.db",
   "cortex.mongoUrl": "mongodb://127.0.0.1:27017",
   "cortex.mongoDbName": "nostromo_cortex",
-  "cortex.mongoTasksCollection": "tasks"
+  "cortex.mongoTasksCollection": "tasks",
+  "cortex.brainRootPath": "C:\\dev\\jean_d_arc\\src\\content"
 }

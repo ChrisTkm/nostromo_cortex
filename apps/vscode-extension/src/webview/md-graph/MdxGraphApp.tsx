@@ -3,11 +3,14 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  Handle,
   MarkerType,
   MiniMap,
+  Position,
   ReactFlow,
   type Edge,
-  type Node
+  type Node,
+  type NodeProps
 } from "@xyflow/react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
@@ -27,11 +30,15 @@ type GraphNodeData = {
   kind: MdxGraphNode["kind"];
   label: string;
   subtitle?: string;
+  badge?: string;
+  layer?: string;
+  count?: number;
 };
 
 const vscode = window.acquireVsCodeApi();
-const NODE_WIDTH = 220;
-const NODE_HEIGHT = 82;
+const NODE_WIDTH = 236;
+const NODE_HEIGHT = 92;
+const nodeTypes = { brain: BrainNode };
 
 export function MdxGraphApp() {
   const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(() => {
@@ -40,7 +47,8 @@ export function MdxGraphApp() {
   });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "tag", "account", "external"]);
+  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "tag", "account"]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   useEffect(() => {
@@ -49,6 +57,7 @@ export function MdxGraphApp() {
       if (message?.type === "mdxGraph:snapshot") {
         setSnapshot(message.snapshot);
         setError(null);
+        setSelectedNodeId(getPrimaryDocId(message.snapshot));
         vscode.setState(message.snapshot);
         return;
       }
@@ -62,14 +71,29 @@ export function MdxGraphApp() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const flow = useMemo(() => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds) : { nodes: [], edges: [] }), [
+  const flow = useMemo(() => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, selectedNodeId) : { nodes: [], edges: [] }), [
     deferredQuery,
     snapshot,
+    selectedNodeId,
     visibleKinds
   ]);
+  const selectedNode = snapshot?.nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedLinks = useMemo(() => (snapshot && selectedNode ? relatedNodes(snapshot, selectedNode.id) : []), [selectedNode, snapshot]);
 
   function toggleKind(kind: MdxGraphNode["kind"]) {
     setVisibleKinds((current) => (current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind]));
+  }
+
+  function setPreset(preset: "docs" | "refs" | "full") {
+    if (preset === "docs") {
+      setVisibleKinds(["doc"]);
+      return;
+    }
+    if (preset === "refs") {
+      setVisibleKinds(["doc", "tag", "account"]);
+      return;
+    }
+    setVisibleKinds(["doc", "tag", "account", "external"]);
   }
 
   return (
@@ -92,6 +116,17 @@ export function MdxGraphApp() {
       {snapshot ? (
         <section className="md-graph-toolbar">
           <input onChange={(event) => setQuery(event.target.value)} placeholder="Filter docs, tags, accounts..." type="search" value={query} />
+          <div className="md-graph-presets" aria-label="View presets">
+            <button onClick={() => setPreset("docs")} type="button">
+              Docs
+            </button>
+            <button onClick={() => setPreset("refs")} type="button">
+              Refs
+            </button>
+            <button onClick={() => setPreset("full")} type="button">
+              Full
+            </button>
+          </div>
           <div className="md-graph-kinds">
             {(["doc", "tag", "account", "external"] as const).map((kind) => (
               <button className={visibleKinds.includes(kind) ? "is-active" : ""} key={kind} onClick={() => toggleKind(kind)} type="button">
@@ -109,17 +144,31 @@ export function MdxGraphApp() {
 
       <main className="md-graph-main">
         {snapshot ? (
-          <ReactFlow
-            fitView
-            nodes={flow.nodes}
-            edges={flow.edges}
-            onNodeDoubleClick={(_, node) => vscode.postMessage({ type: "mdxGraph:openNode", nodeId: node.id })}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Controls />
-            <MiniMap pannable zoomable nodeColor={(node) => colorForKind((node.data as GraphNodeData).kind)} />
-            <Background color="rgba(148, 163, 184, 0.2)" gap={18} size={1} variant={BackgroundVariant.Dots} />
-          </ReactFlow>
+          <>
+            <section className="md-graph-canvas">
+              <ReactFlow
+                fitView
+                fitViewOptions={{ maxZoom: 1.05, padding: 0.18 }}
+                nodes={flow.nodes}
+                edges={flow.edges}
+                nodeTypes={nodeTypes}
+                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                onNodeDoubleClick={(_, node) => vscode.postMessage({ type: "mdxGraph:openNode", nodeId: node.id })}
+                proOptions={{ hideAttribution: true }}
+              >
+                <Controls />
+                <MiniMap
+                  className="md-graph-minimap"
+                  pannable
+                  zoomable
+                  nodeColor={(node) => colorForKind((node.data as GraphNodeData).kind)}
+                  maskColor="rgba(3, 7, 18, 0.68)"
+                />
+                <Background color="rgba(148, 163, 184, 0.12)" gap={22} size={1} variant={BackgroundVariant.Dots} />
+              </ReactFlow>
+            </section>
+            <BrainInspector node={selectedNode} onSelectNode={setSelectedNodeId} related={selectedLinks} snapshot={snapshot} />
+          </>
         ) : (
           <section className="md-graph-empty">
             <h2>{error ? "Could not scan folder" : "No folder selected"}</h2>
@@ -134,8 +183,87 @@ export function MdxGraphApp() {
   );
 }
 
-function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Array<MdxGraphNode["kind"]>) {
+function BrainNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
+  return (
+    <div className={`brain-node brain-node--${data.kind}${selected ? " brain-node--selected" : ""}`}>
+      <Handle position={Position.Left} type="target" />
+      <div className="brain-node__top">
+        <span className="brain-node__kind">{data.badge ?? data.layer ?? data.kind}</span>
+        {typeof data.count === "number" ? <span className="brain-node__count">{data.count}</span> : null}
+      </div>
+      <div className="brain-node__label">{data.label}</div>
+      {data.subtitle ? <div className="brain-node__subtitle">{data.subtitle}</div> : null}
+      <Handle position={Position.Right} type="source" />
+    </div>
+  );
+}
+
+function BrainInspector({
+  node,
+  onSelectNode,
+  related,
+  snapshot
+}: {
+  node: MdxGraphNode | null;
+  onSelectNode(nodeId: string): void;
+  related: MdxGraphNode[];
+  snapshot: MdxGraphSnapshot;
+}) {
+  if (!node) {
+    return (
+      <aside className="md-graph-inspector">
+        <div className="md-graph-inspector__label">Overview</div>
+        <h2>{snapshot.stats.fileCount} documents</h2>
+        <p>{snapshot.stats.tagCount} tags, {snapshot.stats.accountCount} accounts, {snapshot.stats.unresolvedCount} unresolved references.</p>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="md-graph-inspector">
+      <div className="md-graph-inspector__label">{node.kind}</div>
+      <h2>{node.label}</h2>
+      {node.route ? <p className="md-graph-inspector__route">{node.route}</p> : null}
+      {node.description ? <p>{node.description}</p> : null}
+      {node.domain || node.layer || node.docKind || node.badge ? (
+        <dl className="md-graph-inspector__meta">
+          {node.badge ? <><dt>Badge</dt><dd>{node.badge}</dd></> : null}
+          {node.domain ? <><dt>Domain</dt><dd>{node.domain}</dd></> : null}
+          {node.layer ? <><dt>Layer</dt><dd>{node.layer}</dd></> : null}
+          {node.docKind ? <><dt>Kind</dt><dd>{node.docKind}</dd></> : null}
+        </dl>
+      ) : null}
+      {node.tags?.length ? (
+        <div className="md-graph-inspector__chips">
+          {node.tags.slice(0, 12).map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
+        </div>
+      ) : null}
+      {node.kind === "doc" ? (
+        <button onClick={() => vscode.postMessage({ type: "mdxGraph:openNode", nodeId: node.id })} type="button">
+          Open document
+        </button>
+      ) : null}
+      <section>
+        <h3>Connected</h3>
+        {related.length === 0 ? <p className="md-graph-muted">No visible relations.</p> : null}
+        <div className="md-graph-related">
+          {related.slice(0, 16).map((item) => (
+            <button key={item.id} onClick={() => onSelectNode(item.id)} type="button">
+              <span>{item.kind}</span>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Array<MdxGraphNode["kind"]>, selectedNodeId: string | null) {
   const visible = new Set(visibleKinds);
+  const degree = buildDegreeMap(snapshot);
   const matchingNodeIds = new Set(
     snapshot.nodes
       .filter((node) => visible.has(node.kind))
@@ -152,21 +280,16 @@ function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Arra
     .filter((node) => matchingNodeIds.has(node.id))
     .map((node) => ({
       id: node.id,
+      type: "brain",
+      selected: node.id === selectedNodeId,
       position: { x: 0, y: 0 },
       data: {
         kind: node.kind,
         label: node.label,
-        subtitle: node.kind === "doc" ? node.route : node.kind
-      },
-      style: {
-        width: NODE_WIDTH,
-        minHeight: NODE_HEIGHT,
-        border: `1px solid ${colorForKind(node.kind)}`,
-        borderRadius: 8,
-        background: "var(--vscode-editor-background)",
-        color: "var(--vscode-editor-foreground)",
-        padding: 10,
-        fontSize: 12
+        subtitle: node.kind === "doc" ? node.docKind ?? compactRoute(node.route) : node.kind,
+        badge: node.badge,
+        layer: node.layer,
+        count: degree.get(node.id) ?? 0
       }
     }));
 
@@ -180,7 +303,8 @@ function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Arra
       markerEnd: { type: MarkerType.ArrowClosed, color: colorForEdge(edge.kind) },
       style: {
         stroke: colorForEdge(edge.kind),
-        strokeWidth: edge.kind === "link" ? 2 : 1.4,
+        opacity: edge.kind === "unresolved" ? 0.45 : 0.72,
+        strokeWidth: edge.kind === "link" ? 2 : 1.5,
         strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined
       }
     }));
@@ -190,7 +314,7 @@ function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Arra
 
 function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 80 });
+  graph.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 110, marginx: 40, marginy: 40 });
 
   for (const node of nodes) {
     graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
@@ -219,6 +343,46 @@ function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
     }),
     edges
   };
+}
+
+function buildDegreeMap(snapshot: MdxGraphSnapshot) {
+  const degree = new Map<string, number>();
+  for (const edge of snapshot.edges) {
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  }
+  return degree;
+}
+
+function relatedNodes(snapshot: MdxGraphSnapshot, nodeId: string) {
+  const ids = new Set<string>();
+  for (const edge of snapshot.edges) {
+    if (edge.from === nodeId) {
+      ids.add(edge.to);
+    }
+    if (edge.to === nodeId) {
+      ids.add(edge.from);
+    }
+  }
+  return snapshot.nodes.filter((node) => ids.has(node.id)).sort((left, right) => left.kind.localeCompare(right.kind) || left.label.localeCompare(right.label));
+}
+
+function getPrimaryDocId(snapshot: MdxGraphSnapshot) {
+  const degree = buildDegreeMap(snapshot);
+  return [...snapshot.nodes]
+    .filter((node) => node.kind === "doc")
+    .sort((left, right) => (degree.get(right.id) ?? 0) - (degree.get(left.id) ?? 0))[0]?.id ?? null;
+}
+
+function compactRoute(route?: string) {
+  if (!route) {
+    return undefined;
+  }
+  const parts = route.split("/").filter(Boolean);
+  if (parts.length <= 2) {
+    return route;
+  }
+  return `/${parts.slice(-2).join("/")}`;
 }
 
 function colorForKind(kind: MdxGraphNode["kind"]) {

@@ -279,6 +279,11 @@
           "minimum": 1,
           "description": "Maximum number of .md/.mdx files scanned by Cortex Brain."
         },
+        "cortex.brainRootPath": {
+          "type": "string",
+          "default": "",
+          "description": "Default local folder scanned by Cortex Brain. Leave empty to choose a folder when opening the panel."
+        },
         "cortex.telemetryBackend": {
           "type": "string",
           "enum": [

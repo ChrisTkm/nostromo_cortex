@@ -10,6 +10,10 @@ type ParsedDoc = {
   route: string;
   title: string;
   description?: string;
+  domain?: string;
+  layer?: string;
+  docKind?: string;
+  badge?: string;
   tags: string[];
   links: string[];
   accounts: string[];
@@ -57,6 +61,10 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
       route: doc.route,
       title: doc.title,
       ...(doc.description ? { description: doc.description } : {}),
+      ...(doc.domain ? { domain: doc.domain } : {}),
+      ...(doc.layer ? { layer: doc.layer } : {}),
+      ...(doc.docKind ? { docKind: doc.docKind } : {}),
+      ...(doc.badge ? { badge: doc.badge } : {}),
       tags: doc.tags
     });
 
@@ -123,7 +131,8 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
   const explicitTags = frontmatter.tags;
   const folderTags = relativePath.split("/").slice(0, -1).map(normalizeTag).filter(Boolean);
   const inlineTags = extractInlineTags(source);
-  const tags = unique([...folderTags, ...explicitTags, ...inlineTags]);
+  const structuralTags = [frontmatter.domain, frontmatter.layer, frontmatter.docKind].map((value) => (value ? normalizeTag(value) : "")).filter(Boolean);
+  const tags = unique([...folderTags, ...explicitTags, ...inlineTags, ...structuralTags]);
 
   return {
     id: `doc:${relativePath}`,
@@ -131,23 +140,40 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
     route,
     title,
     ...(frontmatter.description ? { description: frontmatter.description } : {}),
+    ...(frontmatter.domain ? { domain: frontmatter.domain } : {}),
+    ...(frontmatter.layer ? { layer: frontmatter.layer } : {}),
+    ...(frontmatter.docKind ? { docKind: frontmatter.docKind } : {}),
+    ...(frontmatter.badge ? { badge: frontmatter.badge } : {}),
     tags,
-    links: extractLinks(source),
+    links: unique([...frontmatter.related, ...extractLinks(source)]),
     accounts: extractAccounts(source)
   };
 }
 
-function parseFrontmatter(source: string): { title?: string; description?: string; tags: string[] } {
+function parseFrontmatter(source: string): {
+  title?: string;
+  description?: string;
+  domain?: string;
+  layer?: string;
+  docKind?: string;
+  badge?: string;
+  tags: string[];
+  related: string[];
+} {
   if (!source.startsWith("---")) {
-    return { tags: [] };
+    return { tags: [], related: [] };
   }
   const end = source.indexOf("\n---", 3);
   if (end === -1) {
-    return { tags: [] };
+    return { tags: [], related: [] };
   }
   const body = source.slice(3, end);
-  const title = body.match(/^title:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
-  const description = body.match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
+  const title = scalarFrontmatterValue(body, "title");
+  const description = scalarFrontmatterValue(body, "description");
+  const domain = normalizeTag(scalarFrontmatterValue(body, "domain") ?? "");
+  const layer = normalizeTag(scalarFrontmatterValue(body, "layer") ?? "");
+  const docKind = normalizeTag(scalarFrontmatterValue(body, "kind") ?? "");
+  const badge = scalarFrontmatterValue(body, "badge");
   const tags: string[] = [];
   const inlineTags = body.match(/^tags:\s*\[(.+)\]\s*$/m)?.[1];
   if (inlineTags) {
@@ -157,11 +183,33 @@ function parseFrontmatter(source: string): { title?: string; description?: strin
   if (tagBlock) {
     tags.push(...tagBlock.split(/\r?\n/).map((line) => line.replace(/^\s*-\s*/, "").trim()).filter(Boolean));
   }
+  const relatedBlock = body.match(/^related:\s*\n((?:\s{2,}.+\n?)+)/m)?.[1] ?? "";
+  const related = extractRelatedLinks(relatedBlock);
   return {
     ...(title ? { title } : {}),
     ...(description ? { description } : {}),
-    tags: unique(tags.map(normalizeTag).filter(Boolean))
+    ...(domain ? { domain } : {}),
+    ...(layer ? { layer } : {}),
+    ...(docKind ? { docKind } : {}),
+    ...(badge ? { badge } : {}),
+    tags: unique(tags.map(normalizeTag).filter(Boolean)),
+    related
   };
+}
+
+function scalarFrontmatterValue(body: string, key: string) {
+  return body.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim().replace(/^["']|["']$/g, "");
+}
+
+function extractRelatedLinks(block: string) {
+  return unique(
+    block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2).trim())
+      .filter((value) => value.startsWith("/") || value.startsWith("./") || value.endsWith(".md") || value.endsWith(".mdx"))
+  );
 }
 
 function extractLinks(source: string) {

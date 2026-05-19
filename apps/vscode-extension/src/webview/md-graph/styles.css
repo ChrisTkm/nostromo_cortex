@@ -3,15 +3,21 @@
   grid-template-rows: auto auto 1fr;
   height: 100%;
   min-width: 0;
+  background:
+    linear-gradient(90deg, rgba(5, 12, 20, 0.92), rgba(5, 12, 20, 0.72)),
+    var(--vscode-editor-background);
 }
 
 .md-graph-header {
   align-items: center;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  backdrop-filter: blur(16px);
+  background: rgba(5, 12, 20, 0.74);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 10px 14px;
 }
 
 .md-graph-header h1 {
@@ -22,7 +28,7 @@
 
 .md-graph-header p {
   color: var(--vscode-descriptionForeground);
-  font-size: 12px;
+  font-size: 11px;
   margin: 4px 0 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -31,6 +37,7 @@
 
 .md-graph-actions,
 .md-graph-kinds,
+.md-graph-presets,
 .md-graph-stats {
   align-items: center;
   display: flex;
@@ -40,11 +47,12 @@
 
 .md-graph-actions button,
 .md-graph-kinds button,
+.md-graph-presets button,
 .md-graph-empty button {
-  background: var(--vscode-button-secondaryBackground);
-  border: 1px solid var(--vscode-panel-border);
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 6px;
-  color: var(--vscode-button-secondaryForeground);
+  color: var(--vscode-editor-foreground);
   cursor: pointer;
   font: inherit;
   min-height: 28px;
@@ -53,24 +61,27 @@
 
 .md-graph-actions button:hover,
 .md-graph-kinds button:hover,
+.md-graph-presets button:hover,
 .md-graph-empty button:hover,
 .md-graph-kinds button.is-active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: rgba(14, 116, 144, 0.92);
+  border-color: rgba(56, 189, 248, 0.75);
+  color: #f8fafc;
 }
 
 .md-graph-toolbar {
   align-items: center;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: rgba(5, 12, 20, 0.7);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto;
   padding: 10px 14px;
 }
 
 .md-graph-toolbar input {
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 6px;
   color: var(--vscode-input-foreground);
   font: inherit;
@@ -80,7 +91,7 @@
 }
 
 .md-graph-stats span {
-  background: var(--vscode-badge-background);
+  background: rgba(14, 116, 144, 0.8);
   border-radius: 999px;
   color: var(--vscode-badge-foreground);
   font-size: 11px;
@@ -88,7 +99,14 @@
 }
 
 .md-graph-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
   min-height: 0;
+}
+
+.md-graph-canvas {
+  min-height: 0;
+  min-width: 0;
 }
 
 .md-graph-empty {
@@ -111,7 +129,7 @@
 }
 
 .react-flow__node {
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 
 .react-flow__node .react-flow__handle {
@@ -126,6 +144,202 @@
   font-weight: 700;
 }
 
+.brain-node {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.96));
+  border: 1px solid rgba(56, 189, 248, 0.58);
+  border-radius: 8px;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+  color: var(--vscode-editor-foreground);
+  height: 92px;
+  overflow: hidden;
+  padding: 9px 11px;
+  width: 236px;
+}
+
+.brain-node--selected {
+  border-color: #f8fafc;
+  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.9), 0 18px 34px rgba(8, 145, 178, 0.22);
+}
+
+.brain-node--tag {
+  border-color: rgba(34, 197, 94, 0.72);
+}
+
+.brain-node--account {
+  border-color: rgba(245, 158, 11, 0.8);
+}
+
+.brain-node--external {
+  border-color: rgba(148, 163, 184, 0.45);
+  opacity: 0.72;
+}
+
+.brain-node__top {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.brain-node__kind,
+.brain-node__count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.brain-node__kind {
+  background: rgba(14, 116, 144, 0.22);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 999px;
+  color: #bae6fd;
+  max-width: 148px;
+  overflow: hidden;
+  padding: 1px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-node__count {
+  background: rgba(148, 163, 184, 0.13);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.brain-node__label {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  max-height: 32px;
+  overflow: hidden;
+}
+
+.brain-node__subtitle {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  margin-top: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-graph-minimap {
+  background: rgba(2, 6, 23, 0.82) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  height: 118px !important;
+  width: 176px !important;
+}
+
+.md-graph-inspector {
+  background: rgba(5, 12, 20, 0.82);
+  border-left: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.md-graph-inspector__label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.md-graph-inspector h2,
+.md-graph-inspector h3,
+.md-graph-inspector p {
+  margin: 0;
+}
+
+.md-graph-inspector h2 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.md-graph-inspector h3 {
+  font-size: 12px;
+}
+
+.md-graph-inspector p,
+.md-graph-muted {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.md-graph-inspector__route {
+  font-family: var(--vscode-editor-font-family), monospace;
+  overflow-wrap: anywhere;
+}
+
+.md-graph-inspector button {
+  background: rgba(14, 116, 144, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  border-radius: 6px;
+  color: #f8fafc;
+  cursor: pointer;
+  font: inherit;
+  min-height: 30px;
+  padding: 5px 9px;
+  text-align: left;
+}
+
+.md-graph-inspector__chips,
+.md-graph-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.md-graph-inspector__meta {
+  display: grid;
+  gap: 5px 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin: 0;
+}
+
+.md-graph-inspector__meta dt {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.md-graph-inspector__meta dd {
+  font-size: 11px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.md-graph-inspector__chips span {
+  background: rgba(34, 197, 94, 0.13);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 999px;
+  color: #bbf7d0;
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.md-graph-related {
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.md-graph-related button {
+  background: rgba(15, 23, 42, 0.8);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.md-graph-related button span {
+  color: var(--vscode-descriptionForeground);
+  display: block;
+  font-size: 10px;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
 @media (max-width: 820px) {
   .md-graph-header,
   .md-graph-toolbar {
@@ -135,5 +349,13 @@
 
   .md-graph-header {
     display: grid;
+  }
+
+  .md-graph-main {
+    grid-template-columns: 1fr;
+  }
+
+  .md-graph-inspector {
+    display: none;
   }
 }

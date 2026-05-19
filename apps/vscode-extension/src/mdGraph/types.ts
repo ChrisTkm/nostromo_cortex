@@ -10,6 +10,10 @@ export type MdxGraphNode = {
   route?: string;
   title?: string;
   description?: string;
+  domain?: string;
+  layer?: string;
+  docKind?: string;
+  badge?: string;
   tags?: string[];
 };
 
