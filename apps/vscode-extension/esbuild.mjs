@@ -76,6 +76,11 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...browserBundle,
+    entryPoints: ["src/webview/md-graph/index.tsx"],
+    outfile: "media/md-graph.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
     entryPoints: ["src/webview/script-flow/index.tsx"],
     outfile: "media/script-flow.js"
   })

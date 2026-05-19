@@ -2,7 +2,16 @@
 
 # Cortex
 
-Extensión de VS Code para visualizar y operar sobre tareas dependientes, notas y logs almacenados en MongoDB local.
+Cortex es un **knowledge cockpit local-first para ingeniería**: combina grafo de ejecución, navegación de documentación, notas, logs y telemetría dentro de VS Code.
+
+En términos de categoría, Cortex vive en la intersección de:
+
+- **Knowledge graph local** para documentación `.md`/`.mdx`, tags, referencias y conceptos.
+- **Project intelligence / execution graph** para planes, tareas dependientes, estados, bloqueos y ciclos.
+- **Developer operations cockpit** para notas operativas, logs, recordatorios, archivo y telemetría.
+- **Documentation architecture tool** para detectar documentos huérfanos, referencias rotas y zonas poco conectadas del conocimiento técnico.
+
+Todo corre cerca del workspace: archivos locales, VS Code, MongoDB local cuando aplica, snapshots en memoria y webviews React Flow.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
@@ -12,16 +21,18 @@ Extensión de VS Code para visualizar y operar sobre tareas dependientes, notas 
 
 ## Qué resuelve
 
-Cortex nace como herramienta interna para no perder de vista el estado de planes complejos: refactors largos, dependencias entre tareas, notas técnicas y logs operativos.
+Cortex nace como herramienta interna para no perder de vista el estado de planes complejos y conocimiento técnico disperso: refactors largos, dependencias entre tareas, documentación MD/MDX, notas técnicas y logs operativos.
 
-El problema concreto que ataca: cuando un plan tiene veinte tareas con dependencias cruzadas y varias semanas de ejecución, el listado plano no alcanza. Hace falta un grafo navegable, persistencia entre sesiones y un panel de notas a un atajo de distancia.
+El problema concreto que ataca: cuando un plan tiene veinte tareas con dependencias cruzadas o una documentación tiene decenas de páginas conectadas por tags y referencias, el listado plano no alcanza. Hace falta un grafo navegable, persistencia entre sesiones y superficies operativas a un atajo de distancia.
 
 ## Capacidades principales
 
 - Sidebar con árbol de tareas agrupadas por plan.
 - Webview con grafo PERT/DAG basado en React Flow, layout jerárquico vía Dagre.
 - Panel de notas con búsqueda en vivo, tags, vínculos opcionales a tarea o plan, pinned notes.
-- Panel de logs read-only con los últimos eventos persistidos.
+- Panel de logs read-only con eventos agrupados por ejecución, filtro por tag y fallback para logs legacy.
+- Panel de archivo para revisar planes archivados y sus tareas congeladas.
+- Panel Cortex Brain para elegir una carpeta local y visualizar conexiones entre archivos `.md`/`.mdx`, tags, cuentas y referencias.
 - Panel switcher (`Ctrl+Alt+N`, `Ctrl+Alt+Shift+N`) para saltar entre superficies.
 - Filtros por plan, proyecto, grupo, tags, estados y severidad — todos persistidos.
 - Detección automática de ciclos en dependencias.
@@ -45,6 +56,8 @@ VS Code Extension Host (Node)
          |-- PERT Graph    (React + React Flow + Dagre)
          |-- Notes Panel   (React + Markdown editor)
          |-- Logs Panel    (React + listado paginado)
+         |-- Archive Panel (React + planes archivados)
+         |-- Cortex Brain  (React Flow + scan local .md/.mdx)
          '-- Script Flow   (TS / Python / SQL)
 ```
 
@@ -61,7 +74,7 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Componentes
 
-- `apps/vscode-extension` — extensión de VS Code con navegación textual y webview PERT/DAG.
+- `apps/vscode-extension` — extensión de VS Code con navegación textual, PERT/DAG, Notes, Logs, Archive, Cortex Brain y Script Flow.
 - `apps/mcp-server` — servidor MCP local con tools, resources y prompts sobre tareas y telemetría.
 - `packages/core` — dominio compartido: tipos, normalización Zod, grafo, Mongo y seeds.
 - `packages/telemetry` — capa reusable de telemetría, pricing versionado, logging y persistencia local.
@@ -78,7 +91,7 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Panels & keyboard shortcuts
 
-La extensión VS Code expone cinco superficies. Todas viven sobre el mismo `SharedMongoClient` (sin handshakes por operación).
+La extensión VS Code expone siete superficies. Tasks/Graph/Notes/Logs/Archive viven sobre el mismo `SharedMongoClient` (sin handshakes por operación); Cortex Brain opera sobre carpetas locales sin Mongo.
 
 | Superficie | Comando | Keybinding |
 |------------|---------|------------|
@@ -86,10 +99,24 @@ La extensión VS Code expone cinco superficies. Todas viven sobre el mismo `Shar
 | PERT Graph | `cortex.openGraph` |  |
 | Notes | `cortex.openNotes` / `cortex.newNote` | `Ctrl+Alt+Shift+N` / `Ctrl+Alt+N` |
 | Logs | `cortex.openLogs` |  |
+| Archive | `cortex.openArchive` / `cortex.archivePlan` |  |
+| Cortex Brain | `cortex.openBrain` (`cortex.openMdxGraph` alias) |  |
 | Script Flow | `cortex.openScriptFlow` / `cortex.openScriptFlowForSelection` |  |
 | Panel switcher | `cortex.switchPanel` |  |
 
-Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs y al resto de filtros.
+Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs/Archive/Cortex Brain y al resto de filtros.
+
+## v0.1.5
+
+Release enfocada en cerrar la operativa diaria de la extensión: archivo de planes, logs más navegables, PERT más legible y ajustes de seguridad del webview.
+
+- **Archive panel**: nueva superficie `Cortex: Open Archive` para explorar planes archivados y sus tareas. Los planes `done` se pueden archivar desde el navigator con `cortex.archivePlan`; el destino se configura con `cortex.archivePath` y por defecto cae en `~/cortex-archive`.
+- **Logs por ejecución**: el panel Logs agrupa eventos por `execution_id`, mantiene los documentos legacy en una sección `ungrouped` y agrega filtro por `tag`. El contrato esperado para productores Python queda documentado en `docs/log-contract.md`.
+- **PERT graph polish**: warnings visibles para datos incompletos o inconsistentes, banner de plan más claro, espaciado ajustado y layout menos propenso a solapamientos.
+- **Security hardening**: la Mongo URL se gestiona con `Cortex: Set Mongo URL` en VS Code SecretStorage; la setting `cortex.mongoUrl` queda como compatibilidad deprecada.
+- **Notes panel**: corrección de scroll para que el editor y el listado mantengan una experiencia estable en sesiones largas.
+- **Cortex Brain**: nuevo panel liviano para elegir una carpeta local, escanear `.md`/`.mdx` y renderizar relaciones por links, tags, rutas y cuentas contables sin depender de Mongo.
+- **Build/webviews**: se agrega bundle dedicado para Archive y se actualizan assets/iconos de los paneles.
 
 ## v0.1.4
 
@@ -173,3 +200,4 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 
 - [Arquitectura](./README.architecture.md)
 - [Desarrollo local](./README.development.md)
+- [Contrato de logs](./docs/log-contract.md)

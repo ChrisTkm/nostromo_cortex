@@ -20,6 +20,8 @@
     "onView:cortex.overview",
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openArchive",
+    "onCommand:cortex.openBrain",
+    "onCommand:cortex.openMdxGraph",
     "onCommand:cortex.openScriptFlow",
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
@@ -64,6 +66,14 @@
       {
         "command": "cortex.openArchive",
         "title": "Cortex: Open Archive"
+      },
+      {
+        "command": "cortex.openBrain",
+        "title": "Cortex: Open Brain"
+      },
+      {
+        "command": "cortex.openMdxGraph",
+        "title": "Cortex: Open MD/MDX Graph"
       },
       {
         "command": "cortex.openScriptFlow",
@@ -262,6 +272,12 @@
           "type": "string",
           "default": "",
           "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
+        },
+        "cortex.mdxGraphMaxFiles": {
+          "type": "number",
+          "default": 800,
+          "minimum": 1,
+          "description": "Maximum number of .md/.mdx files scanned by Cortex Brain."
         },
         "cortex.telemetryBackend": {
           "type": "string",

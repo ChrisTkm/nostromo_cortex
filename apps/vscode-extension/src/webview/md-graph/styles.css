@@ -1,0 +1,139 @@
+.md-graph-app {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  height: 100%;
+  min-width: 0;
+}
+
+.md-graph-header {
+  align-items: center;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.md-graph-header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.md-graph-header p {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  margin: 4px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-graph-actions,
+.md-graph-kinds,
+.md-graph-stats {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.md-graph-actions button,
+.md-graph-kinds button,
+.md-graph-empty button {
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+  font: inherit;
+  min-height: 28px;
+  padding: 4px 10px;
+}
+
+.md-graph-actions button:hover,
+.md-graph-kinds button:hover,
+.md-graph-empty button:hover,
+.md-graph-kinds button.is-active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.md-graph-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  padding: 10px 14px;
+}
+
+.md-graph-toolbar input {
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 6px;
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  min-height: 30px;
+  min-width: 0;
+  padding: 4px 9px;
+}
+
+.md-graph-stats span {
+  background: var(--vscode-badge-background);
+  border-radius: 999px;
+  color: var(--vscode-badge-foreground);
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.md-graph-main {
+  min-height: 0;
+}
+
+.md-graph-empty {
+  display: grid;
+  gap: 10px;
+  height: 100%;
+  place-content: center;
+  text-align: center;
+}
+
+.md-graph-empty h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.md-graph-empty p {
+  color: var(--vscode-descriptionForeground);
+  margin: 0;
+  max-width: 520px;
+}
+
+.react-flow__node {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.react-flow__node .react-flow__handle {
+  opacity: 0;
+}
+
+.react-flow__node-default {
+  font-family: var(--vscode-font-family), sans-serif;
+}
+
+.react-flow__node-default div:first-child {
+  font-weight: 700;
+}
+
+@media (max-width: 820px) {
+  .md-graph-header,
+  .md-graph-toolbar {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .md-graph-header {
+    display: grid;
+  }
+}

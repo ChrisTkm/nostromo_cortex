@@ -12,6 +12,8 @@ import { MongoClient } from "mongodb";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
+import { buildMdxGraphSnapshot } from "./mdGraph/indexer.js";
+import type { MdxGraphSnapshot } from "./mdGraph/types.js";
 import { ExtensionTaskService } from "./service.js";
 import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFlow/analyzers/index.js";
 import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
@@ -21,6 +23,7 @@ import { CortexTreeProvider, type GroupTreeNode, type PlanStatusFilter, type Tas
 import { getArchiveHtml } from "./webview/archive/getHtml.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
+import { getMdxGraphHtml } from "./webview/md-graph/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 
@@ -99,6 +102,10 @@ export async function activate(context: vscode.ExtensionContext) {
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
   let logsPanelReady = false;
+  let mdxGraphPanel: vscode.WebviewPanel | undefined;
+  let mdxGraphPanelReady = false;
+  let currentMdxGraphRoot: vscode.Uri | undefined;
+  let currentMdxGraphSnapshot: MdxGraphSnapshot | undefined;
   let archivePanel: vscode.WebviewPanel | undefined;
   let archivePanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
@@ -240,6 +247,32 @@ export async function activate(context: vscode.ExtensionContext) {
       type: "archive:list",
       plans
     });
+  }
+
+  async function postMdxGraphSnapshot(rootUri: vscode.Uri) {
+    const panel = mdxGraphPanel;
+    if (!panel) {
+      return;
+    }
+
+    try {
+      const maxFiles = vscode.workspace.getConfiguration("cortex").get<number>("mdxGraphMaxFiles", 800);
+      const snapshot = await buildMdxGraphSnapshot(rootUri, maxFiles);
+      if (mdxGraphPanel !== panel) {
+        return;
+      }
+      currentMdxGraphRoot = rootUri;
+      currentMdxGraphSnapshot = snapshot;
+      await panel.webview.postMessage({
+        type: "mdxGraph:snapshot",
+        snapshot
+      });
+    } catch (error) {
+      await panel.webview.postMessage({
+        type: "mdxGraph:error",
+        error: String(error)
+      });
+    }
   }
 
   async function postNotesMode(mode: NotesPanelMode) {
@@ -409,6 +442,66 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(message.jsonPath.trim()));
         await vscode.window.showTextDocument(document);
+      }
+    });
+  }
+
+  async function openMdxGraphPanel(rootUri?: vscode.Uri) {
+    const selectedRoot = rootUri ?? currentMdxGraphRoot ?? (await pickMdxGraphRoot());
+    if (!selectedRoot) {
+      return;
+    }
+
+    if (mdxGraphPanel) {
+      mdxGraphPanel.reveal(vscode.ViewColumn.One);
+      if (mdxGraphPanelReady) {
+        await postMdxGraphSnapshot(selectedRoot);
+      } else {
+        currentMdxGraphRoot = selectedRoot;
+      }
+      return;
+    }
+
+    currentMdxGraphRoot = selectedRoot;
+    mdxGraphPanelReady = false;
+    mdxGraphPanel = vscode.window.createWebviewPanel("cortex.brain", "Cortex Brain", vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true
+    });
+    setWebviewPanelIcon(context, mdxGraphPanel, "cortex-pert.svg");
+    mdxGraphPanel.webview.html = getMdxGraphHtml(mdxGraphPanel.webview, context.extensionUri, nonce());
+    mdxGraphPanel.onDidDispose(() => {
+      mdxGraphPanel = undefined;
+      mdxGraphPanelReady = false;
+      currentMdxGraphSnapshot = undefined;
+    });
+    mdxGraphPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        mdxGraphPanelReady = true;
+        if (currentMdxGraphRoot) {
+          await postMdxGraphSnapshot(currentMdxGraphRoot);
+        }
+        return;
+      }
+      if (message?.type === "mdxGraph:refresh") {
+        if (currentMdxGraphRoot) {
+          await postMdxGraphSnapshot(currentMdxGraphRoot);
+        }
+        return;
+      }
+      if (message?.type === "mdxGraph:pickFolder") {
+        const picked = await pickMdxGraphRoot();
+        if (picked) {
+          await postMdxGraphSnapshot(picked);
+        }
+        return;
+      }
+      if (message?.type === "mdxGraph:openNode" && typeof message.nodeId === "string") {
+        const node = currentMdxGraphSnapshot?.nodes.find((candidate) => candidate.id === message.nodeId);
+        if (node?.kind === "doc" && node.path) {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(node.path));
+          await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside);
+        }
       }
     });
   }
@@ -622,6 +715,7 @@ export async function activate(context: vscode.ExtensionContext) {
       { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
       { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
       { label: "Archive", description: "Open the archived plans panel", command: "cortex.openArchive" },
+      { label: "Brain", description: "Scan a markdown folder into a graph", command: "cortex.openBrain" },
       { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" }
     ];
     const picked = await vscode.window.showQuickPick(items, {
@@ -655,6 +749,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: "Notes", description: "Open the notes panel", command: "cortex.openNotes" },
         { label: "Logs", description: "Open the logs panel", command: "cortex.openLogs" },
         { label: "Archive", description: "Open the archived plans panel", command: "cortex.openArchive" },
+        { label: "Brain", description: "Scan a markdown folder into a graph", command: "cortex.openBrain" },
         { label: "Script Flow", description: "Open the Script Flow panel", command: "cortex.openScriptFlow" },
         { label: "Search query", description: "Update search text", command: "cortex.setSearchQuery" },
         { label: "Tag filter", description: "Select task tags", command: "cortex.setTagFilter" },
@@ -687,6 +782,15 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("cortex.openArchive", async () => {
       await openArchivePanel();
+    }),
+    vscode.commands.registerCommand("cortex.openBrain", async () => {
+      const picked = await pickMdxGraphRoot();
+      if (picked) {
+        await openMdxGraphPanel(picked);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.openMdxGraph", async () => {
+      await vscode.commands.executeCommand("cortex.openBrain");
     }),
     vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
       const editor = vscode.window.activeTextEditor;
@@ -1207,6 +1311,17 @@ async function resolveArchivePlanCode(
     }
   );
   return picked?.planCode;
+}
+
+async function pickMdxGraphRoot() {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: "Scan folder",
+    title: "Choose a Markdown / MDX knowledge folder"
+  });
+  return picked?.[0];
 }
 
 async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
