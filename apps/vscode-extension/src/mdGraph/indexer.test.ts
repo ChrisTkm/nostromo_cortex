@@ -146,6 +146,8 @@ describe("buildMdxGraphSnapshot", () => {
         "    - /accounting/",
         "  downstream:",
         "    - /accounting/activos-fijos/contabilizacion-activo-fijo/",
+        "  references:",
+        "    - /accounting/ifrs/nic-16/",
         "  standards:",
         "    - /accounting/ifrs/nic-16/",
         "  accounts:",
@@ -175,6 +177,12 @@ describe("buildMdxGraphSnapshot", () => {
           to: "doc:activos-fijos/index.mdx",
           kind: "link",
           label: "upstream"
+        }),
+        expect.objectContaining({
+          from: "doc:activos-fijos/index.mdx",
+          to: "doc:ifrs/nic-16.mdx",
+          kind: "link",
+          label: "references"
         }),
         expect.objectContaining({
           from: "doc:activos-fijos/index.mdx",

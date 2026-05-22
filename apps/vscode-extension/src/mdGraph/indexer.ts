@@ -21,7 +21,7 @@ type ParsedDoc = {
 
 type LinkRef = {
   href: string;
-  relation: "link" | "upstream" | "downstream" | "standards";
+  relation: "link" | "upstream" | "downstream" | "references" | "standards";
 };
 
 const MARKDOWN_LINK_RE = /\[[^\]]+\]\(([^)]+)\)/g;
@@ -213,7 +213,7 @@ function extractRelatedRefs(block: string) {
 
   for (const rawLine of block.split(/\r?\n/)) {
     const line = rawLine.trim();
-    const section = line.match(/^(upstream|downstream|standards|accounts):\s*$/);
+    const section = line.match(/^(upstream|downstream|references|standards|accounts):\s*$/);
     if (section?.[1]) {
       relation = section[1] as LinkRef["relation"] | "accounts";
       continue;
