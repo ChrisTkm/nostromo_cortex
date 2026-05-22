@@ -252,4 +252,17 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.nodes.find((node) => node.title === "Activos fijos")?.isOrphan).toBeFalsy();
     expect(snapshot.nodes.find((node) => node.title === "Accounting")?.isOrphan).toBeFalsy();
   });
+
+  it("reports a cycle when upstream references loop", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const aPath = "C:\\site\\src\\content\\docs\\loop\\a.mdx";
+    const bPath = "C:\\site\\src\\content\\docs\\loop\\b.mdx";
+    filesRef.current = [{ fsPath: aPath }, { fsPath: bPath }];
+    sourcesRef.current.set(aPath, ["---", "title: A", "related:", "  upstream:", "    - /loop/b/", "---", "", "# A"].join("\n"));
+    sourcesRef.current.set(bPath, ["---", "title: B", "related:", "  upstream:", "    - /loop/a/", "---", "", "# B"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.issues.filter((issue) => issue.kind === "cycle")).toHaveLength(2);
+  });
 });

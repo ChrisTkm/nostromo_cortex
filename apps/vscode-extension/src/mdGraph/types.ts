@@ -2,6 +2,14 @@ export type MdxGraphNodeKind = "doc" | "tag" | "account" | "external";
 
 export type MdxGraphEdgeKind = "link" | "tag" | "account" | "unresolved";
 
+export type MdxGraphIssueKind = "orphan" | "cycle" | "self-reference" | "broken-ref";
+
+export type MdxGraphIssue = {
+  kind: MdxGraphIssueKind;
+  nodeId: string;
+  detail?: string;
+};
+
 export type MdxGraphNode = {
   id: string;
   kind: MdxGraphNodeKind;
@@ -31,6 +39,7 @@ export type MdxGraphSnapshot = {
   generatedAt: string;
   nodes: MdxGraphNode[];
   edges: MdxGraphEdge[];
+  issues: MdxGraphIssue[];
   stats: {
     fileCount: number;
     tagCount: number;
