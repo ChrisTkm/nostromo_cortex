@@ -14,7 +14,7 @@ import {
 } from "@xyflow/react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import type { MdxGraphHostMessage, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
+import type { MdxGraphEdge, MdxGraphHostMessage, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
 
 declare global {
   interface Window {
@@ -38,7 +38,10 @@ type GraphNodeData = {
 const vscode = window.acquireVsCodeApi();
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
+const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
+const EDGE_FILTERS = ["link", "upstream", "downstream", "standards", "account", "tag", "unresolved"] as const;
 const nodeTypes = { brain: BrainNode };
+type EdgeFilter = (typeof EDGE_FILTERS)[number];
 
 export function MdxGraphApp() {
   const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(() => {
@@ -47,7 +50,9 @@ export function MdxGraphApp() {
   });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "tag", "account"]);
+  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "account"]);
+  const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>(["link", "upstream", "downstream", "standards", "account"]);
+  const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
@@ -57,6 +62,10 @@ export function MdxGraphApp() {
       if (message?.type === "mdxGraph:snapshot") {
         setSnapshot(message.snapshot);
         setError(null);
+        setHiddenNodeIds((current) => {
+          const knownIds = new Set(message.snapshot.nodes.map((node) => node.id));
+          return current.filter((id) => knownIds.has(id));
+        });
         setSelectedNodeId(getPrimaryDocId(message.snapshot));
         vscode.setState(message.snapshot);
         return;
@@ -71,29 +80,77 @@ export function MdxGraphApp() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const flow = useMemo(() => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, selectedNodeId) : { nodes: [], edges: [] }), [
+  const flow = useMemo(
+    () => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, visibleEdges, hiddenNodeIds, selectedNodeId) : { nodes: [], edges: [] }),
+    [
     deferredQuery,
+    hiddenNodeIds,
     snapshot,
     selectedNodeId,
+    visibleEdges,
     visibleKinds
-  ]);
+    ]
+  );
   const selectedNode = snapshot?.nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const selectedLinks = useMemo(() => (snapshot && selectedNode ? relatedNodes(snapshot, selectedNode.id) : []), [selectedNode, snapshot]);
+  const selectedLinks = useMemo(
+    () => (snapshot && selectedNode ? relatedNodes(snapshot, selectedNode.id, visibleEdges) : []),
+    [selectedNode, snapshot, visibleEdges]
+  );
+  const nodesByKind = useMemo(() => (snapshot ? groupNodesByKind(snapshot.nodes) : new Map<MdxGraphNode["kind"], MdxGraphNode[]>()), [snapshot]);
 
-  function toggleKind(kind: MdxGraphNode["kind"]) {
-    setVisibleKinds((current) => (current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind]));
+  function showKind(kind: MdxGraphNode["kind"]) {
+    setVisibleKinds((current) => (current.includes(kind) ? current : [...current, kind]));
+    setHiddenNodeIds((current) => {
+      const ids = new Set(nodesByKind.get(kind)?.map((node) => node.id) ?? []);
+      return current.filter((id) => !ids.has(id));
+    });
+  }
+
+  function hideKind(kind: MdxGraphNode["kind"]) {
+    setVisibleKinds((current) => current.filter((item) => item !== kind));
+  }
+
+  function setNodeVisible(node: MdxGraphNode, isVisible: boolean) {
+    if (isVisible) {
+      setVisibleKinds((current) => (current.includes(node.kind) ? current : [...current, node.kind]));
+      setHiddenNodeIds((current) => {
+        const hidden = new Set(current);
+        hidden.delete(node.id);
+        if (!visibleKinds.includes(node.kind)) {
+          for (const sibling of nodesByKind.get(node.kind) ?? []) {
+            if (sibling.id !== node.id) {
+              hidden.add(sibling.id);
+            }
+          }
+        }
+        return [...hidden];
+      });
+      return;
+    }
+    setHiddenNodeIds((current) => (current.includes(node.id) ? current : [...current, node.id]));
+    if (selectedNodeId === node.id) {
+      setSelectedNodeId(null);
+    }
   }
 
   function setPreset(preset: "docs" | "refs" | "full") {
+    setHiddenNodeIds([]);
     if (preset === "docs") {
       setVisibleKinds(["doc"]);
+      setVisibleEdges(["link", "upstream", "downstream", "standards"]);
       return;
     }
     if (preset === "refs") {
-      setVisibleKinds(["doc", "tag", "account"]);
+      setVisibleKinds(["doc", "account"]);
+      setVisibleEdges(["upstream", "downstream", "standards", "account"]);
       return;
     }
     setVisibleKinds(["doc", "tag", "account", "external"]);
+    setVisibleEdges([...EDGE_FILTERS]);
+  }
+
+  function toggleEdgeFilter(edge: EdgeFilter) {
+    setVisibleEdges((current) => (current.includes(edge) ? current.filter((item) => item !== edge) : [...current, edge]));
   }
 
   return (
@@ -127,11 +184,25 @@ export function MdxGraphApp() {
               Full
             </button>
           </div>
-          <div className="md-graph-kinds">
-            {(["doc", "tag", "account", "external"] as const).map((kind) => (
-              <button className={visibleKinds.includes(kind) ? "is-active" : ""} key={kind} onClick={() => toggleKind(kind)} type="button">
-                {kind}
+          <div className="md-graph-edge-filters" aria-label="Relation filters">
+            {EDGE_FILTERS.map((edge) => (
+              <button className={visibleEdges.includes(edge) ? "is-active" : ""} key={edge} onClick={() => toggleEdgeFilter(edge)} type="button">
+                {edge}
               </button>
+            ))}
+          </div>
+          <div className="md-graph-kinds">
+            {GRAPH_KINDS.map((kind) => (
+              <KindFilter
+                hiddenNodeIds={hiddenNodeIds}
+                key={kind}
+                kind={kind}
+                nodes={nodesByKind.get(kind) ?? []}
+                onHideKind={hideKind}
+                onSetNodeVisible={setNodeVisible}
+                onShowKind={showKind}
+                visibleKinds={visibleKinds}
+              />
             ))}
           </div>
           <div className="md-graph-stats">
@@ -180,6 +251,61 @@ export function MdxGraphApp() {
         )}
       </main>
     </div>
+  );
+}
+
+function KindFilter({
+  hiddenNodeIds,
+  kind,
+  nodes,
+  onHideKind,
+  onSetNodeVisible,
+  onShowKind,
+  visibleKinds
+}: {
+  hiddenNodeIds: string[];
+  kind: MdxGraphNode["kind"];
+  nodes: MdxGraphNode[];
+  onHideKind(kind: MdxGraphNode["kind"]): void;
+  onSetNodeVisible(node: MdxGraphNode, isVisible: boolean): void;
+  onShowKind(kind: MdxGraphNode["kind"]): void;
+  visibleKinds: Array<MdxGraphNode["kind"]>;
+}) {
+  const hidden = new Set(hiddenNodeIds);
+  const kindIsVisible = visibleKinds.includes(kind);
+  const visibleCount = kindIsVisible ? nodes.filter((node) => !hidden.has(node.id)).length : 0;
+
+  return (
+    <details className={`md-graph-kind-filter${kindIsVisible ? " is-active" : ""}`}>
+      <summary>
+        <span className="md-graph-kind-filter__name">{kind}</span>
+        <span className="md-graph-kind-filter__count">
+          {visibleCount}/{nodes.length}
+        </span>
+      </summary>
+      <div className="md-graph-kind-filter__panel">
+        <div className="md-graph-kind-filter__actions">
+          <button onClick={() => onShowKind(kind)} type="button">
+            All
+          </button>
+          <button onClick={() => onHideKind(kind)} type="button">
+            None
+          </button>
+        </div>
+        <div className="md-graph-kind-filter__list">
+          {nodes.length === 0 ? <p>No {kind} nodes.</p> : null}
+          {nodes.map((node) => {
+            const checked = kindIsVisible && !hidden.has(node.id);
+            return (
+              <label key={node.id}>
+                <input checked={checked} onChange={(event) => onSetNodeVisible(node, event.target.checked)} type="checkbox" />
+                <span>{node.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -261,12 +387,22 @@ function BrainInspector({
   );
 }
 
-function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Array<MdxGraphNode["kind"]>, selectedNodeId: string | null) {
+function buildFlow(
+  snapshot: MdxGraphSnapshot,
+  query: string,
+  visibleKinds: Array<MdxGraphNode["kind"]>,
+  visibleEdges: EdgeFilter[],
+  hiddenNodeIds: string[],
+  selectedNodeId: string | null
+) {
   const visible = new Set(visibleKinds);
-  const degree = buildDegreeMap(snapshot);
+  const visibleEdgeSet = new Set(visibleEdges);
+  const hidden = new Set(hiddenNodeIds);
+  const degree = buildDegreeMap(snapshot, visibleEdgeSet);
   const matchingNodeIds = new Set(
     snapshot.nodes
       .filter((node) => visible.has(node.kind))
+      .filter((node) => !hidden.has(node.id))
       .filter((node) => {
         if (!query) {
           return true;
@@ -294,17 +430,18 @@ function buildFlow(snapshot: MdxGraphSnapshot, query: string, visibleKinds: Arra
     }));
 
   const edges: Edge[] = snapshot.edges
+    .filter((edge) => visibleEdgeSet.has(edgeFilterFor(edge)))
     .filter((edge) => matchingNodeIds.has(edge.from) && matchingNodeIds.has(edge.to))
     .map((edge) => ({
       id: edge.id,
       source: edge.from,
       target: edge.to,
-      label: edge.kind === "unresolved" ? "missing" : undefined,
-      markerEnd: { type: MarkerType.ArrowClosed, color: colorForEdge(edge.kind) },
+      label: edge.label && edge.label !== "link" ? edge.label : undefined,
+      markerEnd: { type: MarkerType.ArrowClosed, color: colorForEdge(edge) },
       style: {
-        stroke: colorForEdge(edge.kind),
+        stroke: colorForEdge(edge),
         opacity: edge.kind === "unresolved" ? 0.45 : 0.72,
-        strokeWidth: edge.kind === "link" ? 2 : 1.5,
+        strokeWidth: edge.label === "upstream" || edge.label === "downstream" || edge.label === "standards" ? 2.4 : edge.kind === "link" ? 2 : 1.5,
         strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined
       }
     }));
@@ -345,26 +482,53 @@ function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
   };
 }
 
-function buildDegreeMap(snapshot: MdxGraphSnapshot) {
+function buildDegreeMap(snapshot: MdxGraphSnapshot, visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS)) {
   const degree = new Map<string, number>();
   for (const edge of snapshot.edges) {
+    if (!visibleEdges.has(edgeFilterFor(edge))) {
+      continue;
+    }
     degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
     degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
   }
   return degree;
 }
 
-function relatedNodes(snapshot: MdxGraphSnapshot, nodeId: string) {
-  const ids = new Set<string>();
+function groupNodesByKind(nodes: MdxGraphNode[]) {
+  const grouped = new Map<MdxGraphNode["kind"], MdxGraphNode[]>();
+  for (const kind of GRAPH_KINDS) {
+    grouped.set(kind, []);
+  }
+  for (const node of nodes) {
+    grouped.get(node.kind)?.push(node);
+  }
+  for (const [kind, items] of grouped) {
+    grouped.set(
+      kind,
+      items.sort((left, right) => left.label.localeCompare(right.label))
+    );
+  }
+  return grouped;
+}
+
+function relatedNodes(snapshot: MdxGraphSnapshot, nodeId: string, visibleEdges: EdgeFilter[]) {
+  const visibleEdgeSet = new Set(visibleEdges);
+  const ids = new Map<string, EdgeFilter>();
   for (const edge of snapshot.edges) {
+    const filter = edgeFilterFor(edge);
+    if (!visibleEdgeSet.has(filter)) {
+      continue;
+    }
     if (edge.from === nodeId) {
-      ids.add(edge.to);
+      ids.set(edge.to, filter);
     }
     if (edge.to === nodeId) {
-      ids.add(edge.from);
+      ids.set(edge.from, filter);
     }
   }
-  return snapshot.nodes.filter((node) => ids.has(node.id)).sort((left, right) => left.kind.localeCompare(right.kind) || left.label.localeCompare(right.label));
+  return snapshot.nodes
+    .filter((node) => ids.has(node.id))
+    .sort((left, right) => (ids.get(left.id) ?? "").localeCompare(ids.get(right.id) ?? "") || left.kind.localeCompare(right.kind) || left.label.localeCompare(right.label));
 }
 
 function getPrimaryDocId(snapshot: MdxGraphSnapshot) {
@@ -398,8 +562,24 @@ function colorForKind(kind: MdxGraphNode["kind"]) {
   }
 }
 
-function colorForEdge(kind: string) {
-  switch (kind) {
+function edgeFilterFor(edge: MdxGraphEdge): EdgeFilter {
+  if (edge.kind === "tag" || edge.kind === "account" || edge.kind === "unresolved") {
+    return edge.kind;
+  }
+  if (edge.label === "upstream" || edge.label === "downstream" || edge.label === "standards") {
+    return edge.label;
+  }
+  return "link";
+}
+
+function colorForEdge(edge: MdxGraphEdge) {
+  switch (edgeFilterFor(edge)) {
+    case "upstream":
+      return "#60a5fa";
+    case "downstream":
+      return "#a78bfa";
+    case "standards":
+      return "#f43f5e";
     case "tag":
       return "#22c55e";
     case "account":
