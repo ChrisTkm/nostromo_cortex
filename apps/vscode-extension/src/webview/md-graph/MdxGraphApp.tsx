@@ -33,13 +33,14 @@ type GraphNodeData = {
   badge?: string;
   layer?: string;
   count?: number;
+  isOrphan?: boolean;
 };
 
 const vscode = window.acquireVsCodeApi();
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
 const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
-const EDGE_FILTERS = ["link", "upstream", "downstream", "standards", "account", "tag", "unresolved"] as const;
+const EDGE_FILTERS = ["link", "upstream", "downstream", "references", "standards", "account", "tag", "unresolved"] as const;
 const nodeTypes = { brain: BrainNode };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
 
@@ -51,7 +52,7 @@ export function MdxGraphApp() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "account"]);
-  const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>(["link", "upstream", "downstream", "standards", "account"]);
+  const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>(["link", "upstream", "downstream", "references", "standards", "account"]);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
@@ -137,12 +138,12 @@ export function MdxGraphApp() {
     setHiddenNodeIds([]);
     if (preset === "docs") {
       setVisibleKinds(["doc"]);
-      setVisibleEdges(["link", "upstream", "downstream", "standards"]);
+      setVisibleEdges(["link", "upstream", "downstream", "references", "standards"]);
       return;
     }
     if (preset === "refs") {
       setVisibleKinds(["doc", "account"]);
-      setVisibleEdges(["upstream", "downstream", "standards", "account"]);
+      setVisibleEdges(["upstream", "downstream", "references", "standards", "account"]);
       return;
     }
     setVisibleKinds(["doc", "tag", "account", "external"]);
@@ -208,6 +209,9 @@ export function MdxGraphApp() {
           <div className="md-graph-stats">
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
+            {snapshot.stats.orphanCount > 0 ? (
+              <span className="md-graph-stats__warn">{snapshot.stats.orphanCount} orphans</span>
+            ) : null}
             <span>{snapshot.stats.elapsedMs} ms</span>
           </div>
         </section>
@@ -311,7 +315,9 @@ function KindFilter({
 
 function BrainNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
   return (
-    <div className={`brain-node brain-node--${data.kind}${selected ? " brain-node--selected" : ""}`}>
+    <div
+      className={`brain-node brain-node--${data.kind}${data.isOrphan ? " brain-node--orphan" : ""}${selected ? " brain-node--selected" : ""}`}
+    >
       <Handle position={Position.Left} type="target" />
       <div className="brain-node__top">
         <span className="brain-node__kind">{data.badge ?? data.layer ?? data.kind}</span>
@@ -336,11 +342,27 @@ function BrainInspector({
   snapshot: MdxGraphSnapshot;
 }) {
   if (!node) {
+    const orphans = snapshot.nodes.filter((item) => item.kind === "doc" && item.isOrphan);
     return (
       <aside className="md-graph-inspector">
         <div className="md-graph-inspector__label">Overview</div>
         <h2>{snapshot.stats.fileCount} documents</h2>
         <p>{snapshot.stats.tagCount} tags, {snapshot.stats.accountCount} accounts, {snapshot.stats.unresolvedCount} unresolved references.</p>
+        <section>
+          <h3>Orphans ({orphans.length})</h3>
+          {orphans.length === 0 ? (
+            <p className="md-graph-muted">Every document hangs from the tree.</p>
+          ) : (
+            <div className="md-graph-related">
+              {orphans.slice(0, 40).map((item) => (
+                <button key={item.id} onClick={() => onSelectNode(item.id)} type="button">
+                  <span>orphan</span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
       </aside>
     );
   }
@@ -350,6 +372,9 @@ function BrainInspector({
       <div className="md-graph-inspector__label">{node.kind}</div>
       <h2>{node.label}</h2>
       {node.route ? <p className="md-graph-inspector__route">{node.route}</p> : null}
+      {node.isOrphan ? (
+        <p className="md-graph-inspector__warn">Orphan — no upstream/downstream in the tree.</p>
+      ) : null}
       {node.description ? <p>{node.description}</p> : null}
       {node.domain || node.layer || node.docKind || node.badge ? (
         <dl className="md-graph-inspector__meta">
@@ -425,7 +450,8 @@ function buildFlow(
         subtitle: node.kind === "doc" ? node.docKind ?? compactRoute(node.route) : node.kind,
         badge: node.badge,
         layer: node.layer,
-        count: degree.get(node.id) ?? 0
+        count: degree.get(node.id) ?? 0,
+        isOrphan: node.isOrphan
       }
     }));
 
@@ -441,7 +467,12 @@ function buildFlow(
       style: {
         stroke: colorForEdge(edge),
         opacity: edge.kind === "unresolved" ? 0.45 : 0.72,
-        strokeWidth: edge.label === "upstream" || edge.label === "downstream" || edge.label === "standards" ? 2.4 : edge.kind === "link" ? 2 : 1.5,
+        strokeWidth:
+          edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards"
+            ? 2.4
+            : edge.kind === "link"
+              ? 2
+              : 1.5,
         strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined
       }
     }));
@@ -566,7 +597,7 @@ function edgeFilterFor(edge: MdxGraphEdge): EdgeFilter {
   if (edge.kind === "tag" || edge.kind === "account" || edge.kind === "unresolved") {
     return edge.kind;
   }
-  if (edge.label === "upstream" || edge.label === "downstream" || edge.label === "standards") {
+  if (edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards") {
     return edge.label;
   }
   return "link";
@@ -578,6 +609,8 @@ function colorForEdge(edge: MdxGraphEdge) {
       return "#60a5fa";
     case "downstream":
       return "#a78bfa";
+    case "references":
+      return "#2dd4bf";
     case "standards":
       return "#f43f5e";
     case "tag":

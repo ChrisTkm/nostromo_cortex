@@ -113,6 +113,26 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     }
   }
 
+  // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
+  // decir páginas que no cuelgan del b-tree por ningún lado.
+  const treeDegree = new Map<string, number>();
+  for (const edge of edges.values()) {
+    if (edge.label === "upstream" || edge.label === "downstream") {
+      treeDegree.set(edge.from, (treeDegree.get(edge.from) ?? 0) + 1);
+      treeDegree.set(edge.to, (treeDegree.get(edge.to) ?? 0) + 1);
+    }
+  }
+  let orphanCount = 0;
+  for (const node of nodes.values()) {
+    if (node.kind !== "doc") {
+      continue;
+    }
+    if (!treeDegree.get(node.id)) {
+      node.isOrphan = true;
+      orphanCount += 1;
+    }
+  }
+
   return {
     rootPath: rootUri.fsPath,
     generatedAt: new Date().toISOString(),
@@ -122,6 +142,7 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
       fileCount: docs.length,
       tagCount: [...nodes.values()].filter((node) => node.kind === "tag").length,
       accountCount: [...nodes.values()].filter((node) => node.kind === "account").length,
+      orphanCount,
       unresolvedCount: unresolved.size,
       elapsedMs: Date.now() - startedAt
     }

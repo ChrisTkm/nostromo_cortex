@@ -231,4 +231,25 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:contabilidad" })]));
     expect(snapshot.nodes).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:no-deberia-ser-tag" })]));
   });
+
+  it("flags documents with no upstream/downstream edges as orphans", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const rootPath = "C:\\site\\src\\content\\docs\\accounting\\index.mdx";
+    const childPath = "C:\\site\\src\\content\\docs\\accounting\\activos-fijos\\index.mdx";
+    const orphanPath = "C:\\site\\src\\content\\docs\\accounting\\suelto.mdx";
+    filesRef.current = [{ fsPath: rootPath }, { fsPath: childPath }, { fsPath: orphanPath }];
+    sourcesRef.current.set(rootPath, ["---", "title: Accounting", "---", "", "# Accounting"].join("\n"));
+    sourcesRef.current.set(
+      childPath,
+      ["---", "title: Activos fijos", "related:", "  upstream:", "    - /accounting/", "---", "", "# Activos fijos"].join("\n")
+    );
+    sourcesRef.current.set(orphanPath, ["---", "title: Suelto", "---", "", "# Suelto"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.stats.orphanCount).toBe(1);
+    expect(snapshot.nodes.find((node) => node.title === "Suelto")?.isOrphan).toBe(true);
+    expect(snapshot.nodes.find((node) => node.title === "Activos fijos")?.isOrphan).toBeFalsy();
+    expect(snapshot.nodes.find((node) => node.title === "Accounting")?.isOrphan).toBeFalsy();
+  });
 });

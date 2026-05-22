@@ -15,6 +15,7 @@ export type MdxGraphNode = {
   docKind?: string;
   badge?: string;
   tags?: string[];
+  isOrphan?: boolean;
 };
 
 export type MdxGraphEdge = {
@@ -34,6 +35,7 @@ export type MdxGraphSnapshot = {
     fileCount: number;
     tagCount: number;
     accountCount: number;
+    orphanCount: number;
     unresolvedCount: number;
     elapsedMs: number;
   };
