@@ -14,7 +14,7 @@ import {
 } from "@xyflow/react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import type { MdxGraphEdge, MdxGraphHostMessage, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
+import type { MdxGraphEdge, MdxGraphHostMessage, MdxGraphIssueKind, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
 
 declare global {
   interface Window {
@@ -33,7 +33,7 @@ type GraphNodeData = {
   badge?: string;
   layer?: string;
   count?: number;
-  isOrphan?: boolean;
+  issue?: MdxGraphIssueKind;
 };
 
 const vscode = window.acquireVsCodeApi();
@@ -43,6 +43,20 @@ const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
 const EDGE_FILTERS = ["link", "upstream", "downstream", "references", "standards", "account", "tag", "unresolved"] as const;
 const nodeTypes = { brain: BrainNode };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
+
+const ISSUE_SEVERITY: Record<MdxGraphIssueKind, number> = {
+  cycle: 4,
+  "broken-ref": 3,
+  "self-reference": 2,
+  orphan: 1
+};
+const ISSUE_LABEL: Record<MdxGraphIssueKind, string> = {
+  cycle: "Cycles",
+  "broken-ref": "Broken references",
+  "self-reference": "Self-references",
+  orphan: "Orphans"
+};
+const ISSUE_ORDER: MdxGraphIssueKind[] = ["cycle", "broken-ref", "self-reference", "orphan"];
 
 export function MdxGraphApp() {
   const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(() => {
@@ -209,8 +223,8 @@ export function MdxGraphApp() {
           <div className="md-graph-stats">
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
-            {snapshot.stats.orphanCount > 0 ? (
-              <span className="md-graph-stats__warn">{snapshot.stats.orphanCount} orphans</span>
+            {snapshot.issues.length > 0 ? (
+              <span className="md-graph-stats__warn">{snapshot.issues.length} issues</span>
             ) : null}
             <span>{snapshot.stats.elapsedMs} ms</span>
           </div>
@@ -316,7 +330,7 @@ function KindFilter({
 function BrainNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
   return (
     <div
-      className={`brain-node brain-node--${data.kind}${data.isOrphan ? " brain-node--orphan" : ""}${selected ? " brain-node--selected" : ""}`}
+      className={`brain-node brain-node--${data.kind}${data.issue ? ` brain-node--${data.issue}` : ""}${selected ? " brain-node--selected" : ""}`}
     >
       <Handle position={Position.Left} type="target" />
       <div className="brain-node__top">
@@ -342,38 +356,52 @@ function BrainInspector({
   snapshot: MdxGraphSnapshot;
 }) {
   if (!node) {
-    const orphans = snapshot.nodes.filter((item) => item.kind === "doc" && item.isOrphan);
+    const labelOf = (id: string) => snapshot.nodes.find((item) => item.id === id)?.label ?? id;
     return (
       <aside className="md-graph-inspector">
         <div className="md-graph-inspector__label">Overview</div>
         <h2>{snapshot.stats.fileCount} documents</h2>
         <p>{snapshot.stats.tagCount} tags, {snapshot.stats.accountCount} accounts, {snapshot.stats.unresolvedCount} unresolved references.</p>
         <section>
-          <h3>Orphans ({orphans.length})</h3>
-          {orphans.length === 0 ? (
-            <p className="md-graph-muted">Every document hangs from the tree.</p>
-          ) : (
-            <div className="md-graph-related">
-              {orphans.slice(0, 40).map((item) => (
-                <button key={item.id} onClick={() => onSelectNode(item.id)} type="button">
-                  <span>orphan</span>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <h3>Issues ({snapshot.issues.length})</h3>
+          {snapshot.issues.length === 0 ? (
+            <p className="md-graph-muted">No issues — the related tree is healthy.</p>
+          ) : null}
+          {ISSUE_ORDER.map((kind) => {
+            const items = snapshot.issues.filter((issue) => issue.kind === kind);
+            if (items.length === 0) {
+              return null;
+            }
+            return (
+              <div className="md-graph-issue-group" key={kind}>
+                <p className="md-graph-issue-group__title">
+                  {ISSUE_LABEL[kind]} ({items.length})
+                </p>
+                <div className="md-graph-related">
+                  {items.slice(0, 30).map((issue, index) => (
+                    <button key={`${issue.nodeId}-${index}`} onClick={() => onSelectNode(issue.nodeId)} type="button">
+                      <span>{kind}</span>
+                      {labelOf(issue.nodeId)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </section>
       </aside>
     );
   }
+
+  const nodeIssues = snapshot.issues.filter((issue) => issue.nodeId === node.id);
 
   return (
     <aside className="md-graph-inspector">
       <div className="md-graph-inspector__label">{node.kind}</div>
       <h2>{node.label}</h2>
       {node.route ? <p className="md-graph-inspector__route">{node.route}</p> : null}
-      {node.isOrphan ? (
-        <p className="md-graph-inspector__warn">Orphan — no upstream/downstream in the tree.</p>
+      {nodeIssues.length > 0 ? (
+        <p className="md-graph-inspector__warn">{nodeIssues.map((issue) => ISSUE_LABEL[issue.kind]).join(" · ")}</p>
       ) : null}
       {node.description ? <p>{node.description}</p> : null}
       {node.domain || node.layer || node.docKind || node.badge ? (
@@ -424,6 +452,13 @@ function buildFlow(
   const visibleEdgeSet = new Set(visibleEdges);
   const hidden = new Set(hiddenNodeIds);
   const degree = buildDegreeMap(snapshot, visibleEdgeSet);
+  const issueByNode = new Map<string, MdxGraphIssueKind>();
+  for (const issue of snapshot.issues) {
+    const current = issueByNode.get(issue.nodeId);
+    if (!current || ISSUE_SEVERITY[issue.kind] > ISSUE_SEVERITY[current]) {
+      issueByNode.set(issue.nodeId, issue.kind);
+    }
+  }
   const matchingNodeIds = new Set(
     snapshot.nodes
       .filter((node) => visible.has(node.kind))
@@ -451,7 +486,7 @@ function buildFlow(
         badge: node.badge,
         layer: node.layer,
         count: degree.get(node.id) ?? 0,
-        isOrphan: node.isOrphan
+        issue: issueByNode.get(node.id)
       }
     }));
 

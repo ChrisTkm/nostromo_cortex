@@ -2,7 +2,7 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import type { MdxGraphEdge, MdxGraphNode, MdxGraphSnapshot } from "./types.js";
+import type { MdxGraphEdge, MdxGraphIssue, MdxGraphNode, MdxGraphSnapshot } from "./types.js";
 
 type ParsedDoc = {
   id: string;
@@ -55,6 +55,7 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
   const nodes = new Map<string, MdxGraphNode>();
   const edges = new Map<string, MdxGraphEdge>();
   const unresolved = new Set<string>();
+  const issues: MdxGraphIssue[] = [];
 
   for (const doc of docs) {
     nodes.set(doc.id, {
@@ -95,11 +96,18 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     for (const link of doc.links) {
       const targetId = resolveLink(link.href, doc.uri, rootUri, routeToDocId, stemToDocIds);
       if (targetId) {
+        if (targetId === doc.id) {
+          issues.push({ kind: "self-reference", nodeId: doc.id, detail: link.relation });
+          continue;
+        }
         const [from, to] = edgeEndpoints(doc.id, targetId, link.relation);
         addEdge(edges, from, to, "link", link.relation);
         continue;
       }
 
+      if (link.relation !== "link") {
+        issues.push({ kind: "broken-ref", nodeId: doc.id, detail: `${link.relation}: ${link.href}` });
+      }
       const unresolvedId = `external:${normalizeExternalId(link.href)}`;
       unresolved.add(unresolvedId);
       nodes.set(unresolvedId, {
@@ -130,7 +138,13 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     if (!treeDegree.get(node.id)) {
       node.isOrphan = true;
       orphanCount += 1;
+      issues.push({ kind: "orphan", nodeId: node.id });
     }
+  }
+
+  // Ciclos: el árbol upstream/downstream debe ser acíclico.
+  for (const cycleNodeId of findCycleNodes(edges)) {
+    issues.push({ kind: "cycle", nodeId: cycleNodeId });
   }
 
   return {
@@ -138,6 +152,7 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     generatedAt: new Date().toISOString(),
     nodes: [...nodes.values()],
     edges: [...edges.values()],
+    issues,
     stats: {
       fileCount: docs.length,
       tagCount: [...nodes.values()].filter((node) => node.kind === "tag").length,
@@ -328,6 +343,48 @@ function addEdge(edges: Map<string, MdxGraphEdge>, from: string, to: string, kin
 
 function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]): [string, string] {
   return relation === "upstream" ? [to, from] : [from, to];
+}
+
+// Nodos que participan en un ciclo del subgrafo de árbol (upstream/downstream).
+function findCycleNodes(edges: Map<string, MdxGraphEdge>): Set<string> {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges.values()) {
+    if (edge.label !== "upstream" && edge.label !== "downstream") {
+      continue;
+    }
+    const list = adjacency.get(edge.from) ?? [];
+    list.push(edge.to);
+    adjacency.set(edge.from, list);
+  }
+
+  const state = new Map<string, "visiting" | "done">();
+  const stack: string[] = [];
+  const inCycle = new Set<string>();
+
+  function visit(node: string) {
+    state.set(node, "visiting");
+    stack.push(node);
+    for (const next of adjacency.get(node) ?? []) {
+      const status = state.get(next);
+      if (status === "visiting") {
+        const start = stack.lastIndexOf(next);
+        for (let index = start; index < stack.length; index += 1) {
+          inCycle.add(stack[index]);
+        }
+      } else if (!status) {
+        visit(next);
+      }
+    }
+    stack.pop();
+    state.set(node, "done");
+  }
+
+  for (const node of adjacency.keys()) {
+    if (!state.get(node)) {
+      visit(node);
+    }
+  }
+  return inCycle;
 }
 
 function routeFromRelativePath(relativePath: string) {
