@@ -43,6 +43,12 @@ const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
 const EDGE_FILTERS = ["link", "upstream", "downstream", "references", "standards", "account", "tag", "unresolved"] as const;
 const nodeTypes = { brain: BrainNode };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
+type LayoutMode = "flow" | "orbit";
+type RelatedLink = {
+  node: MdxGraphNode;
+  direction: "from" | "to";
+  relation: EdgeFilter;
+};
 
 const ISSUE_SEVERITY: Record<MdxGraphIssueKind, number> = {
   cycle: 4,
@@ -65,10 +71,11 @@ export function MdxGraphApp() {
   });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc", "account"]);
-  const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>(["link", "upstream", "downstream", "references", "standards", "account"]);
+  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc"]);
+  const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>([]);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   useEffect(() => {
@@ -81,7 +88,7 @@ export function MdxGraphApp() {
           const knownIds = new Set(message.snapshot.nodes.map((node) => node.id));
           return current.filter((id) => knownIds.has(id));
         });
-        setSelectedNodeId(getPrimaryDocId(message.snapshot));
+        setSelectedNodeId(null);
         vscode.setState(message.snapshot);
         return;
       }
@@ -96,10 +103,11 @@ export function MdxGraphApp() {
   }, []);
 
   const flow = useMemo(
-    () => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, visibleEdges, hiddenNodeIds, selectedNodeId) : { nodes: [], edges: [] }),
+    () => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, visibleEdges, hiddenNodeIds, selectedNodeId, layoutMode) : { nodes: [], edges: [] }),
     [
     deferredQuery,
     hiddenNodeIds,
+    layoutMode,
     snapshot,
     selectedNodeId,
     visibleEdges,
@@ -108,7 +116,7 @@ export function MdxGraphApp() {
   );
   const selectedNode = snapshot?.nodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedLinks = useMemo(
-    () => (snapshot && selectedNode ? relatedNodes(snapshot, selectedNode.id, visibleEdges) : []),
+    () => (snapshot && selectedNode ? relatedLinks(snapshot, selectedNode.id, visibleEdges) : []),
     [selectedNode, snapshot, visibleEdges]
   );
   const nodesByKind = useMemo(() => (snapshot ? groupNodesByKind(snapshot.nodes) : new Map<MdxGraphNode["kind"], MdxGraphNode[]>()), [snapshot]);
@@ -151,15 +159,18 @@ export function MdxGraphApp() {
   function setPreset(preset: "docs" | "refs" | "full") {
     setHiddenNodeIds([]);
     if (preset === "docs") {
+      setLayoutMode("flow");
       setVisibleKinds(["doc"]);
-      setVisibleEdges(["link", "upstream", "downstream", "references", "standards"]);
+      setVisibleEdges([]);
       return;
     }
     if (preset === "refs") {
-      setVisibleKinds(["doc", "account"]);
-      setVisibleEdges(["upstream", "downstream", "references", "standards", "account"]);
+      setLayoutMode("orbit");
+      setVisibleKinds(["doc", "tag", "account", "external"]);
+      setVisibleEdges(["upstream", "downstream", "references", "standards", "account", "tag", "unresolved"]);
       return;
     }
+    setLayoutMode("flow");
     setVisibleKinds(["doc", "tag", "account", "external"]);
     setVisibleEdges([...EDGE_FILTERS]);
   }
@@ -197,6 +208,14 @@ export function MdxGraphApp() {
             </button>
             <button onClick={() => setPreset("full")} type="button">
               Full
+            </button>
+          </div>
+          <div className="md-graph-layout-toggle" aria-label="Layout mode">
+            <button className={layoutMode === "flow" ? "is-active" : ""} onClick={() => setLayoutMode("flow")} type="button">
+              Flow
+            </button>
+            <button className={layoutMode === "orbit" ? "is-active" : ""} onClick={() => setLayoutMode("orbit")} type="button">
+              Orbit
             </button>
           </div>
           <div className="md-graph-edge-filters" aria-label="Relation filters">
@@ -352,7 +371,7 @@ function BrainInspector({
 }: {
   node: MdxGraphNode | null;
   onSelectNode(nodeId: string): void;
-  related: MdxGraphNode[];
+  related: RelatedLink[];
   snapshot: MdxGraphSnapshot;
 }) {
   if (!node) {
@@ -428,10 +447,10 @@ function BrainInspector({
         <h3>Connected</h3>
         {related.length === 0 ? <p className="md-graph-muted">No visible relations.</p> : null}
         <div className="md-graph-related">
-          {related.slice(0, 16).map((item) => (
-            <button key={item.id} onClick={() => onSelectNode(item.id)} type="button">
-              <span>{item.kind}</span>
-              {item.label}
+          {related.slice(0, 24).map((item) => (
+            <button className={`md-graph-related__item md-graph-related__item--${item.relation}`} key={`${item.direction}:${item.relation}:${item.node.id}`} onClick={() => onSelectNode(item.node.id)} type="button">
+              <span>{item.direction === "from" ? "from this doc" : "to this doc"} · {item.relation}</span>
+              {item.node.label}
             </button>
           ))}
         </div>
@@ -446,7 +465,8 @@ function buildFlow(
   visibleKinds: Array<MdxGraphNode["kind"]>,
   visibleEdges: EdgeFilter[],
   hiddenNodeIds: string[],
-  selectedNodeId: string | null
+  selectedNodeId: string | null,
+  layoutMode: LayoutMode
 ) {
   const visible = new Set(visibleKinds);
   const visibleEdgeSet = new Set(visibleEdges);
@@ -471,9 +491,11 @@ function buildFlow(
       })
       .map((node) => node.id)
   );
+  const orbitNodeIds = layoutMode === "orbit" && selectedNodeId ? focusedNeighborhood(snapshot, selectedNodeId, matchingNodeIds, visibleEdgeSet) : null;
+  const flowNodeIds = orbitNodeIds ?? matchingNodeIds;
 
   const nodes: Array<Node<GraphNodeData>> = snapshot.nodes
-    .filter((node) => matchingNodeIds.has(node.id))
+    .filter((node) => flowNodeIds.has(node.id))
     .map((node) => ({
       id: node.id,
       type: "brain",
@@ -492,16 +514,18 @@ function buildFlow(
 
   const edges: Edge[] = snapshot.edges
     .filter((edge) => visibleEdgeSet.has(edgeFilterFor(edge)))
-    .filter((edge) => matchingNodeIds.has(edge.from) && matchingNodeIds.has(edge.to))
+    .filter((edge) => flowNodeIds.has(edge.from) && flowNodeIds.has(edge.to))
     .map((edge) => ({
       id: edge.id,
       source: edge.from,
       target: edge.to,
       label: edge.label && edge.label !== "link" ? edge.label : undefined,
+      animated: edge.label === "references",
+      type: layoutMode === "orbit" ? "bezier" : undefined,
       markerEnd: { type: MarkerType.ArrowClosed, color: colorForEdge(edge) },
       style: {
         stroke: colorForEdge(edge),
-        opacity: edge.kind === "unresolved" ? 0.45 : 0.72,
+        opacity: edge.kind === "unresolved" ? 0.45 : edge.label === "references" ? 0.92 : 0.72,
         strokeWidth:
           edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards"
             ? 2.4
@@ -511,6 +535,10 @@ function buildFlow(
         strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined
       }
     }));
+
+  if (layoutMode === "orbit" && selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
+    return computeOrbitLayout(nodes, edges, selectedNodeId);
+  }
 
   return computeLayout(nodes, edges);
 }
@@ -548,6 +576,105 @@ function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
   };
 }
 
+function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], selectedNodeId: string) {
+  const selected = nodes.find((node) => node.id === selectedNodeId);
+  if (!selected) {
+    return computeLayout(nodes, edges);
+  }
+
+  const groups = new Map<EdgeFilter, Array<Node<GraphNodeData>>>();
+  for (const edge of edges) {
+    if (edge.source !== selectedNodeId && edge.target !== selectedNodeId) {
+      continue;
+    }
+    const neighborId = edge.source === selectedNodeId ? edge.target : edge.source;
+    const neighbor = nodes.find((node) => node.id === neighborId);
+    if (!neighbor) {
+      continue;
+    }
+    const relation = edgeFilterForId(edge.id);
+    const bucket = groups.get(relation) ?? [];
+    if (!bucket.some((item) => item.id === neighbor.id)) {
+      bucket.push(neighbor);
+    }
+    groups.set(relation, bucket);
+  }
+
+  const positioned = new Map<string, { x: number; y: number }>();
+  positioned.set(selectedNodeId, { x: 0, y: 0 });
+  const slots: Array<{ relation: EdgeFilter; start: number; end: number; radius: number }> = [
+    { relation: "upstream", start: 150, end: 210, radius: 360 },
+    { relation: "downstream", start: -30, end: 30, radius: 360 },
+    { relation: "references", start: 45, end: 135, radius: 330 },
+    { relation: "standards", start: 225, end: 315, radius: 330 },
+    { relation: "account", start: 315, end: 405, radius: 420 },
+    { relation: "tag", start: 250, end: 290, radius: 470 },
+    { relation: "link", start: 110, end: 250, radius: 500 },
+    { relation: "unresolved", start: 20, end: 80, radius: 500 }
+  ];
+
+  for (const slot of slots) {
+    const items = groups.get(slot.relation) ?? [];
+    items.forEach((node, index) => {
+      if (positioned.has(node.id)) {
+        return;
+      }
+      const spread = slot.end - slot.start;
+      const angle = items.length === 1 ? (slot.start + slot.end) / 2 : slot.start + (spread * index) / Math.max(items.length - 1, 1);
+      const radians = (angle * Math.PI) / 180;
+      const radius = slot.radius + Math.floor(index / 8) * 120;
+      positioned.set(node.id, {
+        x: Math.cos(radians) * radius,
+        y: Math.sin(radians) * radius
+      });
+    });
+  }
+
+  let fallbackIndex = 0;
+  return {
+    nodes: nodes.map((node) => {
+      const position = positioned.get(node.id) ?? {
+        x: Math.cos(fallbackIndex) * 560,
+        y: Math.sin(fallbackIndex++) * 560
+      };
+      return {
+        ...node,
+        position: {
+          x: position.x - NODE_WIDTH / 2,
+          y: position.y - NODE_HEIGHT / 2
+        }
+      };
+    }),
+    edges
+  };
+}
+
+function focusedNeighborhood(
+  snapshot: MdxGraphSnapshot,
+  selectedNodeId: string,
+  matchingNodeIds: ReadonlySet<string>,
+  visibleEdges: ReadonlySet<EdgeFilter>
+) {
+  const ids = new Set<string>();
+  if (matchingNodeIds.has(selectedNodeId)) {
+    ids.add(selectedNodeId);
+  }
+  for (const edge of snapshot.edges) {
+    if (!visibleEdges.has(edgeFilterFor(edge))) {
+      continue;
+    }
+    if (edge.from === selectedNodeId && matchingNodeIds.has(edge.to)) {
+      ids.add(selectedNodeId);
+      ids.add(edge.to);
+    }
+    if (edge.to === selectedNodeId && matchingNodeIds.has(edge.from)) {
+      ids.add(selectedNodeId);
+      ids.add(edge.from);
+    }
+  }
+  return ids.size > 0 ? ids : matchingNodeIds;
+}
+
 function buildDegreeMap(snapshot: MdxGraphSnapshot, visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS)) {
   const degree = new Map<string, number>();
   for (const edge of snapshot.edges) {
@@ -577,31 +704,40 @@ function groupNodesByKind(nodes: MdxGraphNode[]) {
   return grouped;
 }
 
-function relatedNodes(snapshot: MdxGraphSnapshot, nodeId: string, visibleEdges: EdgeFilter[]) {
+function relatedLinks(snapshot: MdxGraphSnapshot, nodeId: string, visibleEdges: EdgeFilter[]): RelatedLink[] {
   const visibleEdgeSet = new Set(visibleEdges);
-  const ids = new Map<string, EdgeFilter>();
+  const nodesById = new Map(snapshot.nodes.map((node) => [node.id, node]));
+  const links: RelatedLink[] = [];
+  const seen = new Set<string>();
   for (const edge of snapshot.edges) {
     const filter = edgeFilterFor(edge);
     if (!visibleEdgeSet.has(filter)) {
       continue;
     }
     if (edge.from === nodeId) {
-      ids.set(edge.to, filter);
+      const node = nodesById.get(edge.to);
+      const key = `from:${filter}:${edge.to}`;
+      if (node && !seen.has(key)) {
+        links.push({ node, direction: "from", relation: filter });
+        seen.add(key);
+      }
     }
     if (edge.to === nodeId) {
-      ids.set(edge.from, filter);
+      const node = nodesById.get(edge.from);
+      const key = `to:${filter}:${edge.from}`;
+      if (node && !seen.has(key)) {
+        links.push({ node, direction: "to", relation: filter });
+        seen.add(key);
+      }
     }
   }
-  return snapshot.nodes
-    .filter((node) => ids.has(node.id))
-    .sort((left, right) => (ids.get(left.id) ?? "").localeCompare(ids.get(right.id) ?? "") || left.kind.localeCompare(right.kind) || left.label.localeCompare(right.label));
-}
-
-function getPrimaryDocId(snapshot: MdxGraphSnapshot) {
-  const degree = buildDegreeMap(snapshot);
-  return [...snapshot.nodes]
-    .filter((node) => node.kind === "doc")
-    .sort((left, right) => (degree.get(right.id) ?? 0) - (degree.get(left.id) ?? 0))[0]?.id ?? null;
+  return links.sort(
+    (left, right) =>
+      left.relation.localeCompare(right.relation) ||
+      left.direction.localeCompare(right.direction) ||
+      left.node.kind.localeCompare(right.node.kind) ||
+      left.node.label.localeCompare(right.node.label)
+  );
 }
 
 function compactRoute(route?: string) {
@@ -634,6 +770,23 @@ function edgeFilterFor(edge: MdxGraphEdge): EdgeFilter {
   }
   if (edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards") {
     return edge.label;
+  }
+  return "link";
+}
+
+function edgeFilterForId(edgeId: string): EdgeFilter {
+  const [, label] = edgeId.split(":");
+  if (label === "upstream" || label === "downstream" || label === "references" || label === "standards") {
+    return label;
+  }
+  if (edgeId.startsWith("tag:")) {
+    return "tag";
+  }
+  if (edgeId.startsWith("account:")) {
+    return "account";
+  }
+  if (edgeId.startsWith("unresolved:")) {
+    return "unresolved";
   }
   return "link";
 }

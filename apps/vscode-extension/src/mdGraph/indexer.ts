@@ -121,6 +121,8 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     }
   }
 
+  synthesizeTreeEdges(docs, edges);
+
   // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
   // decir páginas que no cuelgan del b-tree por ningún lado.
   const treeDegree = new Map<string, number>();
@@ -257,6 +259,11 @@ function extractRelatedRefs(block: string) {
     if (!line.startsWith("- ")) {
       continue;
     }
+    // upstream/downstream se derivan de la estructura de carpetas en
+    // synthesizeTreeEdges; ignoramos lo que diga el frontmatter.
+    if (relation === "upstream" || relation === "downstream") {
+      continue;
+    }
     const value = line.slice(2).trim().replace(/^["']|["']$/g, "");
     if (relation === "accounts") {
       if (/^\d{4,}$/.test(value)) {
@@ -343,6 +350,96 @@ function addEdge(edges: Map<string, MdxGraphEdge>, from: string, to: string, kin
 
 function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]): [string, string] {
   return relation === "upstream" ? [to, from] : [from, to];
+}
+
+// Sintetiza aristas upstream/downstream desde la estructura de carpetas,
+// replicando la regla de jean_d_arc/scripts/normalize-related.mjs: para cada
+// doc, el padre es el index.{md,mdx} más cercano hacia arriba dentro de la
+// misma "zona" (primer segmento bajo content/docs/). Es acíclico por
+// construcción y se ejecuta después del loop de links del frontmatter.
+function synthesizeTreeEdges(docs: ParsedDoc[], edges: Map<string, MdxGraphEdge>) {
+  type Location = {
+    doc: ParsedDoc;
+    absPath: string;
+    dir: string;
+    isIndex: boolean;
+    docsRoot: string | null;
+    zone: string | null;
+  };
+
+  function locate(doc: ParsedDoc): Location {
+    const absPath = normalizePath(doc.uri.fsPath);
+    const isIndex = /\/index\.(md|mdx)$/i.test(absPath);
+    const lastSlash = absPath.lastIndexOf("/");
+    const dir = lastSlash >= 0 ? absPath.slice(0, lastSlash) : absPath;
+    const match = absPath.match(/^(.*?\/(?:src\/)?content\/docs)\/(.+)$/i);
+    if (!match) {
+      return { doc, absPath, dir, isIndex, docsRoot: null, zone: null };
+    }
+    const docsRoot = match[1];
+    const firstSeg = match[2].split("/")[0] ?? "";
+    const zone = /^index\.(md|mdx)$/i.test(firstSeg) || !firstSeg ? null : firstSeg;
+    return { doc, absPath, dir, isIndex, docsRoot, zone };
+  }
+
+  const locations = docs.map(locate);
+  const indexByDir = new Map<string, Location>();
+  for (const loc of locations) {
+    if (loc.isIndex) {
+      indexByDir.set(loc.dir, loc);
+    }
+  }
+
+  function parentIndex(loc: Location): Location | null {
+    if (!loc.zone || !loc.docsRoot) return null;
+    const zoneRoot = `${loc.docsRoot}/${loc.zone}`;
+    let dir = loc.dir;
+    if (loc.isIndex) {
+      if (dir === zoneRoot || !dir.includes("/")) return null;
+      dir = dir.slice(0, dir.lastIndexOf("/"));
+    }
+    while (dir === zoneRoot || dir.startsWith(`${zoneRoot}/`)) {
+      const parent = indexByDir.get(dir);
+      if (parent && parent.doc.id !== loc.doc.id) return parent;
+      if (dir === zoneRoot || !dir.includes("/")) break;
+      dir = dir.slice(0, dir.lastIndexOf("/"));
+    }
+    return null;
+  }
+
+  function ancestorChain(loc: Location): Location[] {
+    const out: Location[] = [];
+    let current: Location | null = parentIndex(loc);
+    let guard = 0;
+    while (current && guard < 20) {
+      out.push(current);
+      current = parentIndex(current);
+      guard += 1;
+    }
+    return out;
+  }
+
+  const childrenByParent = new Map<string, Location[]>();
+  for (const loc of locations) {
+    const parent = parentIndex(loc);
+    if (!parent) continue;
+    const bucket = childrenByParent.get(parent.doc.id) ?? [];
+    bucket.push(loc);
+    childrenByParent.set(parent.doc.id, bucket);
+  }
+
+  for (const loc of locations) {
+    for (const ancestor of ancestorChain(loc)) {
+      const [from, to] = edgeEndpoints(loc.doc.id, ancestor.doc.id, "upstream");
+      addEdge(edges, from, to, "link", "upstream");
+    }
+  }
+  for (const [parentId, children] of childrenByParent) {
+    for (const child of children) {
+      const [from, to] = edgeEndpoints(parentId, child.doc.id, "downstream");
+      addEdge(edges, from, to, "link", "downstream");
+    }
+  }
 }
 
 // Nodos que participan en un ciclo del subgrafo de árbol (upstream/downstream).

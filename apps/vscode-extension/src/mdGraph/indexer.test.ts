@@ -120,7 +120,7 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.stats.unresolvedCount).toBe(0);
   });
 
-  it("keeps frontmatter related sections as selectable edge labels", async () => {
+  it("derives upstream/downstream from folder structure and keeps references/standards/accounts from frontmatter", async () => {
     const rootUri = { fsPath: "C:\\site\\src\\content\\docs\\accounting" } as any;
     const accountingPath = "C:\\site\\src\\content\\docs\\accounting\\index.mdx";
     const fixedAssetsPath = "C:\\site\\src\\content\\docs\\accounting\\activos-fijos\\index.mdx";
@@ -143,9 +143,9 @@ describe("buildMdxGraphSnapshot", () => {
         "title: Activos fijos",
         "related:",
         "  upstream:",
-        "    - /accounting/",
+        "    - /should-be-ignored/",
         "  downstream:",
-        "    - /accounting/activos-fijos/contabilizacion-activo-fijo/",
+        "    - /should-also-be-ignored/",
         "  references:",
         "    - /accounting/ifrs/nic-16/",
         "  standards:",
@@ -179,6 +179,12 @@ describe("buildMdxGraphSnapshot", () => {
           label: "upstream"
         }),
         expect.objectContaining({
+          from: "doc:index.mdx",
+          to: "doc:activos-fijos/index.mdx",
+          kind: "link",
+          label: "downstream"
+        }),
+        expect.objectContaining({
           from: "doc:activos-fijos/index.mdx",
           to: "doc:ifrs/nic-16.mdx",
           kind: "link",
@@ -198,15 +204,13 @@ describe("buildMdxGraphSnapshot", () => {
         })
       ])
     );
-    expect(snapshot.edges).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          from: "doc:activos-fijos/index.mdx",
-          kind: "unresolved",
-          label: "downstream"
-        })
-      ])
-    );
+    expect(
+      snapshot.edges.some(
+        (edge) =>
+          (edge.label === "upstream" || edge.label === "downstream") &&
+          (edge.to.includes("should-be-ignored") || edge.to.includes("should-also-be-ignored"))
+      )
+    ).toBe(false);
   });
 
   it("reads tags from frontmatter without extracting inline body hashtags", async () => {
@@ -232,17 +236,14 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.nodes).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:no-deberia-ser-tag" })]));
   });
 
-  it("flags documents with no upstream/downstream edges as orphans", async () => {
+  it("flags documents outside any indexed folder as orphans", async () => {
     const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
     const rootPath = "C:\\site\\src\\content\\docs\\accounting\\index.mdx";
     const childPath = "C:\\site\\src\\content\\docs\\accounting\\activos-fijos\\index.mdx";
-    const orphanPath = "C:\\site\\src\\content\\docs\\accounting\\suelto.mdx";
+    const orphanPath = "C:\\site\\src\\content\\docs\\huerfano\\suelto.mdx";
     filesRef.current = [{ fsPath: rootPath }, { fsPath: childPath }, { fsPath: orphanPath }];
     sourcesRef.current.set(rootPath, ["---", "title: Accounting", "---", "", "# Accounting"].join("\n"));
-    sourcesRef.current.set(
-      childPath,
-      ["---", "title: Activos fijos", "related:", "  upstream:", "    - /accounting/", "---", "", "# Activos fijos"].join("\n")
-    );
+    sourcesRef.current.set(childPath, ["---", "title: Activos fijos", "---", "", "# Activos fijos"].join("\n"));
     sourcesRef.current.set(orphanPath, ["---", "title: Suelto", "---", "", "# Suelto"].join("\n"));
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
@@ -253,7 +254,7 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.nodes.find((node) => node.title === "Accounting")?.isOrphan).toBeFalsy();
   });
 
-  it("reports a cycle when upstream references loop", async () => {
+  it("does not produce cycles since upstream/downstream come from the filesystem", async () => {
     const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
     const aPath = "C:\\site\\src\\content\\docs\\loop\\a.mdx";
     const bPath = "C:\\site\\src\\content\\docs\\loop\\b.mdx";
@@ -263,6 +264,6 @@ describe("buildMdxGraphSnapshot", () => {
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
-    expect(snapshot.issues.filter((issue) => issue.kind === "cycle")).toHaveLength(2);
+    expect(snapshot.issues.filter((issue) => issue.kind === "cycle")).toHaveLength(0);
   });
 });
