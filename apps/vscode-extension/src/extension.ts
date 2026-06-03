@@ -1578,30 +1578,27 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
   }
   const severity = severityPick as TaskDocumentInput["severity"];
 
-  const project =
-    (await vscode.window.showInputBox({
-      prompt: `Project for ${task.code}`,
-      value: task.project ?? "",
-      ignoreFocusOut: true
-    })) ?? task.project;
+  const projectRaw = await vscode.window.showInputBox({
+    prompt: `Project for ${task.code}`,
+    value: task.project ?? "",
+    ignoreFocusOut: true
+  });
   const agent =
     (await vscode.window.showInputBox({
       prompt: `Agent for ${task.code}`,
       value: task.agent,
       ignoreFocusOut: true
     })) ?? task.agent;
-  const lane =
-    (await vscode.window.showInputBox({
-      prompt: `Group / lane for ${task.code}`,
-      value: task.lane ?? "",
-      ignoreFocusOut: true
-    })) ?? task.lane;
-  const durationRaw =
-    (await vscode.window.showInputBox({
-      prompt: `Estimated duration in hours for ${task.code}`,
-      value: task.durationEstimate?.toString() ?? "",
-      ignoreFocusOut: true
-    })) ?? "";
+  const laneRaw = await vscode.window.showInputBox({
+    prompt: `Group / lane for ${task.code}`,
+    value: task.lane ?? "",
+    ignoreFocusOut: true
+  });
+  const durationRaw = await vscode.window.showInputBox({
+    prompt: `Estimated duration in hours for ${task.code}`,
+    value: task.durationEstimate?.toString() ?? "",
+    ignoreFocusOut: true
+  });
   const tagsRaw =
     (await vscode.window.showInputBox({
       prompt: `Tags for ${task.code} (comma separated)`,
@@ -1614,21 +1611,20 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
       value: task.dependsOn.join(", "),
       ignoreFocusOut: true
     })) ?? task.dependsOn.join(", ");
-  const sourceRef =
-    (await vscode.window.showInputBox({
-      prompt: `Source / reference for ${task.code}`,
-      value: task.sourceRef ?? "",
-      ignoreFocusOut: true
-    })) ?? task.sourceRef;
-  const durationEstimate = parseOptionalNumber(durationRaw);
-  if (durationRaw.trim() && durationEstimate === undefined) {
+  const sourceRefRaw = await vscode.window.showInputBox({
+    prompt: `Source / reference for ${task.code}`,
+    value: task.sourceRef ?? "",
+    ignoreFocusOut: true
+  });
+  const durationEstimate = durationRaw !== undefined ? parseOptionalNumber(durationRaw) : undefined;
+  if (durationRaw !== undefined && durationRaw.trim() !== "" && durationEstimate === undefined) {
     void vscode.window.showWarningMessage("Duration estimate must be a valid number.");
     return undefined;
   }
 
   return {
     code: task.code,
-    ...(project?.trim() ? { project: project.trim() } : {}),
+    project: projectRaw === undefined ? undefined : (projectRaw.trim() || null),
     short_task: shortTask.trim(),
     detail: detail.trim(),
     status,
@@ -1636,10 +1632,11 @@ async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput |
     severity,
     tags: splitCsv(tagsRaw),
     depends_on: splitCsv(dependsOnRaw),
-    ...(typeof durationEstimate === "number" ? { duration_estimate: durationEstimate } : {}),
-    ...(lane?.trim() ? { lane: lane.trim() } : {}),
+    duration_estimate:
+      durationRaw === undefined ? undefined : durationRaw.trim() === "" ? null : (durationEstimate as number),
+    lane: laneRaw === undefined ? undefined : (laneRaw.trim() || null),
     ...(typeof task.orderHint === "number" ? { order_hint: task.orderHint } : {}),
-    ...(sourceRef?.trim() ? { source_ref: sourceRef.trim() } : {}),
+    source_ref: sourceRefRaw === undefined ? undefined : (sourceRefRaw.trim() || null),
     created_at: task.createdAt,
     updated_at: new Date().toISOString()
   };
