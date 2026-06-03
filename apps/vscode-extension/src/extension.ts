@@ -1069,6 +1069,15 @@ export async function activate(context: vscode.ExtensionContext) {
         output.appendLine(`- ${cycle.path.join(" -> ")}`);
       }
       output.show(true);
+    }),
+    vscode.commands.registerCommand("cortex.markDone", async (arg?: TaskTreeNode | { kind?: string; task?: { code?: string } }) => {
+      await markTaskStatus(arg, "DONE");
+    }),
+    vscode.commands.registerCommand("cortex.markInProgress", async (arg?: TaskTreeNode | { kind?: string; task?: { code?: string } }) => {
+      await markTaskStatus(arg, "IN_PROGRESS");
+    }),
+    vscode.commands.registerCommand("cortex.markBlocked", async (arg?: TaskTreeNode | { kind?: string; task?: { code?: string } }) => {
+      await markTaskStatus(arg, "BLOCKED");
     })
   );
 
@@ -1080,6 +1089,37 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   treeProvider.refresh();
+
+  async function markTaskStatus(
+    arg: TaskTreeNode | { kind?: string; task?: { code?: string } } | undefined,
+    newStatus: TaskRecord["status"]
+  ) {
+    const code = arg?.kind === "task" ? (arg as TaskTreeNode).task.code : service.getFilterState().selectedTaskCode;
+    if (!code) {
+      void vscode.window.showInformationMessage("Select a task first.");
+      return;
+    }
+
+    const task = await service.getTask(code);
+    if (!task) {
+      void vscode.window.showWarningMessage(`Task ${code} not found.`);
+      return;
+    }
+
+    await service.saveTask({
+      code: task.code,
+      short_task: task.shortTask,
+      detail: task.detail,
+      status: newStatus,
+      agent: task.agent,
+      severity: task.severity,
+      created_at: task.createdAt,
+      updated_at: new Date().toISOString()
+    });
+    treeProvider.refresh();
+    await postSnapshot(task.code);
+    void vscode.window.showInformationMessage(`Task ${task.code} marked as ${newStatus.toLowerCase().replace("_", " ")}.`);
+  }
 
   async function editTask(selectedTaskCode?: string) {
     if (!selectedTaskCode) {

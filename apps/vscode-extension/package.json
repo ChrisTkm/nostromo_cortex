@@ -150,6 +150,18 @@
       {
         "command": "cortex.listCycles",
         "title": "Cortex: List dependency cycles"
+      },
+      {
+        "command": "cortex.markDone",
+        "title": "Mark done"
+      },
+      {
+        "command": "cortex.markInProgress",
+        "title": "Mark in progress"
+      },
+      {
+        "command": "cortex.markBlocked",
+        "title": "Mark blocked"
       }
     ],
     "viewsContainers": {
@@ -214,6 +226,21 @@
           "command": "cortex.openGraph",
           "when": "view == cortex.overview && viewItem == cortex.task",
           "group": "inline@2"
+        },
+        {
+          "command": "cortex.markDone",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@1"
+        },
+        {
+          "command": "cortex.markInProgress",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@2"
+        },
+        {
+          "command": "cortex.markBlocked",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@3"
         },
         {
           "command": "cortex.archivePlan",
