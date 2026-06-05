@@ -1,4 +1,4 @@
-import { buildTaskGraph, type TaskGraphNode } from "@cortex/core";
+import { buildTaskGraph, type TaskGraph, type TaskGraphNode } from "@cortex/core";
 import * as vscode from "vscode";
 
 import type { ExtensionTaskService } from "./service.js";
@@ -40,12 +40,15 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
   private readonly emitter = new vscode.EventEmitter<GroupTreeNode | TaskTreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this.emitter.event;
 
+  private cachedGraph: Promise<TaskGraph> | undefined = undefined;
+
   constructor(
     private readonly service: ExtensionTaskService,
     private planStatusFilter: PlanStatusFilter = "active"
   ) {}
 
   refresh() {
+    this.cachedGraph = undefined;
     this.emitter.fire();
   }
 
@@ -54,6 +57,7 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return;
     }
     this.planStatusFilter = next;
+    this.cachedGraph = undefined;
     this.emitter.fire();
   }
 
@@ -65,8 +69,17 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return [];
     }
 
-    const [tasks, plans] = await Promise.all([this.service.loadTasks(), this.service.loadPlans()]);
-    const graph = buildTaskGraph(tasks);
+    if (!this.cachedGraph) {
+      const promise = this.service.loadTasks().then(buildTaskGraph);
+      this.cachedGraph = promise;
+      promise.catch(() => {
+        if (this.cachedGraph === promise) {
+          this.cachedGraph = undefined;
+        }
+      });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const [graph, plans] = await Promise.all([this.cachedGraph!, this.service.loadPlans()]);
     const state = this.service.getFilterState();
     const visible = graph.nodes.filter((node) => {
       if (state.selectedProjects.length > 0 && (!node.project || !state.selectedProjects.includes(node.project))) {
