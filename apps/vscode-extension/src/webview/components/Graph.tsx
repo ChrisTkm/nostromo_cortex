@@ -14,11 +14,12 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { computeLayout } from "../lib/layout";
-import type { GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
+import type { CriticalPathResult, GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
 import { TaskNode, type TaskNodeData } from "./TaskNode";
 
 export function Graph(props: {
   centerTaskCode?: string;
+  criticalPath?: CriticalPathResult;
   emptyMessage?: string;
   onSelectTask(code: string): void;
   onViewportChange(zoom: number, pan: { x: number; y: number }): void;
@@ -56,11 +57,32 @@ export function Graph(props: {
 
     const nodeStatusById = new Map(props.snapshot.nodes.map((node) => [node.id, node.status]));
 
+    const cpEdgeSet = new Set<string>();
+    if (props.criticalPath?.available && props.criticalPath.path) {
+      const cpPath = props.criticalPath.path;
+      for (let i = 0; i < cpPath.length - 1; i++) {
+        cpEdgeSet.add(`${cpPath[i]}->${cpPath[i + 1]}`);
+      }
+    }
+
     return props.snapshot.edges.map((edge) => {
       const sourceStatus = nodeStatusById.get(edge.source);
       const targetStatus = nodeStatusById.get(edge.target);
       const isActiveFrontier =
         sourceStatus === "DONE" && (targetStatus === "PENDING" || targetStatus === "IN_PROGRESS");
+      const isCritical = cpEdgeSet.has(`${edge.source}->${edge.target}`);
+
+      if (isCritical) {
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          animated: true,
+          className: "edge-critical-path",
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
+          style: { stroke: "#f59e0b", strokeWidth: 2.6 }
+        } satisfies Edge;
+      }
 
       return {
         id: edge.id,
@@ -75,7 +97,7 @@ export function Graph(props: {
         }
       } satisfies Edge;
     });
-  }, [props.snapshot]);
+  }, [props.snapshot, props.criticalPath]);
 
   useEffect(() => {
     if (!props.snapshot) {

@@ -6,7 +6,7 @@ import { Graph } from "./components/Graph";
 import { PlanBanner } from "./components/PlanBanner";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import type { ActionPlanRecord, FilterCatalog, GraphDirection, GraphSnapshot, PlanTaskSummary, SnapshotMessage, SnapshotNode, TaskFilter } from "./types";
+import type { ActionPlanRecord, CriticalPathResult, FilterCatalog, GraphDirection, GraphSnapshot, PlanTaskSummary, SnapshotMessage, SnapshotNode, TaskFilter } from "./types";
 
 declare global {
   interface Window {
@@ -37,6 +37,7 @@ export function App() {
     statuses: [],
     severities: []
   });
+  const [criticalPath, setCriticalPath] = useState<CriticalPathResult | undefined>();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"inspector" | "filters">("inspector");
   const [viewerPlanCode, setViewerPlanCode] = useState<string | undefined>();
@@ -73,6 +74,7 @@ export function App() {
       });
       setFilters(normalizeFilter(event.data.snapshot.filters));
       setCatalog(event.data.catalog);
+      setCriticalPath(event.data.criticalPath);
 
       const currentTaskCode = event.data.snapshot.planContext?.currentTaskCode;
       if (currentTaskCode && currentTaskCode !== lastPlanTaskCodeRef.current) {
@@ -250,6 +252,7 @@ export function App() {
       <div className="app-graph">
         <Graph
           centerTaskCode={centerTaskCode}
+          criticalPath={criticalPath}
           emptyMessage="No tasks match the current filters. Clear filters to show everything."
           onSelectTask={handleSelectTask}
           onViewportChange={handleViewportChange}
@@ -263,6 +266,7 @@ export function App() {
         />
       </div>
       <StatusBar
+        criticalPath={criticalPath}
         onOrientationChange={handleOrientationChange}
         onToggleMiniMap={handleToggleMiniMap}
         orientation={orientation}

@@ -1,6 +1,6 @@
-import type { ActionPlanRecord, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus } from "@cortex/core";
+import type { ActionPlanRecord, CriticalPathResult, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus } from "@cortex/core";
 
-export type { ActionPlanRecord, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus };
+export type { ActionPlanRecord, CriticalPathResult, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus };
 
 export type PlanTaskSummary = {
   code: string;
@@ -38,5 +38,6 @@ export type SnapshotMessage = {
     pan?: { x: number; y: number };
   };
   filters: TaskFilter;
+  criticalPath?: CriticalPathResult;
   catalog: FilterCatalog;
 };

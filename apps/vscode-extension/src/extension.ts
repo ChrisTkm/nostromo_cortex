@@ -1,5 +1,6 @@
 import {
   buildTaskGraph,
+  criticalPathEstimate,
   type NoteDocumentInput,
   type TaskDocumentInput,
   type TaskFilter,
@@ -167,6 +168,9 @@ export async function activate(context: vscode.ExtensionContext) {
       edgeCount: snapshot.edges.length
     });
 
+    const criticalPath = criticalPathEstimate(bundle.tasks);
+    service.logger.debug("criticalPath", { available: criticalPath.available, totalDuration: criticalPath.totalDuration });
+
     const payload = {
       type: "snapshot",
       snapshot,
@@ -184,6 +188,7 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       connection: (({ mongoUrl: _omit, ...safe }) => safe)(service.getConnectionSettings()),
       filters: snapshotFilter,
+      criticalPath,
       catalog
     };
 

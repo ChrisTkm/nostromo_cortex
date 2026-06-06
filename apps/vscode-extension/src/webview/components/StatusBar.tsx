@@ -1,4 +1,4 @@
-import type { GraphDirection, TaskStatus } from "../types";
+import type { CriticalPathResult, GraphDirection, TaskStatus } from "../types";
 
 const STATUS_META: Array<{ status: TaskStatus; label: string; className: string }> = [
   { status: "PENDING", label: "Pending", className: "status-dot--pending" },
@@ -9,6 +9,7 @@ const STATUS_META: Array<{ status: TaskStatus; label: string; className: string 
 ];
 
 export function StatusBar(props: {
+  criticalPath?: CriticalPathResult;
   onOrientationChange(direction: GraphDirection): void;
   onToggleMiniMap(): void;
   orientation: GraphDirection;
@@ -34,6 +35,16 @@ export function StatusBar(props: {
         ))}
       </div>
       <div className="status-bar__section status-bar__section--right">
+        {props.criticalPath?.available && typeof props.criticalPath.totalDuration === "number" && (
+          <span className="status-bar__metric" title={`Critical path: ${props.criticalPath.path?.join(" → ") ?? ""}`}>
+            Critical path: {props.criticalPath.totalDuration}h
+          </span>
+        )}
+        {!props.criticalPath?.available && props.criticalPath?.reason && (
+          <button className="status-bar__button" type="button" title={props.criticalPath.reason}>
+            Critical path n/a
+          </button>
+        )}
         <span className="status-bar__label">{Math.round(props.zoom * 100)}%</span>
         <button className="status-bar__button" onClick={() => props.onOrientationChange(props.orientation === "LR" ? "TB" : "LR")} type="button">
           {props.orientation}

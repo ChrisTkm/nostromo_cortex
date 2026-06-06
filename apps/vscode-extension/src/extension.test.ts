@@ -238,7 +238,8 @@ const {
 vi.mock("@cortex/core", () => ({
   TASK_SEVERITIES: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
   TASK_STATUSES: ["PENDING", "IN_PROGRESS", "BLOCKED", "DONE", "FAILED"],
-  buildTaskGraph: vi.fn(() => ({ cycles: [] }))
+  buildTaskGraph: vi.fn(() => ({ cycles: [] })),
+  criticalPathEstimate: vi.fn(() => ({ available: false, coverage: { withEstimate: 0, withoutEstimate: 0 }, reason: "critical path unavailable" }))
 }));
 
 vi.mock("mongodb", () => ({

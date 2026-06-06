@@ -351,6 +351,23 @@
   }
 }
 
+.react-flow__edge.edge-critical-path .react-flow__edge-path {
+  stroke: #f59e0b;
+  stroke-width: 2.6;
+  stroke-dasharray: 8 4;
+  animation: edge-critical-path-dash 1.6s linear infinite;
+}
+
+.react-flow__edge.edge-critical-path .react-flow__edge-interaction {
+  stroke: transparent;
+  stroke-width: 18;
+}
+
+@keyframes edge-critical-path-dash {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+
 .task-node {
   position: relative;
   min-width: 244px;
