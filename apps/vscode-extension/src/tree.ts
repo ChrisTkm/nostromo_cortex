@@ -1,9 +1,24 @@
-import { buildTaskGraph, type TaskGraph, type TaskGraphNode } from "@cortex/core";
+import { buildTaskGraph, type TaskGraph, type TaskGraphNode, type TaskSeverity, type TaskStatus } from "@cortex/core";
 import * as vscode from "vscode";
 
 import type { ExtensionTaskService } from "./service.js";
 
 const NO_PLAN_KEY = "__no_plan__";
+
+const TASK_STATUS_ICONS: Record<TaskStatus, string> = {
+  PENDING: "circle-outline",
+  IN_PROGRESS: "sync~spin",
+  BLOCKED: "error",
+  DONE: "check",
+  FAILED: "close"
+};
+
+const TASK_SEVERITY_COLORS: Record<TaskSeverity, string> = {
+  CRITICAL: "charts.red",
+  HIGH: "charts.orange",
+  MEDIUM: "charts.yellow",
+  LOW: "charts.blue"
+};
 
 export type PlanStatusFilter = "active" | "done";
 
@@ -34,6 +49,15 @@ function taskDescription(task: TaskGraphNode) {
   const project = task.project ? ` · ${task.project}` : "";
   const group = task.lane ? ` · ${task.lane}` : "";
   return `${task.agent}${project}${group} · ${ready} · ${task.severity.toLowerCase()}${duration}`;
+}
+
+function taskLabel(task: TaskGraphNode) {
+  const label = `${task.code} · ${task.shortTask}`;
+  return task.ready ? `$(target) ${label}` : label;
+}
+
+function taskIcon(task: TaskGraphNode) {
+  return new vscode.ThemeIcon(TASK_STATUS_ICONS[task.status], new vscode.ThemeColor(TASK_SEVERITY_COLORS[task.severity]));
 }
 
 export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode | TaskTreeNode> {
@@ -116,9 +140,10 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
       return item;
     }
 
-    const item = new vscode.TreeItem(`${element.task.code} · ${element.label}`, vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(taskLabel(element.task), vscode.TreeItemCollapsibleState.None);
     item.id = element.id;
     item.description = taskDescription(element.task);
+    item.iconPath = taskIcon(element.task);
     item.tooltip = new vscode.MarkdownString(
       `**${element.task.code}** — ${element.task.shortTask}\n\nStatus: ${element.task.status}\n\nSeverity: ${element.task.severity}\n\nAgent: ${element.task.agent}\n\nProject: ${element.task.project ?? "—"}\n\nGroup: ${element.task.lane ?? "—"}\n\nDuration: ${element.task.durationEstimate ?? "—"}h\n\nTags: ${element.task.tags.join(", ")}`
     );

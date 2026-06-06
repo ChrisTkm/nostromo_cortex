@@ -9,6 +9,34 @@ vi.mock("vscode", () => ({
     fire = vi.fn();
     event = vi.fn();
     dispose = vi.fn();
+  },
+  MarkdownString: class {
+    constructor(public readonly value: string) {}
+  },
+  ThemeColor: class {
+    constructor(public readonly id: string) {}
+  },
+  ThemeIcon: class {
+    constructor(
+      public readonly id: string,
+      public readonly color?: { id: string }
+    ) {}
+  },
+  TreeItem: class {
+    id?: string;
+    description?: string;
+    iconPath?: unknown;
+    tooltip?: unknown;
+    contextValue?: string;
+
+    constructor(
+      public readonly label: string,
+      public readonly collapsibleState: number
+    ) {}
+  },
+  TreeItemCollapsibleState: {
+    None: 0,
+    Expanded: 1
   }
 }));
 
@@ -28,6 +56,26 @@ const DEFAULT_FILTER_STATE = {
 };
 
 const EMPTY_GRAPH = { nodes: [] };
+
+function makeTask(overrides: Record<string, unknown> = {}) {
+  return {
+    code: "TASK-1",
+    project: "cortex",
+    shortTask: "Wire visuals",
+    detail: "detail",
+    status: "PENDING",
+    agent: "codex",
+    severity: "LOW",
+    tags: [],
+    dependsOn: [],
+    createdAt: "2026-06-04T00:00:00.000Z",
+    updatedAt: "2026-06-04T00:00:00.000Z",
+    blockedByCount: 0,
+    downstreamCount: 0,
+    ready: false,
+    ...overrides
+  };
+}
 
 function makeService() {
   const loadTasksMock = vi.fn().mockResolvedValue([]);
@@ -171,5 +219,39 @@ describe("CortexTreeProvider", () => {
 
     // loadTasks called once for P1 (stale) + once for P2 (fresh) = 2 total
     expect(loadTasksMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["PENDING", "LOW", "circle-outline", "charts.blue"],
+    ["IN_PROGRESS", "MEDIUM", "sync~spin", "charts.yellow"],
+    ["BLOCKED", "HIGH", "error", "charts.orange"],
+    ["DONE", "CRITICAL", "check", "charts.red"],
+    ["FAILED", "LOW", "close", "charts.blue"]
+  ])("maps %s/%s tasks to a colored ThemeIcon", (status, severity, iconId, colorId) => {
+    const { service } = makeService();
+    const provider = new CortexTreeProvider(service as any);
+
+    const item = provider.getTreeItem({
+      kind: "task",
+      id: "TASK-1",
+      label: "Wire visuals",
+      task: makeTask({ status, severity }) as any
+    });
+
+    expect(item.iconPath).toMatchObject({ id: iconId, color: { id: colorId } });
+  });
+
+  it("prefixes ready tasks with a target codicon badge", () => {
+    const { service } = makeService();
+    const provider = new CortexTreeProvider(service as any);
+
+    const item = provider.getTreeItem({
+      kind: "task",
+      id: "TASK-1",
+      label: "Wire visuals",
+      task: makeTask({ ready: true }) as any
+    });
+
+    expect(item.label).toBe("$(target) TASK-1 · Wire visuals");
   });
 });
