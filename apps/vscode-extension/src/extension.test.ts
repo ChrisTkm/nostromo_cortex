@@ -1093,6 +1093,71 @@ describe("activate notes commands", () => {
     expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 updated.");
   });
 
+  it("markDone updates task status to DONE without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markDone", {
+      kind: "task",
+      task: { code: "TASK-1", shortTask: "First task", detail: "detail", status: "PENDING", agent: "codex", severity: "LOW" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-1",
+        status: "DONE",
+        created_at: "2026-04-18T00:00:00.000Z"
+      })
+    );
+    expect(treeRefreshMock).toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as done.");
+  });
+
+  it("markInProgress updates task status to IN_PROGRESS without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markInProgress", {
+      kind: "task",
+      task: { code: "TASK-1" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "IN_PROGRESS" })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as in progress.");
+  });
+
+  it("markBlocked updates task status to BLOCKED without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markBlocked", {
+      kind: "task",
+      task: { code: "TASK-1" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "BLOCKED" })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as blocked.");
+  });
+
+  it("markDone falls back to selectedTaskCode when no arg is provided", async () => {
+    filterStateRef.current.selectedTaskCode = "TASK-1";
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markDone");
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "DONE" })
+    );
+  });
+
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
     showQuickPickMock
       .mockResolvedValueOnce({

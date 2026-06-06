@@ -647,6 +647,73 @@ describe("shared mongo client support", () => {
     expect(firstWrite?.created_at).toEqual(firstWrite?.updated_at);
   });
 
+  it("applies $unset for null fields and omits them from $set", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    await store.upsertTasks([
+      {
+        code: "T-UNSET",
+        short_task: "Task with nulls",
+        detail: "detail",
+        status: "PENDING",
+        agent: "atlas",
+        severity: "LOW",
+        lane: null,
+        project: null,
+        source_ref: null,
+        duration_estimate: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z"
+      }
+    ]);
+
+    const [operations] = sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const op = operations?.[0]?.updateOne;
+    expect(op?.filter).toEqual({ code: "T-UNSET" });
+    expect(op?.update.$set).not.toHaveProperty("lane");
+    expect(op?.update.$set).not.toHaveProperty("project");
+    expect(op?.update.$set).not.toHaveProperty("source_ref");
+    expect(op?.update.$set).not.toHaveProperty("duration_estimate");
+    expect(op?.update.$unset).toEqual({ lane: 1, project: 1, source_ref: 1, duration_estimate: 1 });
+  });
+
+  it("mixes $set and $unset when only some fields are null", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    await store.upsertTasks([
+      {
+        code: "T-MIX",
+        short_task: "Mixed nulls",
+        detail: "detail",
+        status: "IN_PROGRESS",
+        agent: "atlas",
+        severity: "HIGH",
+        lane: null,
+        project: "cortex",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z"
+      }
+    ]);
+
+    const [operations] = sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const op = operations?.[0]?.updateOne;
+    expect(op?.update.$set).toMatchObject({ code: "T-MIX", project: "cortex" });
+    expect(op?.update.$set).not.toHaveProperty("lane");
+    expect(op?.update.$unset).toEqual({ lane: 1 });
+  });
+
   it("creates the required task and plan indexes", async () => {
     const taskClient = createSharedClient([]) as unknown as SharedMongoClient;
     const taskStore = new MongoTaskStore({

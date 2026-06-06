@@ -149,19 +149,30 @@ export class MongoTaskStore implements TaskStore {
     const collection = await this.collection();
     const now = new Date().toISOString();
     await collection.bulkWrite(
-      tasks.map((task) => ({
-        updateOne: {
-          filter: { code: task.code },
-          update: {
-            $set: {
-              ...task,
-              created_at: task.created_at ?? now,
-              updated_at: task.updated_at ?? now
-            }
-          },
-          upsert: true
+      tasks.map((task) => {
+        const { _id: _ignored, ...fields } = task;
+        const toSet: Record<string, unknown> = {};
+        const toUnset: Record<string, 1> = {};
+
+        for (const [key, value] of Object.entries(fields)) {
+          if (value === null) {
+            toUnset[key] = 1;
+          } else if (value !== undefined) {
+            toSet[key] = value;
+          }
         }
-      })),
+
+        toSet.created_at ??= now;
+        toSet.updated_at ??= now;
+
+        return {
+          updateOne: {
+            filter: { code: task.code },
+            update: (Object.keys(toUnset).length > 0 ? { $set: toSet, $unset: toUnset } : { $set: toSet }) as never,
+            upsert: true
+          }
+        };
+      }),
       { ordered: false }
     );
     return tasks.length;
