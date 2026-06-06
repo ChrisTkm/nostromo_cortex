@@ -36,6 +36,7 @@
 }
 
 .md-graph-actions,
+.md-graph-edge-filters,
 .md-graph-kinds,
 .md-graph-presets,
 .md-graph-stats {
@@ -46,7 +47,9 @@
 }
 
 .md-graph-actions button,
-.md-graph-kinds button,
+.md-graph-kind-filter button,
+.md-graph-kind-filter summary,
+.md-graph-edge-filters button,
 .md-graph-presets button,
 .md-graph-empty button {
   background: rgba(15, 23, 42, 0.82);
@@ -60,10 +63,13 @@
 }
 
 .md-graph-actions button:hover,
-.md-graph-kinds button:hover,
+.md-graph-kind-filter button:hover,
+.md-graph-kind-filter summary:hover,
+.md-graph-edge-filters button:hover,
+.md-graph-edge-filters button.is-active,
 .md-graph-presets button:hover,
 .md-graph-empty button:hover,
-.md-graph-kinds button.is-active {
+.md-graph-kind-filter.is-active summary {
   background: rgba(14, 116, 144, 0.92);
   border-color: rgba(56, 189, 248, 0.75);
   color: #f8fafc;
@@ -75,7 +81,7 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.13);
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, auto) auto auto;
   padding: 10px 14px;
 }
 
@@ -96,6 +102,112 @@
   color: var(--vscode-badge-foreground);
   font-size: 11px;
   padding: 3px 8px;
+}
+
+.md-graph-edge-filters button {
+  border-color: rgba(148, 163, 184, 0.18);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+.md-graph-edge-filters button.is-active {
+  color: #f8fafc;
+}
+
+.md-graph-kind-filter {
+  position: relative;
+}
+
+.md-graph-kind-filter summary {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  justify-content: space-between;
+  list-style: none;
+  min-width: 86px;
+}
+
+.md-graph-kind-filter summary::-webkit-details-marker {
+  display: none;
+}
+
+.md-graph-kind-filter__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.md-graph-kind-filter__count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  min-width: 32px;
+  text-align: right;
+}
+
+.md-graph-kind-filter__panel {
+  background: rgba(5, 12, 20, 0.97);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.38);
+  min-width: 260px;
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+}
+
+.md-graph-kind-filter__actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.md-graph-kind-filter__actions button {
+  flex: 1;
+  min-height: 26px;
+}
+
+.md-graph-kind-filter__list {
+  display: grid;
+  gap: 3px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.md-graph-kind-filter__list p {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  margin: 4px 2px;
+}
+
+.md-graph-kind-filter__list label {
+  align-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 26px;
+  padding: 3px 5px;
+}
+
+.md-graph-kind-filter__list label:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.md-graph-kind-filter__list input {
+  accent-color: #0891b2;
+  margin: 0;
+}
+
+.md-graph-kind-filter__list span {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .md-graph-main {

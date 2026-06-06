@@ -15,16 +15,19 @@ type ParsedDoc = {
   docKind?: string;
   badge?: string;
   tags: string[];
-  links: string[];
+  links: LinkRef[];
   accounts: string[];
+};
+
+type LinkRef = {
+  href: string;
+  relation: "link" | "upstream" | "downstream" | "standards";
 };
 
 const MARKDOWN_LINK_RE = /\[[^\]]+\]\(([^)]+)\)/g;
 const HREF_RE = /\bhref\s*=\s*["']([^"']+)["']/g;
 const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
 const ACCOUNT_ROUTE_RE = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
-const HASH_TAG_RE = /(^|[\s([,{])#([A-Za-z0-9_-][\w-]*)/g;
-
 export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800): Promise<MdxGraphSnapshot> {
   const startedAt = Date.now();
   const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
@@ -40,8 +43,9 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
     const doc = parseDocument(rootUri, uri, source);
     docs.push(doc);
-    routeToDocId.set(doc.route, doc.id);
-    routeToDocId.set(`${doc.route}/`, doc.id);
+    for (const route of routeAliasesForFile(rootUri, uri)) {
+      addRouteAlias(routeToDocId, route, doc.id);
+    }
     const stem = path.basename(uri.fsPath).replace(/\.(mdx?|MDX?)$/, "").toLowerCase();
     const bucket = stemToDocIds.get(stem) ?? [];
     bucket.push(doc.id);
@@ -89,21 +93,23 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     }
 
     for (const link of doc.links) {
-      const targetId = resolveLink(link, doc.uri, rootUri, routeToDocId, stemToDocIds);
+      const targetId = resolveLink(link.href, doc.uri, rootUri, routeToDocId, stemToDocIds);
       if (targetId) {
-        addEdge(edges, doc.id, targetId, "link", "link");
+        const [from, to] = edgeEndpoints(doc.id, targetId, link.relation);
+        addEdge(edges, from, to, "link", link.relation);
         continue;
       }
 
-      const unresolvedId = `external:${normalizeExternalId(link)}`;
+      const unresolvedId = `external:${normalizeExternalId(link.href)}`;
       unresolved.add(unresolvedId);
       nodes.set(unresolvedId, {
         id: unresolvedId,
         kind: "external",
-        label: trimLabel(link),
-        route: link
+        label: trimLabel(link.href),
+        route: link.href
       });
-      addEdge(edges, doc.id, unresolvedId, "unresolved", "unresolved");
+      const [from, to] = edgeEndpoints(doc.id, unresolvedId, link.relation);
+      addEdge(edges, from, to, "unresolved", link.relation);
     }
   }
 
@@ -124,15 +130,12 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
 
 function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): ParsedDoc {
   const relativePath = normalizePath(path.relative(rootUri.fsPath, uri.fsPath));
-  const route = routeFromRelativePath(relativePath);
+  const route = starlightRouteFromFsPath(uri.fsPath) ?? routeFromRelativePath(relativePath);
   const frontmatter = parseFrontmatter(source);
   const headingTitle = source.match(/^#\s+(.+)$/m)?.[1]?.trim();
   const title = frontmatter.title ?? headingTitle ?? titleFromPath(uri.fsPath);
   const explicitTags = frontmatter.tags;
-  const folderTags = relativePath.split("/").slice(0, -1).map(normalizeTag).filter(Boolean);
-  const inlineTags = extractInlineTags(source);
-  const structuralTags = [frontmatter.domain, frontmatter.layer, frontmatter.docKind].map((value) => (value ? normalizeTag(value) : "")).filter(Boolean);
-  const tags = unique([...folderTags, ...explicitTags, ...inlineTags, ...structuralTags]);
+  const tags = unique(explicitTags);
 
   return {
     id: `doc:${relativePath}`,
@@ -145,8 +148,8 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
     ...(frontmatter.docKind ? { docKind: frontmatter.docKind } : {}),
     ...(frontmatter.badge ? { badge: frontmatter.badge } : {}),
     tags,
-    links: unique([...frontmatter.related, ...extractLinks(source)]),
-    accounts: extractAccounts(source)
+    links: uniqueLinks([...frontmatter.related, ...extractLinks(source).map((href) => ({ href, relation: "link" as const }))]),
+    accounts: unique([...frontmatter.accounts, ...extractAccounts(source)])
   };
 }
 
@@ -158,14 +161,15 @@ function parseFrontmatter(source: string): {
   docKind?: string;
   badge?: string;
   tags: string[];
-  related: string[];
+  related: LinkRef[];
+  accounts: string[];
 } {
   if (!source.startsWith("---")) {
-    return { tags: [], related: [] };
+    return { tags: [], related: [], accounts: [] };
   }
   const end = source.indexOf("\n---", 3);
   if (end === -1) {
-    return { tags: [], related: [] };
+    return { tags: [], related: [], accounts: [] };
   }
   const body = source.slice(3, end);
   const title = scalarFrontmatterValue(body, "title");
@@ -184,7 +188,7 @@ function parseFrontmatter(source: string): {
     tags.push(...tagBlock.split(/\r?\n/).map((line) => line.replace(/^\s*-\s*/, "").trim()).filter(Boolean));
   }
   const relatedBlock = body.match(/^related:\s*\n((?:\s{2,}.+\n?)+)/m)?.[1] ?? "";
-  const related = extractRelatedLinks(relatedBlock);
+  const related = extractRelatedRefs(relatedBlock);
   return {
     ...(title ? { title } : {}),
     ...(description ? { description } : {}),
@@ -193,7 +197,8 @@ function parseFrontmatter(source: string): {
     ...(docKind ? { docKind } : {}),
     ...(badge ? { badge } : {}),
     tags: unique(tags.map(normalizeTag).filter(Boolean)),
-    related
+    related: related.links,
+    accounts: related.accounts
   };
 }
 
@@ -201,15 +206,37 @@ function scalarFrontmatterValue(body: string, key: string) {
   return body.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim().replace(/^["']|["']$/g, "");
 }
 
-function extractRelatedLinks(block: string) {
-  return unique(
-    block
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("- "))
-      .map((line) => line.slice(2).trim())
-      .filter((value) => value.startsWith("/") || value.startsWith("./") || value.endsWith(".md") || value.endsWith(".mdx"))
-  );
+function extractRelatedRefs(block: string) {
+  const links: LinkRef[] = [];
+  const accounts: string[] = [];
+  let relation: LinkRef["relation"] | "accounts" = "link";
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const section = line.match(/^(upstream|downstream|standards|accounts):\s*$/);
+    if (section?.[1]) {
+      relation = section[1] as LinkRef["relation"] | "accounts";
+      continue;
+    }
+    if (!line.startsWith("- ")) {
+      continue;
+    }
+    const value = line.slice(2).trim().replace(/^["']|["']$/g, "");
+    if (relation === "accounts") {
+      if (/^\d{4,}$/.test(value)) {
+        accounts.push(value);
+      }
+      continue;
+    }
+    if (isRoutableLink(value)) {
+      links.push({ href: value, relation });
+    }
+  }
+
+  return {
+    links: uniqueLinks(links),
+    accounts: unique(accounts)
+  };
 }
 
 function extractLinks(source: string) {
@@ -222,10 +249,6 @@ function extractLinks(source: string) {
 
 function extractAccounts(source: string) {
   return unique(extractRegexGroup(source, ACCOUNT_ROUTE_RE));
-}
-
-function extractInlineTags(source: string) {
-  return unique(extractRegexGroup(source, HASH_TAG_RE, 2).map(normalizeTag).filter(Boolean));
 }
 
 function extractRegexGroup(source: string, regex: RegExp, group = 1) {
@@ -276,16 +299,46 @@ function addEdge(edges: Map<string, MdxGraphEdge>, from: string, to: string, kin
   if (from === to) {
     return;
   }
-  const id = `${kind}:${from}:${to}`;
+  const id = `${kind}:${label}:${from}:${to}`;
   if (!edges.has(id)) {
     edges.set(id, { id, from, to, kind, label });
   }
+}
+
+function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]): [string, string] {
+  return relation === "upstream" ? [to, from] : [from, to];
 }
 
 function routeFromRelativePath(relativePath: string) {
   const withoutExt = relativePath.replace(/\.(md|mdx)$/i, "");
   const route = withoutExt.endsWith("/index") ? withoutExt.slice(0, -"/index".length) : withoutExt;
   return `/${route}`.replace(/\/+/g, "/");
+}
+
+function routeAliasesForFile(rootUri: vscode.Uri, uri: vscode.Uri) {
+  const relativePath = normalizePath(path.relative(rootUri.fsPath, uri.fsPath));
+  const aliases = [routeFromRelativePath(relativePath)];
+  const starlightRoute = starlightRouteFromFsPath(uri.fsPath);
+  if (starlightRoute) {
+    aliases.push(starlightRoute);
+  }
+  return unique(aliases);
+}
+
+function starlightRouteFromFsPath(fsPath: string) {
+  const normalized = normalizePath(fsPath);
+  const match = normalized.match(/(?:^|\/)(?:src\/)?content\/docs\/(.+)$/i);
+  return match?.[1] ? routeFromRelativePath(match[1]) : undefined;
+}
+
+function addRouteAlias(routeToDocId: Map<string, string>, route: string, docId: string) {
+  if (!routeToDocId.has(route)) {
+    routeToDocId.set(route, docId);
+  }
+  const routeWithSlash = `${route}/`;
+  if (!routeToDocId.has(routeWithSlash)) {
+    routeToDocId.set(routeWithSlash, docId);
+  }
 }
 
 function titleFromPath(filePath: string) {
@@ -308,6 +361,25 @@ function normalizePath(value: string) {
 
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function uniqueLinks(values: LinkRef[]) {
+  const seen = new Set<string>();
+  return values
+    .filter((value) => value.href)
+    .filter((value) => {
+      const key = `${value.relation}:${value.href}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => left.relation.localeCompare(right.relation) || left.href.localeCompare(right.href));
+}
+
+function isRoutableLink(value: string) {
+  return value.startsWith("/") || value.startsWith("./") || value.endsWith(".md") || value.endsWith(".mdx");
 }
 
 function isIgnoredLink(link: string) {
