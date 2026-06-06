@@ -1,9 +1,6 @@
 import {
   buildTaskGraph,
-  TASK_SEVERITIES,
-  TASK_STATUSES,
   type NoteDocumentInput,
-  type NoteRecord,
   type TaskDocumentInput,
   type TaskFilter,
   type TaskRecord
@@ -26,6 +23,7 @@ import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getMdxGraphHtml } from "./webview/md-graph/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
+import { getTaskEditorHtml } from "./webview/task-editor/getHtml.js";
 
 type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
 type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
@@ -112,9 +110,12 @@ export async function activate(context: vscode.ExtensionContext) {
   let notesPanelReady = false;
   let scriptFlowPanel: vscode.WebviewPanel | undefined;
   let scriptFlowPanelReady = false;
+  let taskEditorPanel: vscode.WebviewPanel | undefined;
+  let taskEditorPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
   let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
+  let pendingTaskEditorLoad: { task: TaskRecord; catalogCodes: string[] } | undefined;
   const cortexOutput = vscode.window.createOutputChannel("Cortex");
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
@@ -1121,6 +1122,66 @@ export async function activate(context: vscode.ExtensionContext) {
     void vscode.window.showInformationMessage(`Task ${task.code} marked as ${newStatus.toLowerCase().replace("_", " ")}.`);
   }
 
+  async function openTaskEditorPanel(task: TaskRecord, catalogCodes: string[]) {
+    pendingTaskEditorLoad = { task, catalogCodes };
+
+    if (taskEditorPanel) {
+      taskEditorPanel.reveal(vscode.ViewColumn.Beside);
+      if (taskEditorPanelReady) {
+        await taskEditorPanel.webview.postMessage({
+          type: "taskEditor:load",
+          task,
+          catalog: { taskCodes: catalogCodes }
+        });
+        pendingTaskEditorLoad = undefined;
+      }
+      return;
+    }
+
+    taskEditorPanelReady = false;
+    taskEditorPanel = vscode.window.createWebviewPanel(
+      "cortex.taskEditor",
+      `Edit: ${task.code}`,
+      vscode.ViewColumn.Beside,
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+    taskEditorPanel.webview.html = getTaskEditorHtml(taskEditorPanel.webview, context.extensionUri, nonce());
+
+    taskEditorPanel.onDidDispose(() => {
+      taskEditorPanel = undefined;
+      taskEditorPanelReady = false;
+      pendingTaskEditorLoad = undefined;
+    });
+
+    taskEditorPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        taskEditorPanelReady = true;
+        if (pendingTaskEditorLoad) {
+          await taskEditorPanel?.webview.postMessage({
+            type: "taskEditor:load",
+            task: pendingTaskEditorLoad.task,
+            catalog: { taskCodes: pendingTaskEditorLoad.catalogCodes }
+          });
+          pendingTaskEditorLoad = undefined;
+        }
+        return;
+      }
+
+      if (message?.type === "taskEditor:save" && isTaskDocumentInput(message.input)) {
+        await service.saveTask(message.input);
+        treeProvider.refresh();
+        await postSnapshot(message.input.code);
+        void vscode.window.showInformationMessage(`Task ${message.input.code} updated.`);
+        taskEditorPanel?.dispose();
+        return;
+      }
+
+      if (message?.type === "taskEditor:cancel") {
+        taskEditorPanel?.dispose();
+      }
+    });
+  }
+
   async function editTask(selectedTaskCode?: string) {
     if (!selectedTaskCode) {
       void vscode.window.showInformationMessage("Select a task first.");
@@ -1133,15 +1194,10 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const edited = await promptForTaskEdits(task);
-    if (!edited) {
-      return;
-    }
+    const bundle = await service.loadBundle();
+    const catalogCodes = bundle.tasks.map((t) => t.code);
 
-    await service.saveTask(edited);
-    treeProvider.refresh();
-    await postSnapshot(edited.code);
-    void vscode.window.showInformationMessage(`Task ${edited.code} updated.`);
+    await openTaskEditorPanel(task, catalogCodes);
   }
 }
 
@@ -1581,107 +1637,6 @@ async function safeList(loader: () => Promise<string[]>) {
   }
 }
 
-async function promptForTaskEdits(task: TaskRecord): Promise<TaskDocumentInput | undefined> {
-  const shortTask = await vscode.window.showInputBox({
-    prompt: `Title for ${task.code}`,
-    value: task.shortTask,
-    ignoreFocusOut: true
-  });
-  if (!shortTask) {
-    return undefined;
-  }
-
-  const detail =
-    (await vscode.window.showInputBox({
-      prompt: `Detail for ${task.code}`,
-      value: task.detail,
-      ignoreFocusOut: true
-    })) ?? task.detail;
-
-  const statusPick = await vscode.window.showQuickPick([...TASK_STATUSES] as TaskDocumentInput["status"][], {
-    title: `Status for ${task.code}`,
-    placeHolder: task.status,
-    ignoreFocusOut: true
-  });
-  if (!statusPick) {
-    return undefined;
-  }
-  const status = statusPick as TaskDocumentInput["status"];
-
-  const severityPick = await vscode.window.showQuickPick([...TASK_SEVERITIES] as TaskDocumentInput["severity"][], {
-    title: `Severity for ${task.code}`,
-    placeHolder: task.severity,
-    ignoreFocusOut: true
-  });
-  if (!severityPick) {
-    return undefined;
-  }
-  const severity = severityPick as TaskDocumentInput["severity"];
-
-  const projectRaw = await vscode.window.showInputBox({
-    prompt: `Project for ${task.code}`,
-    value: task.project ?? "",
-    ignoreFocusOut: true
-  });
-  const agent =
-    (await vscode.window.showInputBox({
-      prompt: `Agent for ${task.code}`,
-      value: task.agent,
-      ignoreFocusOut: true
-    })) ?? task.agent;
-  const laneRaw = await vscode.window.showInputBox({
-    prompt: `Group / lane for ${task.code}`,
-    value: task.lane ?? "",
-    ignoreFocusOut: true
-  });
-  const durationRaw = await vscode.window.showInputBox({
-    prompt: `Estimated duration in hours for ${task.code}`,
-    value: task.durationEstimate?.toString() ?? "",
-    ignoreFocusOut: true
-  });
-  const tagsRaw =
-    (await vscode.window.showInputBox({
-      prompt: `Tags for ${task.code} (comma separated)`,
-      value: task.tags.join(", "),
-      ignoreFocusOut: true
-    })) ?? task.tags.join(", ");
-  const dependsOnRaw =
-    (await vscode.window.showInputBox({
-      prompt: `Dependencies for ${task.code} (comma separated task codes)`,
-      value: task.dependsOn.join(", "),
-      ignoreFocusOut: true
-    })) ?? task.dependsOn.join(", ");
-  const sourceRefRaw = await vscode.window.showInputBox({
-    prompt: `Source / reference for ${task.code}`,
-    value: task.sourceRef ?? "",
-    ignoreFocusOut: true
-  });
-  const durationEstimate = durationRaw !== undefined ? parseOptionalNumber(durationRaw) : undefined;
-  if (durationRaw !== undefined && durationRaw.trim() !== "" && durationEstimate === undefined) {
-    void vscode.window.showWarningMessage("Duration estimate must be a valid number.");
-    return undefined;
-  }
-
-  return {
-    code: task.code,
-    project: projectRaw === undefined ? undefined : (projectRaw.trim() || null),
-    short_task: shortTask.trim(),
-    detail: detail.trim(),
-    status,
-    agent: agent.trim(),
-    severity,
-    tags: splitCsv(tagsRaw),
-    depends_on: splitCsv(dependsOnRaw),
-    duration_estimate:
-      durationRaw === undefined ? undefined : durationRaw.trim() === "" ? null : (durationEstimate as number),
-    lane: laneRaw === undefined ? undefined : (laneRaw.trim() || null),
-    ...(typeof task.orderHint === "number" ? { order_hint: task.orderHint } : {}),
-    source_ref: sourceRefRaw === undefined ? undefined : (sourceRefRaw.trim() || null),
-    created_at: task.createdAt,
-    updated_at: new Date().toISOString()
-  };
-}
-
 async function pickPendingReminderCode() {
   const notes = await activeService?.listNotes();
   const reminderNotes = (notes ?? []).filter((note) => note.remindAt && !note.remindedAt);
@@ -1709,21 +1664,6 @@ async function pickPendingReminderCode() {
   return picked?.label;
 }
 
-function splitCsv(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
   if (!value || typeof value !== "object") {
     return false;
@@ -1731,4 +1671,20 @@ function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
 
   const candidate = value as Partial<NoteDocumentInput>;
   return typeof candidate.code === "string" && candidate.code.trim().length > 0 && typeof candidate.title === "string" && candidate.title.trim().length > 0;
+}
+
+function isTaskDocumentInput(value: unknown): value is TaskDocumentInput {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<TaskDocumentInput>;
+  return (
+    typeof candidate.code === "string" &&
+    candidate.code.trim().length > 0 &&
+    typeof candidate.short_task === "string" &&
+    candidate.short_task.trim().length > 0 &&
+    typeof candidate.status === "string" &&
+    typeof candidate.severity === "string"
+  );
 }

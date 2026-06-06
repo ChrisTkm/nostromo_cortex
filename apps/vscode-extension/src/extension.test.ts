@@ -427,6 +427,10 @@ vi.mock("./webview/script-flow/getHtml.js", () => ({
   getScriptFlowHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"script-flow.js\"></script></html>")
 }));
 
+vi.mock("./webview/task-editor/getHtml.js", () => ({
+  getTaskEditorHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"task-editor.js\"></script></html>")
+}));
+
 import { activate } from "./extension.js";
 
 function createContext(initialWorkspaceState: Record<string, unknown> = {}) {
@@ -1074,14 +1078,35 @@ describe("activate notes commands", () => {
   });
 
   it("reuses the existing task edit flow when the Graph webview posts editTask", async () => {
-    showInputBoxMock.mockResolvedValueOnce("Edited from inspector");
-    showQuickPickMock.mockResolvedValueOnce("DONE").mockResolvedValueOnce("HIGH");
-
     await activate(createContext());
     await executeCommandMock("cortex.openGraph", "TASK-1");
-    await panelState.messageHandler?.({ type: "editTask", code: "TASK-1" });
+
+    // Save the graph panel message handler before editTask creates a new (task editor) panel
+    const graphMessageHandler = panelState.messageHandler!;
+
+    // Graph webview posts editTask → opens the task editor panel
+    await graphMessageHandler({ type: "editTask", code: "TASK-1" });
 
     expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+
+    // panelState.messageHandler is now the task editor's handler; simulate webview "ready"
+    await panelState.messageHandler?.({ type: "ready" });
+
+    // Simulate the task editor webview posting taskEditor:save
+    await panelState.messageHandler?.({
+      type: "taskEditor:save",
+      input: {
+        code: "TASK-1",
+        short_task: "Edited from inspector",
+        detail: "Existing detail",
+        status: "DONE",
+        severity: "HIGH",
+        agent: "codex",
+        created_at: "2026-04-18T00:00:00.000Z",
+        updated_at: new Date().toISOString()
+      }
+    });
+
     expect(saveTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
         code: "TASK-1",
