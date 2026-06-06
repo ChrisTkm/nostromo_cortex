@@ -47,6 +47,7 @@ export function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const lastPlanTaskCodeRef = useRef<string | undefined>();
+  const viewportPostRef = useRef<number | undefined>(undefined);
 
   const selectedNode = useMemo<SnapshotNode | undefined>(
     () => snapshot?.nodes.find((node) => node.code === selectedTaskCode || node.id === selectedTaskCode),
@@ -114,6 +115,14 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [promptExpanded, viewerPlanCode]);
 
+  useEffect(() => {
+    return () => {
+      if (viewportPostRef.current !== undefined) {
+        window.clearTimeout(viewportPostRef.current);
+      }
+    };
+  }, []);
+
   function handleSelectTask(code: string) {
     setSelectedTaskCode(code);
     setCenterTaskCode(code);
@@ -129,7 +138,13 @@ export function App() {
 
   function handleViewportChange(zoom: number, pan: { x: number; y: number }) {
     setViewport({ zoom, pan });
-    vscode.postMessage({ type: "viewportChanged", zoom, pan });
+    if (viewportPostRef.current !== undefined) {
+      window.clearTimeout(viewportPostRef.current);
+    }
+    viewportPostRef.current = window.setTimeout(() => {
+      vscode.postMessage({ type: "viewportChanged", zoom, pan });
+      viewportPostRef.current = undefined;
+    }, 200);
   }
 
   function handleFilterChange(next: TaskFilter) {
