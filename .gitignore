@@ -14,3 +14,9 @@ data/
 *.jsonl
 apps/vscode-extension/*.vsix
 apps/vscode-extension/playground-*.mongodb.js
+
+# scratch / ad-hoc scripts (prefijo _)
+scripts/_*
+
+# Claude Code per-user config
+.claude/
