@@ -182,7 +182,7 @@ export async function activate(context: vscode.ExtensionContext) {
         zoom: state.zoom,
         pan: state.pan
       },
-      connection: service.getConnectionSettings(),
+      connection: (({ mongoUrl: _omit, ...safe }) => safe)(service.getConnectionSettings()),
       filters: snapshotFilter,
       catalog
     };
