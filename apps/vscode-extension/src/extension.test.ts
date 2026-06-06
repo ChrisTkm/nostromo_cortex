@@ -1183,6 +1183,100 @@ describe("activate notes commands", () => {
     );
   });
 
+  it("cortex.newTask creates a task with PENDING/MEDIUM defaults and correct code + title", async () => {
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock
+      .mockResolvedValueOnce("TASK-NEW")
+      .mockResolvedValueOnce("Brand new task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-NEW",
+        short_task: "Brand new task",
+        detail: "",
+        status: "PENDING",
+        severity: "MEDIUM",
+        agent: "any",
+        tags: [],
+        depends_on: []
+      })
+    );
+    expect(treeRefreshMock).toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-NEW created.");
+  });
+
+  it("cortex.newTask aborts if the user cancels the code input box", async () => {
+    showInputBoxMock.mockResolvedValueOnce(undefined);
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).not.toHaveBeenCalled();
+    expect(showInformationMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("cortex.newTask aborts when the code already exists (duplicate guard)", async () => {
+    // loadBundle returns TASK-1; user enters TASK-1 (duplicate)
+    showInputBoxMock.mockResolvedValueOnce("TASK-1");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).not.toHaveBeenCalled();
+    expect(showWarningMessageMock).toHaveBeenCalledWith(expect.stringContaining("TASK-1"));
+  });
+
+  it("cortex.newTask assigns plan_code when user picks a plan", async () => {
+    loadPlansMock.mockResolvedValueOnce([
+      {
+        code: "PLAN-A",
+        title: "Alpha plan",
+        status: "IN_PROGRESS",
+        progress: { done: 1, total: 3, pending: 2, in_progress: 0, blocked: 0, failed: 0 }
+      }
+    ]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Plan task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "PLAN-A", planCode: "PLAN-A" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-NEW", plan_code: "PLAN-A" })
+    );
+  });
+
+  it("cortex.newTask inherits planCode from group tree node arg", async () => {
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Group task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask", { kind: "group", planCode: "PLAN-A" });
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-NEW", short_task: "Group task" })
+    );
+  });
+
+  it("cortex.newTask reads cortex.defaultAgent setting", async () => {
+    getConfigMock.mockImplementation((key: string) => (key === "defaultAgent" ? "cursor" : undefined));
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Cursor task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "cursor" })
+    );
+  });
+
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
     showQuickPickMock
       .mockResolvedValueOnce({

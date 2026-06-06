@@ -136,6 +136,11 @@
         "title": "Cortex: Edit task"
       },
       {
+        "command": "cortex.newTask",
+        "title": "Cortex: New task",
+        "icon": "$(add)"
+      },
+      {
         "command": "cortex.clearFilters",
         "title": "Cortex: Clear filters"
       },
@@ -191,6 +196,11 @@
         "command": "cortex.openNotes",
         "key": "ctrl+alt+shift+n",
         "mac": "cmd+alt+shift+n"
+      },
+      {
+        "command": "cortex.newTask",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
       }
     ],
     "menus": {
@@ -211,9 +221,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "cortex.showOptions",
+          "command": "cortex.newTask",
           "when": "view == cortex.overview",
           "group": "navigation@4"
+        },
+        {
+          "command": "cortex.showOptions",
+          "when": "view == cortex.overview",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -324,6 +339,11 @@
           "type": "string",
           "default": "./data/telemetry/cortex-telemetry.db",
           "description": "Local SQLite path for telemetry."
+        },
+        "cortex.defaultAgent": {
+          "type": "string",
+          "default": "any",
+          "description": "Default agent assigned to new tasks created via cortex.newTask (e.g. codex, cursor, human). Falls back to 'any' if empty."
         }
       }
     }

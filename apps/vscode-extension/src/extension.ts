@@ -1046,6 +1046,9 @@ export async function activate(context: vscode.ExtensionContext) {
       const code = typeof arg === "string" ? arg : arg?.kind === "task" ? arg.task?.code : undefined;
       await editTask(code ?? service.getFilterState().selectedTaskCode);
     }),
+    vscode.commands.registerCommand("cortex.newTask", async (arg?: { kind?: string; task?: { code?: string; planCode?: string; lane?: string }; planCode?: string }) => {
+      await createNewTask(arg);
+    }),
     vscode.commands.registerCommand("cortex.clearFilters", async () => {
       const current = service.getFilterState();
       await service.updateFilterState({
@@ -1120,6 +1123,130 @@ export async function activate(context: vscode.ExtensionContext) {
     treeProvider.refresh();
     await postSnapshot(task.code);
     void vscode.window.showInformationMessage(`Task ${task.code} marked as ${newStatus.toLowerCase().replace("_", " ")}.`);
+  }
+
+  async function createNewTask(
+    arg?: { kind?: string; task?: { code?: string; planCode?: string; lane?: string }; planCode?: string }
+  ) {
+    const filterState = service.getFilterState();
+
+    // Resolve context from arg (tree selection) or active filter state
+    let contextPlanCode: string | undefined;
+    let contextLane: string | undefined;
+
+    if (arg?.kind === "task" && arg.task) {
+      contextPlanCode = arg.task.planCode;
+      contextLane = arg.task.lane;
+    } else if (arg?.kind === "group") {
+      contextPlanCode = arg.planCode;
+    } else {
+      contextPlanCode = filterState.selectedPlanCode;
+      if (filterState.selectedTaskCode) {
+        const selectedTask = await service.getTask(filterState.selectedTaskCode);
+        contextLane = selectedTask?.lane;
+      }
+    }
+
+    // Load bundle once for both code uniqueness check and plan list
+    const bundle = await service.loadBundle();
+    const existingCodes = new Set(bundle.tasks.map((t) => t.code));
+
+    // Step 1 – code
+    const codeRaw = await vscode.window.showInputBox({
+      title: "New Cortex task",
+      prompt: "Task code (must be unique)",
+      placeHolder: "TASK-123",
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return "Code cannot be empty.";
+        }
+        if (existingCodes.has(trimmed)) {
+          return `Code "${trimmed}" already exists.`;
+        }
+        return undefined;
+      }
+    });
+    const code = codeRaw?.trim();
+    if (!code) {
+      return;
+    }
+
+    // Belt-and-suspenders uniqueness guard (validates after confirm)
+    if (existingCodes.has(code)) {
+      void vscode.window.showWarningMessage(`Task code "${code}" already exists.`);
+      return;
+    }
+
+    // Step 2 – title
+    const shortTaskRaw = await vscode.window.showInputBox({
+      title: "New Cortex task",
+      prompt: `Title for ${code}`,
+      placeHolder: "Short task description",
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() ? undefined : "Title cannot be empty.")
+    });
+    const shortTask = shortTaskRaw?.trim();
+    if (!shortTask) {
+      return;
+    }
+
+    // Step 3 – plan (optional)
+    const plans = await service.loadPlans();
+    type PlanPickItem = vscode.QuickPickItem & { planCode?: string };
+    const noPlanItem: PlanPickItem = { label: "$(close) No plan" };
+    const planItems: PlanPickItem[] = plans.map((plan) => ({
+      label: plan.code,
+      description: plan.title,
+      detail: `${plan.progress.done}/${plan.progress.total} done · ${plan.status}`,
+      planCode: plan.code
+    }));
+
+    // Surface the contextually active plan first
+    if (contextPlanCode) {
+      planItems.sort((a, b) => {
+        if (a.planCode === contextPlanCode) {
+          return -1;
+        }
+        if (b.planCode === contextPlanCode) {
+          return 1;
+        }
+        return 0;
+      });
+    }
+
+    const pickedPlan = await vscode.window.showQuickPick<PlanPickItem>([noPlanItem, ...planItems], {
+      title: `Plan for ${code}`,
+      placeHolder: contextPlanCode ? `Active: ${contextPlanCode}` : "Select a plan (optional)",
+      ignoreFocusOut: true
+    });
+    if (pickedPlan === undefined) {
+      return;
+    }
+
+    // Read default agent from settings
+    const defaultAgent = vscode.workspace.getConfiguration("cortex").get<string>("defaultAgent")?.trim() || "any";
+
+    const now = new Date().toISOString();
+    await service.saveTask({
+      code,
+      short_task: shortTask,
+      detail: "",
+      status: "PENDING",
+      severity: "MEDIUM",
+      agent: defaultAgent,
+      tags: [],
+      depends_on: [],
+      ...(pickedPlan.planCode ? { plan_code: pickedPlan.planCode } : {}),
+      ...(contextLane ? { lane: contextLane } : {}),
+      created_at: now,
+      updated_at: now
+    });
+
+    treeProvider.refresh();
+    await postSnapshot(code);
+    void vscode.window.showInformationMessage(`Task ${code} created.`);
   }
 
   async function openTaskEditorPanel(task: TaskRecord, catalogCodes: string[]) {
