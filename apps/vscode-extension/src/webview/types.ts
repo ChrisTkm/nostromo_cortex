@@ -4,6 +4,7 @@ export type { ActionPlanRecord, GraphSnapshot, SnapshotNode, TaskFilter, TaskSev
 
 export type PlanTaskSummary = {
   code: string;
+  dependsOn: string[];
   durationEstimate?: number;
   label: string;
   lane?: string;

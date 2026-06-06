@@ -1357,6 +1357,7 @@ function buildPlanTasks(plans: readonly { code: string }[], tasks: readonly Task
   const knownPlans = new Set(plans.map((plan) => plan.code));
   const grouped: Record<string, Array<{
     code: string;
+    dependsOn: string[];
     durationEstimate?: number;
     label: string;
     lane?: string;
@@ -1372,6 +1373,7 @@ function buildPlanTasks(plans: readonly { code: string }[], tasks: readonly Task
     const bucket = (grouped[planCode] ??= []);
     bucket.push({
       code: task.code,
+      dependsOn: task.dependsOn ?? [],
       ...(typeof task.durationEstimate === "number" ? { durationEstimate: task.durationEstimate } : {}),
       label: task.shortTask,
       ...(task.lane ? { lane: task.lane } : {}),
