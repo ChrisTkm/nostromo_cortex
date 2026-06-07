@@ -192,6 +192,16 @@ export class ExtensionTaskService {
     return this.withPlanStore(this.getConnectionSettings(), (store) => store.getPlan(code));
   }
 
+  isJsonPathInArchive(rawJsonPath: string): boolean {
+    if (typeof rawJsonPath !== "string" || !rawJsonPath.trim()) return false;
+    const candidate = path.normalize(rawJsonPath.trim());
+    if (!candidate.toLowerCase().endsWith(".json")) return false;
+    const archiveRoot = path.normalize(path.join(this.resolveArchivePath(), "plans"));
+    const relative = path.relative(archiveRoot, candidate);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+    return true;
+  }
+
   async archivePlan(planCode: string): Promise<ArchivePlanResult> {
     const code = planCode.trim();
     if (!code) {

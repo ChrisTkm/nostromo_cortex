@@ -447,7 +447,12 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(message.jsonPath.trim()));
+        const trimmed = message.jsonPath.trim();
+        if (!service.isJsonPathInArchive(trimmed)) {
+          service.logger.warn("archive:openJson rejected: path outside archive root", { jsonPath: trimmed });
+          return;
+        }
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(trimmed));
         await vscode.window.showTextDocument(document);
       }
     });

@@ -262,3 +262,65 @@ describe("ExtensionTaskService.initialize", () => {
     expect(updatedNoteOptions.collectionName).toBe("notes_v2");
   });
 });
+
+describe("ExtensionTaskService.isJsonPathInArchive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createDirectory.mockResolvedValue(undefined);
+    telemetryInitialize.mockResolvedValue(undefined);
+    sharedConnect.mockResolvedValue(undefined);
+    logsCreateIndexes.mockResolvedValue(["logs_source_timestamp"]);
+    sharedDb.mockImplementation(() => ({
+      collection: vi.fn(() => ({
+        createIndexes: logsCreateIndexes
+      }))
+    }));
+    sharedClose.mockResolvedValue(undefined);
+    secretGet.mockResolvedValue(undefined);
+    secretStore.mockResolvedValue(undefined);
+    secretDelete.mockResolvedValue(undefined);
+    taskEnsureIndexes.mockResolvedValue(undefined);
+    taskClose.mockResolvedValue(undefined);
+    planEnsureIndexes.mockResolvedValue(undefined);
+    planClose.mockResolvedValue(undefined);
+    noteEnsureIndexes.mockResolvedValue(undefined);
+    noteClose.mockResolvedValue(undefined);
+  });
+
+  function makeService() {
+    getConfig.mockImplementation((key: string, fallback?: string) => {
+      if (key === "archivePath") return "C:\\cortex-archive";
+      return fallback;
+    });
+    return new ExtensionTaskService({
+      globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
+      workspaceState: { get: vi.fn(), update: vi.fn() },
+      secrets: { get: secretGet, store: secretStore, delete: secretDelete }
+    } as never);
+  }
+
+  it("accepts a path inside <archiveRoot>/plans", async () => {
+    const service = makeService();
+    await service.initialize();
+    expect(service.isJsonPathInArchive("C:\\cortex-archive\\plans\\S-1.json")).toBe(true);
+  });
+
+  it("rejects a traversal like ../../../etc/passwd", async () => {
+    const service = makeService();
+    await service.initialize();
+    expect(service.isJsonPathInArchive("../../../etc/passwd.json")).toBe(false);
+  });
+
+  it("rejects a non-.json file", async () => {
+    const service = makeService();
+    await service.initialize();
+    expect(service.isJsonPathInArchive("C:\\cortex-archive\\plans\\readme.txt")).toBe(false);
+  });
+
+  it("rejects empty/whitespace input", async () => {
+    const service = makeService();
+    await service.initialize();
+    expect(service.isJsonPathInArchive("")).toBe(false);
+    expect(service.isJsonPathInArchive("   ")).toBe(false);
+  });
+});

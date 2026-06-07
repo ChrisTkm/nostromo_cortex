@@ -314,7 +314,8 @@ vi.mock("./service.js", () => ({
     dispose: vi.fn().mockResolvedValue(undefined),
     logger: {
       debug: vi.fn(),
-      error: vi.fn()
+      error: vi.fn(),
+      warn: vi.fn()
     },
     getConnectionSettings: vi.fn(() => ({
       mongoUrl: "mongodb://127.0.0.1:27017",
@@ -380,7 +381,8 @@ vi.mock("./service.js", () => ({
     updateConnectionSettings: updateConnectionSettingsMock,
     saveMongoUrl: saveMongoUrlMock,
     bootstrapSampleDatabase: vi.fn().mockResolvedValue(undefined),
-    loadPlans: loadPlansMock
+    loadPlans: loadPlansMock,
+    isJsonPathInArchive: vi.fn(() => true)
   }))
 }));
 
