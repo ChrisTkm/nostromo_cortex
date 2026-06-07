@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
 
 const sampleLogs = [
   {
@@ -75,5 +75,34 @@ describe("LogsApp helpers", () => {
     });
     expect(groups[0]?.logs.map((entry) => entry.tag)).toEqual(["END", "BEGIN"]);
     expect(groups[1]).toMatchObject({ id: "ungrouped", isUngrouped: true });
+  });
+
+  describe("filterLogsByTime", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-06-07T12:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("with timeRange='1h' excludes entries older than 1 hour", () => {
+      const recent = { ...sampleLogs[0]!, timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString() };
+      const old = { ...sampleLogs[1]!, timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() };
+      expect(filterLogsByTime([recent, old], "1h")).toEqual([recent]);
+    });
+
+    it("with timeRange='all' returns all logs unchanged", () => {
+      expect(filterLogsByTime(sampleLogs, "all")).toEqual(sampleLogs);
+    });
+
+    it("with timeRange='24h' combined with level filter works", () => {
+      const recent = { ...sampleLogs[0]!, level: "INFO", timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+      const recentError = { ...sampleLogs[1]!, level: "ERROR", timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+      const old = { ...sampleLogs[0]!, level: "ERROR", timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() };
+      const timeFiltered = filterLogsByTime([recent, recentError, old], "24h");
+      expect(timeFiltered).toEqual([recent, recentError]);
+    });
   });
 });

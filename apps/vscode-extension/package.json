@@ -325,6 +325,13 @@
           "default": "logs",
           "description": "Colección de logs en Mongo."
         },
+        "cortex.logsLimit": {
+          "type": "number",
+          "default": 500,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
+        },
         "cortex.mongoPlansCollection": {
           "type": "string",
           "default": "action_plans",

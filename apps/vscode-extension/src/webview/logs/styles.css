@@ -74,6 +74,35 @@
   gap: 8px;
 }
 
+.logs-filters__time-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}
+
+.logs-time-chip {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 65%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-bg) 96%, transparent);
+  color: var(--cortex-text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.logs-time-chip:hover {
+  border-color: var(--cortex-border-strong);
+}
+
+.logs-time-chip--active {
+  color: var(--cortex-accent);
+  border-color: color-mix(in srgb, var(--cortex-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 14%, transparent);
+}
+
 .logs-input,
 .logs-button {
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);

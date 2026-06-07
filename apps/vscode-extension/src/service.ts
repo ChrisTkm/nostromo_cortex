@@ -809,9 +809,10 @@ export class ExtensionTaskService {
     });
   }
 
-  async listLogs(limit = 500): Promise<LogRecord[]> {
+  async listLogs(limit?: number): Promise<LogRecord[]> {
     const collection = await this.getLogsCollection();
-    const items = await collection.find({}).sort({ timestamp: -1 }).limit(limit).toArray();
+    const resolved = clampLogsLimit(limit ?? this.config.get<number>("logsLimit", 500));
+    const items = await collection.find({}).sort({ timestamp: -1 }).limit(resolved).toArray();
     return normalizeLogCollection(items);
   }
 
@@ -1098,4 +1099,9 @@ function optionalStringField(document: Document, key: string) {
 function stringArrayField(document: Document, key: string) {
   const value = document[key];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").sort((left, right) => left.localeCompare(right)) : [];
+}
+
+function clampLogsLimit(value: number): number {
+  if (!Number.isFinite(value)) return 500;
+  return Math.max(50, Math.min(5000, Math.trunc(value)));
 }

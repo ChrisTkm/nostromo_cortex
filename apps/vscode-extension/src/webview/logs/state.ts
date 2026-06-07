@@ -1,5 +1,11 @@
 import type { LogRecord } from "../../logs";
 
+export const TIME_RANGE_MS: Record<"1h" | "24h" | "7d", number> = {
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000
+};
+
 export type LogExecutionGroup = {
   id: string;
   label: string;
@@ -11,6 +17,12 @@ export type LogExecutionGroup = {
   dominantTag: string;
   isUngrouped: boolean;
 };
+
+export function filterLogsByTime(logs: LogRecord[], timeRange: "all" | "1h" | "24h" | "7d"): LogRecord[] {
+  if (timeRange === "all") return logs;
+  const cutoff = Date.now() - TIME_RANGE_MS[timeRange];
+  return logs.filter((entry) => new Date(entry.timestamp).getTime() >= cutoff);
+}
 
 export function buildLogKey(entry: LogRecord) {
   return entry.id ?? `${entry.timestamp}:${entry.source}:${entry.level}:${entry.summary}`;

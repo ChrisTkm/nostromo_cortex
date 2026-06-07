@@ -1,6 +1,6 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
 
 type LogsMessage = {
   type: "logs:list";
@@ -28,6 +28,7 @@ export function LogsApp() {
   const [source, setSource] = useState("all");
   const [folder, setFolder] = useState("all");
   const [tag, setTag] = useState("all");
+  const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -60,7 +61,8 @@ export function LogsApp() {
   const tags = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.tag ?? entry.event ?? "untagged"))], [logs]);
 
   const filteredLogs = useMemo(() => {
-    return logs.filter((entry) => {
+    const timeFiltered = filterLogsByTime(logs, timeRange);
+    return timeFiltered.filter((entry) => {
       if (level !== "all" && entry.level !== level) {
         return false;
       }
@@ -96,9 +98,9 @@ export function LogsApp() {
         .toLowerCase();
       return haystack.includes(deferredSearch);
     });
-  }, [deferredSearch, folder, level, logs, source, tag]);
+  }, [deferredSearch, folder, level, logs, source, tag, timeRange]);
 
-  const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all" || tag !== "all";
+  const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all" || tag !== "all" || timeRange !== "all";
   const emptyState = getLogsEmptyState(logs.length, filteredLogs.length, hasActiveFilters);
   const groupedLogs = useMemo(() => buildExecutionGroups(filteredLogs), [filteredLogs]);
 
@@ -120,6 +122,7 @@ export function LogsApp() {
     setSource("all");
     setFolder("all");
     setTag("all");
+    setTimeRange("all");
   }
 
   function toggleGroup(groupId: string) {
@@ -160,6 +163,23 @@ export function LogsApp() {
             type="search"
             value={search}
           />
+          <div className="logs-filters__time-row">
+            {(["1h", "24h", "7d"] as const).map((range) => {
+              const label = range === "1h" ? "Last hour" : range === "24h" ? "Last 24h" : "Last 7d";
+              const active = timeRange === range;
+              return (
+                <button
+                  key={range}
+                  type="button"
+                  className={`logs-time-chip${active ? " logs-time-chip--active" : ""}`}
+                  onClick={() => setTimeRange(active ? "all" : range)}
+                  aria-pressed={active}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <select className="logs-input" onChange={(event) => setLevel(event.target.value)} value={level}>
             {levels.map((option) => (
               <option key={option} value={option}>
