@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -130,6 +130,21 @@ describe("LogsApp helpers", () => {
       expect(sortLogLevelKeys(["INFO", "CUSTOM", "DEBUG", "ERROR", "WARNING"])).toEqual([
         "ERROR", "WARNING", "INFO", "DEBUG", "CUSTOM"
       ]);
+    });
+  });
+
+  describe("onboarding", () => {
+    it('getLogsEmptyState returns "empty" for zero logs', () => {
+      expect(getLogsEmptyState(0, 0, false)).toBe("empty");
+    });
+
+    it('getLogsEmptyState returns "filtered" when filters hide all results', () => {
+      expect(getLogsEmptyState(5, 0, true)).toBe("filtered");
+    });
+
+    it("LOGS_PYTHON_SNIPPET is a non-empty string with pymongo", () => {
+      expect(LOGS_PYTHON_SNIPPET.length).toBeGreaterThan(0);
+      expect(LOGS_PYTHON_SNIPPET).toContain("from pymongo import MongoClient");
     });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLogJson, countLogsByLevel, sortLogLevelKeys } from "./state";
+import { buildLogJson, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
 
 describe("countLogsByLevel", () => {
   it("returns counts by uppercased level for a mixed list", () => {
@@ -44,5 +44,22 @@ describe("buildLogJson", () => {
     const parsed = JSON.parse(json);
     expect(parsed).toEqual(log);
     expect(json).toContain("\n  ");
+  });
+});
+
+describe("LOGS_PYTHON_SNIPPET", () => {
+  it("is a non-empty string", () => {
+    expect(LOGS_PYTHON_SNIPPET).toBeTruthy();
+    expect(LOGS_PYTHON_SNIPPET.length).toBeGreaterThan(0);
+  });
+
+  it("uses pymongo not a ficticious cortex_logs package", () => {
+    expect(LOGS_PYTHON_SNIPPET).toContain("from pymongo import MongoClient");
+  });
+
+  it("includes execution_id, tag, and level in insert_one", () => {
+    expect(LOGS_PYTHON_SNIPPET).toContain('"execution_id"');
+    expect(LOGS_PYTHON_SNIPPET).toContain('"tag"');
+    expect(LOGS_PYTHON_SNIPPET).toContain('"level"');
   });
 });

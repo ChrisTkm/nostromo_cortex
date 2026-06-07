@@ -963,6 +963,25 @@ describe("activate notes commands", () => {
     });
   });
 
+  describe("logs:openContract host handler", () => {
+    beforeEach(() => {
+      openTextDocumentMock.mockReset();
+    });
+
+    it("opens an untitled markdown document with the contract content", async () => {
+      const fakeDoc = { uri: { scheme: "untitled" } };
+      openTextDocumentMock.mockResolvedValueOnce(fakeDoc);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:openContract" });
+      expect(openTextDocumentMock).toHaveBeenCalledWith({
+        content: expect.stringContaining("Cortex log execution contract"),
+        language: "markdown"
+      });
+      expect(showTextDocumentMock).toHaveBeenCalledWith(fakeDoc, { preview: false });
+    });
+  });
+
   it("opens the archive panel, posts archived plans, and opens JSON snapshots", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openArchive");

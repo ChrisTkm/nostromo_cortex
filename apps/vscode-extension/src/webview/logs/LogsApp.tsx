@@ -1,6 +1,6 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { buildExecutionGroups, buildLogJson, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
@@ -267,10 +267,37 @@ export function LogsApp() {
 
         <div className="logs-list">
           {emptyState === "empty" ? (
-            <div className="logs-empty-state">
-              <div className="logs-toolbar__eyebrow">No data yet</div>
-              <h2 className="logs-empty-state__title">No logs available in the current collection.</h2>
-              <p className="logs-empty-state__text">Refresh the panel or verify the extension is pointed at the expected Mongo database.</p>
+            <div className="logs-empty-state logs-empty-state--onboarding">
+              <div className="logs-toolbar__eyebrow">No logs yet</div>
+              <h2 className="logs-empty-state__title">Start emitting logs to Cortex</h2>
+              <p className="logs-empty-state__text">
+                Cortex Logs reads from your MongoDB <code>logs</code> collection. Emit one document per event
+                following the Cortex log contract. Below is a runnable Python snippet using <code>pymongo</code>.
+              </p>
+              <pre className="logs-empty-state__snippet"><code>{LOGS_PYTHON_SNIPPET}</code></pre>
+              <div className="logs-empty-state__actions">
+                <button
+                  type="button"
+                  className="logs-button logs-button--primary"
+                  onClick={() => copyValue(LOGS_PYTHON_SNIPPET, "snippet")}
+                >
+                  {copiedKey === "snippet" ? "Copied" : "Copy snippet"}
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => vscode.postMessage({ type: "logs:openContract" })}
+                >
+                  View log contract
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => vscode.postMessage({ type: "logs:refresh" })}
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           ) : emptyState === "filtered" ? (
             <div className="logs-empty-state">

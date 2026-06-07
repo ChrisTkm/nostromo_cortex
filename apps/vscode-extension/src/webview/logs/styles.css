@@ -457,3 +457,46 @@
 .logs-detail__copy-json {
   font-size: 12px;
 }
+
+.logs-empty-state--onboarding {
+  align-items: flex-start;
+  text-align: left;
+  max-width: 720px;
+}
+
+.logs-empty-state__snippet {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 65%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cortex-bg) 96%, transparent);
+  color: var(--cortex-text-strong);
+  font-family: var(--cortex-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+.logs-empty-state__snippet code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  color: inherit;
+  white-space: pre;
+}
+
+.logs-empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.logs-empty-state__text code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cortex-accent) 14%, transparent);
+  color: var(--cortex-accent);
+  font-family: var(--cortex-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 0.95em;
+}

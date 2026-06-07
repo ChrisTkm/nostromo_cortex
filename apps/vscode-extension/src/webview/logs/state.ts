@@ -6,6 +6,36 @@ export const TIME_RANGE_MS: Record<"1h" | "24h" | "7d", number> = {
   "7d": 7 * 24 * 60 * 60 * 1000
 };
 
+export const LOGS_PYTHON_SNIPPET = `from datetime import datetime, timezone
+from uuid import uuid4
+from pymongo import MongoClient
+
+logs = MongoClient("mongodb://127.0.0.1:27017").cortex.logs
+exec_id = str(uuid4())
+
+logs.insert_one({
+    "execution_id": exec_id,
+    "timestamp": datetime.now(timezone.utc),
+    "tag": "BEGIN",
+    "class": "MyLoader",
+    "method": "run",
+    "title": "Started run",
+    "message": "Processing records",
+    "level": "INFO",
+})
+
+logs.insert_one({
+    "execution_id": exec_id,
+    "timestamp": datetime.now(timezone.utc),
+    "tag": "END",
+    "class": "MyLoader",
+    "method": "run",
+    "title": "Run finished",
+    "message": "All records processed",
+    "level": "INFO",
+})
+`;
+
 export type LogExecutionGroup = {
   id: string;
   label: string;
