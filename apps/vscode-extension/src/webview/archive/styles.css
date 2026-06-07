@@ -88,6 +88,15 @@
   color: var(--vscode-textLink-foreground);
 }
 
+.archive-button--restore {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+.archive-button--restore:hover {
+  background: rgba(248, 113, 113, 0.1);
+}
+
 .archive-chip--static {
   cursor: default;
   font-size: 11px;

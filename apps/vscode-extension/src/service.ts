@@ -42,6 +42,11 @@ type ArchivePlanResult = {
   planCode: string;
   taskCount: number;
 };
+type RestorePlanResult = {
+  planCode: string;
+  taskCount: number;
+  noteCount: number;
+};
 export type ArchivedTaskSummary = {
   code: string;
   shortTask: string;
@@ -307,6 +312,110 @@ export class ExtensionTaskService {
       noteCount: notes.length,
       planCode: code,
       taskCount: tasks.length
+    };
+  }
+
+  async restorePlan(planCode: string): Promise<RestorePlanResult> {
+    const code = planCode.trim();
+    if (!code) {
+      throw new Error("Plan code is required.");
+    }
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const plans = db.collection(settings.mongoPlansCollection);
+    const tasksCollection = db.collection(settings.mongoTasksCollection);
+    const notesCollection = db.collection(settings.mongoNotesCollection);
+    const archivedPlans = db.collection("archived_plans");
+    const archivedTasks = db.collection("archived_tasks");
+    const archivedNotes = db.collection("archived_notes");
+
+    const archivedPlan = await archivedPlans.findOne({ code });
+    if (!archivedPlan) {
+      throw new Error(`Archived plan ${code} not found.`);
+    }
+
+    const existingActive = await plans.findOne({ code });
+    if (existingActive) {
+      throw new Error(`Active plan ${code} already exists; cannot restore over it.`);
+    }
+
+    const archivedTasksList = await archivedTasks.find({ plan_code: code }).toArray();
+    const taskCodes = archivedTasksList
+      .map((task) => (typeof task.code === "string" ? task.code : undefined))
+      .filter((value): value is string => Boolean(value));
+    const archivedNotesList = await archivedNotes
+      .find({
+        $or: [
+          { plan_code: code },
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
+        ]
+      })
+      .toArray();
+
+    const { archived_at: _archivedAt, json_path: _jsonPath, ...planRest } = archivedPlan as Document & {
+      archived_at?: unknown;
+      json_path?: unknown;
+    };
+    const restoredPlan = {
+      ...planRest,
+      status: "IN_PROGRESS",
+      updated_at: new Date().toISOString()
+    };
+
+    const runRestoreWrites = async (session?: ClientSession) => {
+      await archiveDocuments(plans, [restoredPlan], session);
+      if (archivedTasksList.length > 0) {
+        await archiveDocuments(tasksCollection, archivedTasksList, session);
+      }
+      if (archivedNotesList.length > 0) {
+        await archiveDocuments(notesCollection, archivedNotesList, session);
+      }
+      const deletedNotes = archivedNotesList.length > 0
+        ? await archivedNotes.deleteMany({ _id: { $in: archivedNotesList.map((n) => n._id) } }, session ? { session } : undefined)
+        : { deletedCount: 0 };
+      const deletedTasks = archivedTasksList.length > 0
+        ? await archivedTasks.deleteMany({ _id: { $in: archivedTasksList.map((t) => t._id) } }, session ? { session } : undefined)
+        : { deletedCount: 0 };
+      const deletedPlan = await archivedPlans.deleteOne({ _id: archivedPlan._id }, session ? { session } : undefined);
+      if (
+        (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length ||
+        (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length ||
+        deletedPlan.deletedCount !== 1
+      ) {
+        this.logger.warn("restorePlan delete count mismatch", {
+          planCode: code,
+          expectedNotes: archivedNotesList.length,
+          deletedNotes: deletedNotes.deletedCount,
+          expectedTasks: archivedTasksList.length,
+          deletedTasks: deletedTasks.deletedCount,
+          expectedPlans: 1,
+          deletedPlans: deletedPlan.deletedCount
+        });
+      }
+    };
+
+    const client = sharedClient.get();
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await runRestoreWrites(session);
+      });
+    } catch (error) {
+      this.logger.warn("restorePlan transaction failed; falling back to ordered writes", {
+        planCode: code,
+        error: String(error)
+      });
+      await runRestoreWrites();
+    } finally {
+      await session.endSession();
+    }
+
+    return {
+      planCode: code,
+      taskCount: archivedTasksList.length,
+      noteCount: archivedNotesList.length
     };
   }
 

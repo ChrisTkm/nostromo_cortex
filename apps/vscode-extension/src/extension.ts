@@ -451,6 +451,10 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(service.getArchivePath()));
         return;
       }
+      if (message?.type === "archive:restorePlan" && typeof message.planCode === "string" && message.planCode.trim()) {
+        await vscode.commands.executeCommand("cortex.restorePlan", message.planCode.trim());
+        return;
+      }
       if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {
         const trimmed = message.jsonPath.trim();
         if (!service.isJsonPathInArchive(trimmed)) {
@@ -994,6 +998,31 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       } catch (error) {
         void vscode.window.showErrorMessage(`Could not archive plan ${planCode}: ${String(error)}`);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.restorePlan", async (arg?: string | { planCode?: string; kind?: string; label?: string }) => {
+      const planCode = await resolveArchivePlanCode(service, arg);
+      if (!planCode) {
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        `Restore plan ${planCode}? This will move the archived data back to the active collections. The JSON snapshot on disk will be kept as a backup.`,
+        { modal: true },
+        "Restore"
+      );
+      if (confirmed !== "Restore") return;
+
+      try {
+        const result = await service.restorePlan(planCode);
+        treeProvider.refresh();
+        await postSnapshot();
+        await postArchiveList();
+        void vscode.window.showInformationMessage(
+          `Plan ${result.planCode} restored (${result.taskCount} tasks, ${result.noteCount} notes). JSON snapshot kept on disk.`
+        );
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Could not restore plan ${planCode}: ${String(error)}`);
       }
     }),
     vscode.commands.registerCommand("cortex.setMongoUrl", async () => {

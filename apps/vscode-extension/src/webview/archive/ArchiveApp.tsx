@@ -151,6 +151,13 @@ function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
         <div className="archive-tags">
           {plan.tags.length > 0 ? plan.tags.map((tag) => <span className="archive-chip archive-chip--static" key={tag}>{tag}</span>) : <span className="archive-muted">No tags</span>}
         </div>
+        <button
+          className="archive-button archive-button--restore"
+          onClick={() => vscode.postMessage({ type: "archive:restorePlan", planCode: plan.code })}
+          type="button"
+        >
+          Restore
+        </button>
         <button className="archive-button archive-button--primary" onClick={() => vscode.postMessage({ type: "archive:openJson", jsonPath: plan.jsonPath })} type="button">
           Open JSON
         </button>
