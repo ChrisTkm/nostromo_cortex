@@ -339,6 +339,22 @@
           "maximum": 600,
           "description": "Auto-refresh interval for the Cortex Logs panel, in seconds. 0 disables it."
         },
+        "cortex.logsSource": {
+          "type": "string",
+          "enum": ["mongo", "file"],
+          "default": "mongo",
+          "description": "Where the Cortex Logs panel reads from. 'mongo' queries the MongoDB logs collection (default). 'file' tails a JSONL file written by your app following docs/log-contract.md."
+        },
+        "cortex.logsFilePath": {
+          "type": "string",
+          "default": "",
+          "description": "JSONL file path used when cortex.logsSource is 'file'. Empty resolves to <workspaceFolder>/logs/cortex.jsonl. Relative paths resolve against the first workspace folder."
+        },
+        "cortex.logsChangeStreams": {
+          "type": "boolean",
+          "default": false,
+          "description": "Subscribe to MongoDB Change Streams for real-time log updates instead of polling. Requires a replica set or Atlas. On single-node Mongo the extension logs a warning and falls back to polling (cortex.logsAutoRefreshSeconds)."
+        },
         "cortex.mongoPlansCollection": {
           "type": "string",
           "default": "action_plans",

@@ -144,6 +144,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
   let logsPanelReady = false;
+  let lastLogsHasMore = false;
+  let logsChangeStreamCleanup: (() => Promise<void>) | null = null;
   let mdxGraphPanel: vscode.WebviewPanel | undefined;
   let mdxGraphPanelReady = false;
   let currentMdxGraphRoot: vscode.Uri | undefined;
@@ -320,6 +322,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (logsPanel !== panel) {
       return;
     }
+    lastLogsHasMore = logs.length === limit;
     await panel.webview.postMessage({
       type: "logs:list",
       logs,
@@ -328,7 +331,7 @@ export async function activate(context: vscode.ExtensionContext) {
           .getConfiguration("cortex")
           .get<number>("logsAutoRefreshSeconds", 0),
       ),
-      hasMore: logs.length === limit,
+      hasMore: lastLogsHasMore,
     });
   }
 
@@ -610,9 +613,46 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       }
     }
 
-    const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+    async function setupLogsChangeStream() {
+      if (logsChangeStreamCleanup) {
+        await logsChangeStreamCleanup();
+        logsChangeStreamCleanup = null;
+      }
+      const source = service.getLogsSource();
+      if (source.subscribe) {
+        const cleanup = await source.subscribe((appendedLogs) => {
+          if (logsPanel) {
+            logsPanel.webview.postMessage({ type: "logs:append", logs: appendedLogs, hasMore: lastLogsHasMore });
+          }
+        });
+        if (cleanup) {
+          logsChangeStreamCleanup = cleanup;
+          stopLogsPoll();
+        } else {
+          refreshLogsPollFromConfig();
+        }
+      }
+    }
+
+    setupLogsChangeStream();
+
+    const configWatcher = vscode.workspace.onDidChangeConfiguration(async (e) => {
       if (e.affectsConfiguration("cortex.logsAutoRefreshSeconds")) {
+        if (logsChangeStreamCleanup) {
+          return;
+        }
         refreshLogsPollFromConfig();
+      }
+      if (
+        e.affectsConfiguration("cortex.logsSource") ||
+        e.affectsConfiguration("cortex.logsFilePath") ||
+        e.affectsConfiguration("cortex.logsLimit")
+      ) {
+        postLogsList();
+      }
+      if (e.affectsConfiguration("cortex.logsChangeStreams")) {
+        await setupLogsChangeStream();
+        postLogsList();
       }
     });
 
@@ -631,6 +671,10 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       viewStateWatcher.dispose();
       logsPanel = undefined;
       logsPanelReady = false;
+      if (logsChangeStreamCleanup) {
+        logsChangeStreamCleanup();
+        logsChangeStreamCleanup = null;
+      }
     });
     logsPanel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "ready" || message?.type === "logs:refresh") {

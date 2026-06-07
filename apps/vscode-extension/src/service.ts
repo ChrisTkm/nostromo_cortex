@@ -26,8 +26,12 @@ import {
 import type { ClientSession, Collection, Document } from "mongodb";
 import * as vscode from "vscode";
 
-import { normalizeLogCollection, type LogRecord } from "./logs.js";
+import { type LogRecord } from "./logs.js";
 import { clampLogsLimit } from "./logsAutoRefresh.js";
+import { resolveLogsFilePath } from "./logsFilePath.js";
+import { LOGS_INDEX_DEFINITIONS, type LogsSource } from "./logsSource.js";
+import { MongoLogsSource } from "./mongoLogsSource.js";
+import { FileLogsSource } from "./fileLogsSource.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
 const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
@@ -107,6 +111,7 @@ export class ExtensionTaskService {
   private mongoUrl = DEFAULT_MONGO_URL;
   private sharedClient: SharedMongoClient | undefined;
   private notesStore: MongoNoteStore | undefined;
+  private logsSourceCache: { source: LogsSource; key: string } | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     const runtimeConfig = loadConfig({
@@ -989,20 +994,10 @@ export class ExtensionTaskService {
     limit?: number,
     beforeTimestamp?: string,
   ): Promise<LogRecord[]> {
-    const collection = await this.getLogsCollection();
     const resolved = clampLogsLimit(
       limit ?? this.config.get<number>("logsLimit", 500),
     );
-    const filter: Record<string, unknown> = {};
-    if (typeof beforeTimestamp === "string" && beforeTimestamp.length > 0) {
-      filter.timestamp = { $lt: beforeTimestamp };
-    }
-    const items = await collection
-      .find(filter)
-      .sort({ timestamp: -1 })
-      .limit(resolved)
-      .toArray();
-    return normalizeLogCollection(items);
+    return this.getLogsSource().list({ limit: resolved, beforeTimestamp });
   }
 
   async saveTask(task: TaskDocumentInput) {
@@ -1222,32 +1217,13 @@ export class ExtensionTaskService {
       ...(sharedClient ? { sharedClient } : {}),
     });
     const notesStore = this.getNotesStore(settings);
-    const logsCollection = await this.getLogsCollection(settings);
 
     try {
       await Promise.all([
         taskStore.ensureIndexes(),
         planStore.ensureIndexes(),
         notesStore.ensureIndexes(),
-        logsCollection.createIndexes([
-          { key: { source: 1, timestamp: -1 }, name: "logs_source_timestamp" },
-          { key: { level: 1, timestamp: -1 }, name: "logs_level_timestamp" },
-          {
-            key: { process: 1, timestamp: -1 },
-            name: "logs_process_timestamp",
-            partialFilterExpression: { process: { $type: "string" } },
-          },
-          {
-            key: { execution_id: 1, timestamp: -1 },
-            name: "logs_execution_timestamp",
-            partialFilterExpression: { execution_id: { $type: "string" } },
-          },
-          {
-            key: { tag: 1, timestamp: -1 },
-            name: "logs_tag_timestamp",
-            partialFilterExpression: { tag: { $type: "string" } },
-          },
-        ]),
+        this.getLogsSource().ensureIndexes(),
       ]);
     } finally {
       await Promise.all([
@@ -1265,6 +1241,44 @@ export class ExtensionTaskService {
     return sharedClient
       .db(settings.mongoDbName)
       .collection<Record<string, unknown>>(settings.mongoLogsCollection);
+  }
+
+  private getLogsSource(): LogsSource {
+    const kind = this.config.get<string>("logsSource", "mongo");
+    const rawPath = this.config.get<string>("logsFilePath", "");
+    const changeStreamsEnabled = this.config.get<boolean>("logsChangeStreams", false);
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const resolvedPath = resolveLogsFilePath({
+      configured: rawPath,
+      workspaceRoot,
+    });
+    const key = `${kind}:${resolvedPath ?? ""}:cs=${changeStreamsEnabled}`;
+    if (this.logsSourceCache?.key === key) {
+      return this.logsSourceCache.source;
+    }
+    this.logsSourceCache?.source.dispose();
+    let source: LogsSource;
+    if (kind === "file" && resolvedPath) {
+      source = new FileLogsSource({
+        filePath: resolvedPath,
+        log: (event) => {
+          this.logger[event.type](event.message, event.meta);
+        },
+      });
+    } else {
+      source = new MongoLogsSource(
+        () => this.getLogsCollection(),
+        LOGS_INDEX_DEFINITIONS,
+        {
+          changeStreamsEnabled,
+          log: (event) => {
+            this.logger[event.type](event.message, event.meta);
+          },
+        },
+      );
+    }
+    this.logsSourceCache = { source, key };
+    return source;
   }
 
   private async requireSharedClient(settings: ConnectionSettings) {
