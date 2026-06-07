@@ -64,6 +64,9 @@ export type ArchivedNoteSummary = {
 export type ArchivedPlanSummary = {
   code: string;
   title: string;
+  description?: string;
+  goal?: string;
+  context?: string;
   completedAt?: string;
   archivedAt?: string;
   tags: string[];
@@ -453,6 +456,9 @@ export class ExtensionTaskService {
         return {
           code,
           title: stringField(plan, "title"),
+          description: optionalStringField(plan, "description"),
+          goal: optionalStringField(plan, "goal"),
+          context: optionalStringField(plan, "context"),
           completedAt: optionalStringField(plan, "completed_at"),
           archivedAt: optionalStringField(plan, "archived_at"),
           tags: stringArrayField(plan, "tags"),

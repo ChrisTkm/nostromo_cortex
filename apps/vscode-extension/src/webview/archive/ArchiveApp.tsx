@@ -162,6 +162,24 @@ function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
           Open JSON
         </button>
       </div>
+      {plan.description ? (
+        <section className="archive-detail-section">
+          <h2>Description</h2>
+          <p style={{ whiteSpace: "pre-wrap" }}>{plan.description}</p>
+        </section>
+      ) : null}
+      {plan.goal ? (
+        <section className="archive-detail-section">
+          <h2>Goal</h2>
+          <p style={{ whiteSpace: "pre-wrap" }}>{plan.goal}</p>
+        </section>
+      ) : null}
+      {plan.context ? (
+        <section className="archive-detail-section">
+          <h2>Context</h2>
+          <p style={{ whiteSpace: "pre-wrap" }}>{plan.context}</p>
+        </section>
+      ) : null}
       <section className="archive-detail-section">
         <h2>Tasks</h2>
         <div className="archive-task-list">
