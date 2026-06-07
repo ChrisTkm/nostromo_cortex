@@ -182,6 +182,7 @@ export async function activate(context: vscode.ExtensionContext) {
       state: {
         orientation: state.graphOrientation,
         showMiniMap: state.showMiniMap,
+        groupByLane: state.groupByLane,
         selectedTaskCode: state.selectedTaskCode,
         zoom: state.zoom,
         pan: state.pan
@@ -702,6 +703,9 @@ export async function activate(context: vscode.ExtensionContext) {
         }
         if (message.type === "miniMapToggled") {
           await service.updateFilterState({ showMiniMap: Boolean(message.showMiniMap) });
+        }
+        if (message.type === "toggleGroupByLane") {
+          await service.updateFilterState({ groupByLane: Boolean(message.groupByLane) });
         }
       });
     }
@@ -1426,6 +1430,7 @@ function sameFilterState(
     left.searchQuery === right.searchQuery &&
     left.graphOrientation === right.graphOrientation &&
     left.showMiniMap === right.showMiniMap &&
+    left.groupByLane === right.groupByLane &&
     left.selectedTaskCode === right.selectedTaskCode &&
     left.selectedPlanCode === right.selectedPlanCode &&
     left.zoom === right.zoom &&

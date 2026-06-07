@@ -33,6 +33,7 @@ export type SnapshotMessage = {
   state: {
     orientation: GraphDirection;
     showMiniMap: boolean;
+    groupByLane: boolean;
     selectedTaskCode?: string;
     zoom?: number;
     pan?: { x: number; y: number };

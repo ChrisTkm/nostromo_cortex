@@ -10,8 +10,10 @@ const STATUS_META: Array<{ status: TaskStatus; label: string; className: string 
 
 export function StatusBar(props: {
   criticalPath?: CriticalPathResult;
+  groupByLane: boolean;
   onOrientationChange(direction: GraphDirection): void;
   onToggleMiniMap(): void;
+  onToggleLanes(): void;
   orientation: GraphDirection;
   showMiniMap: boolean;
   statusCounts: Record<TaskStatus, number>;
@@ -51,6 +53,9 @@ export function StatusBar(props: {
         </button>
         <button className={`status-bar__button${props.showMiniMap ? " status-bar__button--active" : ""}`} onClick={props.onToggleMiniMap} type="button">
           MiniMap
+        </button>
+        <button className={`status-bar__button${props.groupByLane ? " status-bar__button--active" : ""}`} onClick={props.onToggleLanes} type="button">
+          Lanes
         </button>
       </div>
     </footer>

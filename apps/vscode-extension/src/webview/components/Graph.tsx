@@ -14,14 +14,21 @@ import {
 } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { LaneNode } from "./LaneNode";
 import { computeLayout } from "../lib/layout";
 import type { CriticalPathResult, GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
 import { TaskNode, type TaskNodeData } from "./TaskNode";
+
+type LayoutCacheValue = {
+  positions: Map<string, { x: number; y: number }>;
+  lanes: NonNullable<ReturnType<typeof computeLayout>["lanes"]>;
+};
 
 export function Graph(props: {
   centerTaskCode?: string;
   criticalPath?: CriticalPathResult;
   emptyMessage?: string;
+  groupByLane?: boolean;
   onSelectTask(code: string): void;
   onViewportChange(zoom: number, pan: { x: number; y: number }): void;
   orientation: GraphDirection;
@@ -35,10 +42,10 @@ export function Graph(props: {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TaskNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [instance, setInstance] = useState<ReactFlowInstance<Node<TaskNodeData>, Edge> | null>(null);
-  const layoutCacheRef = useRef<Map<string, Map<string, { x: number; y: number }>>>(new Map());
+  const layoutCacheRef = useRef<Map<string, LayoutCacheValue>>(new Map());
   const LAYOUT_CACHE_MAX = 5;
 
-  const nodeTypes = useMemo(() => ({ task: TaskNode }), []);
+  const nodeTypes = useMemo(() => ({ lane: LaneNode, task: TaskNode }), []);
   const rawNodes = useMemo<Array<Node<TaskNodeData>>>(() => {
     if (!props.snapshot) {
       return [];
@@ -111,20 +118,23 @@ export function Graph(props: {
 
     const nodeIdSig = rawNodes.map((n) => n.id).sort().join(",");
     const edgeSig = rawEdges.map((e) => `${e.source}>${e.target}`).sort().join("|");
-    const layoutKey = `${props.orientation}::${nodeIdSig}::${edgeSig}`;
+    const layoutKey = `${props.orientation}::${props.groupByLane ? "L" : "0"}::${nodeIdSig}::${edgeSig}`;
 
     const cache = layoutCacheRef.current;
     const sourcePosition = props.orientation === "LR" ? Position.Right : Position.Bottom;
     const targetPosition = props.orientation === "LR" ? Position.Left : Position.Top;
 
-    let positions = cache.get(layoutKey);
-    if (positions) {
+    let cached = cache.get(layoutKey);
+    if (cached) {
       cache.delete(layoutKey);
-      cache.set(layoutKey, positions);
+      cache.set(layoutKey, cached);
     } else {
-      const layouted = computeLayout(rawNodes, rawEdges, props.orientation);
-      positions = new Map(layouted.nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }]));
-      cache.set(layoutKey, positions);
+      const layouted = computeLayout(rawNodes, rawEdges, props.orientation, props.groupByLane);
+      cached = {
+        positions: new Map(layouted.nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }])),
+        lanes: layouted.lanes ?? []
+      };
+      cache.set(layoutKey, cached);
       while (cache.size > LAYOUT_CACHE_MAX) {
         const oldest = cache.keys().next().value;
         if (oldest === undefined) break;
@@ -133,14 +143,23 @@ export function Graph(props: {
     }
 
     const positionedNodes = rawNodes.map((n) => {
-      const pos = positions!.get(n.id);
+      const pos = cached!.positions.get(n.id);
       if (!pos) return n;
       return { ...n, position: pos, sourcePosition, targetPosition };
     });
 
-    setNodes(positionedNodes);
+    const laneNodes = (cached.lanes ?? []).map((l) => ({
+      id: l.id,
+      type: "lane",
+      position: { x: l.x, y: l.y },
+      data: { name: l.name, width: l.width, height: l.height },
+      draggable: false,
+      selectable: false
+    }));
+
+    setNodes([...laneNodes, ...positionedNodes]);
     setEdges(rawEdges);
-  }, [props.orientation, props.snapshot, rawEdges, rawNodes, setEdges, setNodes]);
+  }, [props.orientation, props.snapshot, rawEdges, rawNodes, setEdges, setNodes, props.groupByLane]);
 
   useEffect(() => {
     if (!instance || !props.snapshot) {

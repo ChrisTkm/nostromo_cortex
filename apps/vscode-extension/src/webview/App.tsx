@@ -26,6 +26,7 @@ export function App() {
   const [planTasks, setPlanTasks] = useState<Record<string, PlanTaskSummary[]>>({});
   const [orientation, setOrientation] = useState<GraphDirection>("LR");
   const [showMiniMap, setShowMiniMap] = useState(true);
+  const [groupByLane, setGroupByLane] = useState(false);
   const [selectedTaskCode, setSelectedTaskCode] = useState<string | undefined>();
   const [totalTaskCount, setTotalTaskCount] = useState(0);
   const [viewport, setViewport] = useState<{ zoom?: number; pan?: { x: number; y: number } }>({});
@@ -68,6 +69,7 @@ export function App() {
       setTotalTaskCount(event.data.totals.totalTaskCount);
       setOrientation(event.data.state.orientation);
       setShowMiniMap(event.data.state.showMiniMap);
+      setGroupByLane(event.data.state.groupByLane ?? false);
       setSelectedTaskCode(event.data.state.selectedTaskCode);
       setViewport({
         zoom: event.data.state.zoom,
@@ -224,6 +226,14 @@ export function App() {
     });
   }
 
+  function handleToggleLanes() {
+    setGroupByLane((current) => {
+      const next = !current;
+      vscode.postMessage({ type: "toggleGroupByLane", groupByLane: next });
+      return next;
+    });
+  }
+
   function handleRefreshGraph() {
     setIsRefreshing(true);
     vscode.postMessage({ type: "refresh" });
@@ -269,6 +279,7 @@ export function App() {
           centerTaskCode={centerTaskCode}
           criticalPath={criticalPath}
           emptyMessage="No tasks match the current filters. Clear filters to show everything."
+          groupByLane={groupByLane}
           onSelectTask={handleSelectTask}
           onViewportChange={handleViewportChange}
           orientation={orientation}
@@ -282,8 +293,10 @@ export function App() {
       </div>
       <StatusBar
         criticalPath={criticalPath}
+        groupByLane={groupByLane}
         onOrientationChange={handleOrientationChange}
         onToggleMiniMap={handleToggleMiniMap}
+        onToggleLanes={handleToggleLanes}
         orientation={orientation}
         showMiniMap={showMiniMap}
         statusCounts={{

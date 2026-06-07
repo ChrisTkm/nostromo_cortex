@@ -9,6 +9,7 @@ export interface ExtensionFilterState {
   selectedSeverities: TaskSeverity[];
   graphOrientation: "LR" | "TB";
   showMiniMap: boolean;
+  groupByLane: boolean;
   selectedTaskCode?: string;
   selectedPlanCode?: string;
   zoom: number;
@@ -23,6 +24,7 @@ export const DEFAULT_FILTER_STATE: ExtensionFilterState = {
   selectedSeverities: [],
   graphOrientation: "LR",
   showMiniMap: true,
+  groupByLane: false,
   zoom: 1,
   pan: { x: 0, y: 0 }
 };

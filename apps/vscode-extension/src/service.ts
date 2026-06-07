@@ -130,7 +130,8 @@ export class ExtensionTaskService {
       selectedStatuses: Array.isArray(persisted.selectedStatuses) ? persisted.selectedStatuses : [],
       selectedSeverities: Array.isArray(persisted.selectedSeverities) ? persisted.selectedSeverities : [],
       graphOrientation: persisted.graphOrientation === "TB" ? "TB" : "LR",
-      showMiniMap: typeof persisted.showMiniMap === "boolean" ? persisted.showMiniMap : DEFAULT_FILTER_STATE.showMiniMap
+      showMiniMap: typeof persisted.showMiniMap === "boolean" ? persisted.showMiniMap : DEFAULT_FILTER_STATE.showMiniMap,
+      groupByLane: typeof persisted.groupByLane === "boolean" ? persisted.groupByLane : DEFAULT_FILTER_STATE.groupByLane
     };
   }
 
