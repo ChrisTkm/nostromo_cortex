@@ -25,6 +25,7 @@ type LayoutCacheValue = {
 };
 
 export function Graph(props: {
+  agentIconBase?: string;
   centerTaskCode?: string;
   criticalPath?: CriticalPathResult;
   emptyMessage?: string;
@@ -55,7 +56,7 @@ export function Graph(props: {
       id: node.id,
       type: "task",
       selected: node.code === props.selectedTaskCode,
-      data: buildTaskNodeData(node, props.orientation, props.snapshot.planContext?.currentTaskCode),
+      data: buildTaskNodeData(node, props.orientation, props.snapshot.planContext?.currentTaskCode, props.agentIconBase),
       position: { x: 0, y: 0 }
     }));
   }, [props.orientation, props.selectedTaskCode, props.snapshot]);
@@ -234,7 +235,7 @@ export function Graph(props: {
   );
 }
 
-function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, currentTaskCode?: string): TaskNodeData {
+function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, currentTaskCode?: string, agentIconBase?: string): TaskNodeData {
   return {
     code: node.code,
     label: node.label,
@@ -242,8 +243,19 @@ function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, curren
     status: node.status,
     lane: node.lane,
     direction,
-    isCurrentTask: node.code === currentTaskCode
+    isCurrentTask: node.code === currentTaskCode,
+    agent: node.agent,
+    agentIconUrl: resolveAgentIconUrl(node.agent, agentIconBase)
   };
+}
+
+const KNOWN_AGENT_SLUGS = new Set(["big-pickle", "copilot", "codex", "claude"]);
+
+function resolveAgentIconUrl(agent: string | undefined, base: string | undefined): string | undefined {
+  if (!base) return undefined;
+  const slug = (agent ?? "").toLowerCase().trim().replace(/\s+/g, "-");
+  const safe = KNOWN_AGENT_SLUGS.has(slug) ? slug : "user";
+  return `${base}/${safe}.svg`;
 }
 
 function colorForStatus(status: TaskStatus) {

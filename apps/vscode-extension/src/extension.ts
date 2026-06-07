@@ -129,6 +129,10 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    const agentIconBase = graphPanel.webview
+      .asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "media", "icons"))
+      .toString();
+
     const persistedState = service.getFilterState();
     service.logger.debug("postSnapshot filterState", {
       filterState: persistedState
@@ -188,6 +192,7 @@ export async function activate(context: vscode.ExtensionContext) {
         zoom: state.zoom,
         pan: state.pan
       },
+      agentIconBase,
       connection: (({ mongoUrl: _omit, ...safe }) => safe)(service.getConnectionSettings()),
       filters: snapshotFilter,
       criticalPath,

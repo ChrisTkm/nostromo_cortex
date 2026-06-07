@@ -41,4 +41,5 @@ export type SnapshotMessage = {
   filters: TaskFilter;
   criticalPath?: CriticalPathResult;
   catalog: FilterCatalog;
+  agentIconBase?: string;
 };

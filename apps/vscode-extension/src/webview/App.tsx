@@ -67,6 +67,7 @@ export function App() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [planFocusRequest, setPlanFocusRequest] = useState<{ code: string; nonce: number } | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [agentIconBase, setAgentIconBase] = useState<string | undefined>(undefined);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const lastPlanTaskCodeRef = useRef<string | undefined>();
   const viewportPostRef = useRef<number | undefined>(undefined);
@@ -99,6 +100,7 @@ export function App() {
       setFilters(normalizeFilter(event.data.snapshot.filters));
       setCatalog(event.data.catalog);
       setCriticalPath(event.data.criticalPath);
+      setAgentIconBase(event.data.agentIconBase);
 
       const currentTaskCode = event.data.snapshot.planContext?.currentTaskCode;
       if (currentTaskCode && currentTaskCode !== lastPlanTaskCodeRef.current) {
@@ -305,6 +307,7 @@ export function App() {
       ) : null}
       <div className="app-graph">
         <Graph
+          agentIconBase={agentIconBase}
           centerTaskCode={centerTaskCode}
           criticalPath={criticalPath}
           emptyMessage="No tasks match the current filters. Clear filters to show everything."

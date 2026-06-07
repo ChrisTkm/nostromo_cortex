@@ -138,6 +138,7 @@ const {
         html: string;
         postMessage: ReturnType<typeof vi.fn>;
         onDidReceiveMessage: ReturnType<typeof vi.fn>;
+        asWebviewUri: ReturnType<typeof vi.fn>;
       };
       onDidDispose: ReturnType<typeof vi.fn>;
     };
@@ -173,7 +174,10 @@ const {
         onDidReceiveMessage: vi.fn((handler: (message: unknown) => unknown) => {
           panelState.messageHandler = handler;
           return { dispose: vi.fn() };
-        })
+        }),
+        asWebviewUri: vi.fn((uri: unknown) => ({
+          toString: () => `mock-resource://${uri}`
+        }))
       },
       onDidDispose: vi.fn((handler: () => unknown) => {
         panelState.disposeHandler = handler;
