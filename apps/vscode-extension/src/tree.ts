@@ -102,7 +102,7 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<GroupTreeNode
         }
       });
     }
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+     
     const [graph, plans] = await Promise.all([this.cachedGraph!, this.service.loadPlans()]);
     const state = this.service.getFilterState();
     const visible = graph.nodes.filter((node) => {
