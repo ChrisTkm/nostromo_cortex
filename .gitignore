@@ -8,6 +8,7 @@ coverage
 .env.local
 apps/vscode-extension/.vscode-test
 data/
+docs/
 *.db
 *.db-shm
 *.db-wal
