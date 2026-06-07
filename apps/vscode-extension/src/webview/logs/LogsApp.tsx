@@ -1,6 +1,7 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
   type: "logs:list";
@@ -60,12 +61,9 @@ export function LogsApp() {
   const folders = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.folder))], [logs]);
   const tags = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.tag ?? entry.event ?? "untagged"))], [logs]);
 
-  const filteredLogs = useMemo(() => {
+  const baseFilteredLogs = useMemo(() => {
     const timeFiltered = filterLogsByTime(logs, timeRange);
     return timeFiltered.filter((entry) => {
-      if (level !== "all" && entry.level !== level) {
-        return false;
-      }
       if (source !== "all" && entry.source !== source) {
         return false;
       }
@@ -98,7 +96,15 @@ export function LogsApp() {
         .toLowerCase();
       return haystack.includes(deferredSearch);
     });
-  }, [deferredSearch, folder, level, logs, source, tag, timeRange]);
+  }, [deferredSearch, folder, logs, source, tag, timeRange]);
+
+  const filteredLogs = useMemo(() => {
+    if (level === "all") return baseFilteredLogs;
+    return baseFilteredLogs.filter((entry) => entry.level === level);
+  }, [baseFilteredLogs, level]);
+
+  const levelCounts = useMemo(() => countLogsByLevel(baseFilteredLogs), [baseFilteredLogs]);
+  const orderedLevelKeys = useMemo(() => sortLogLevelKeys(Object.keys(levelCounts)), [levelCounts]);
 
   const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all" || tag !== "all" || timeRange !== "all";
   const emptyState = getLogsEmptyState(logs.length, filteredLogs.length, hasActiveFilters);
@@ -154,6 +160,27 @@ export function LogsApp() {
             </button>
           </div>
         </header>
+
+        {orderedLevelKeys.length > 0 ? (
+          <div className="logs-counters">
+            {orderedLevelKeys.map((lvl) => {
+              const active = level === lvl;
+              const count = levelCounts[lvl] ?? 0;
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  className={`logs-counter-chip${active ? " logs-counter-chip--active" : ""}`}
+                  onClick={() => setLevel(active ? "all" : lvl)}
+                  aria-pressed={active}
+                >
+                  <span className={`log-pill log-pill--${lvl.toLowerCase()}`}>{lvl}</span>
+                  <span className="logs-counter-chip__count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         <div className="logs-filters">
           <input
@@ -254,9 +281,9 @@ export function LogsApp() {
                         <div className="log-row__top">
                           <span className={`log-pill log-pill--${entry.level.toLowerCase()}`}>{entry.level}</span>
                           <span className="log-row__time">{formatTime(entry.timestamp)}</span>
-                          <span className="log-row__source">{entry.source}</span>
+                          <span className="log-row__source">{highlightLogText(entry.source, deferredSearch)}</span>
                         </div>
-                        <div className="log-row__summary">{entry.summary}</div>
+                        <div className="log-row__summary">{highlightLogText(entry.summary, deferredSearch)}</div>
                         <div className="log-row__meta">
                           {entry.executionId ? <span className="log-chip">{entry.executionId}</span> : null}
                           {entry.tag ? <span className="log-chip">{entry.tag}</span> : null}
@@ -279,7 +306,7 @@ export function LogsApp() {
           <header className="logs-detail__header">
             <div>
               <div className="logs-toolbar__eyebrow">Log detail</div>
-              <h2 className="logs-detail__title">{selectedLog.summary}</h2>
+              <h2 className="logs-detail__title">{highlightLogText(selectedLog.summary, deferredSearch)}</h2>
             </div>
             <button className="logs-button" onClick={() => setDetailOpen(false)} type="button">
               Close
@@ -301,7 +328,7 @@ export function LogsApp() {
 
           <section className="logs-detail__section">
             <div className="logs-detail__label">Message</div>
-            <pre className="logs-detail__message">{selectedLog.message}</pre>
+            <pre className="logs-detail__message">{highlightLogText(selectedLog.message, deferredSearch)}</pre>
           </section>
 
           {selectedLog.details.length > 0 ? (

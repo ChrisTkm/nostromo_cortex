@@ -74,6 +74,50 @@
   gap: 8px;
 }
 
+.logs-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+.logs-counter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 65%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-bg) 96%, transparent);
+  color: var(--cortex-text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.logs-counter-chip:hover {
+  border-color: var(--cortex-border-strong);
+}
+
+.logs-counter-chip--active {
+  color: var(--cortex-accent);
+  border-color: color-mix(in srgb, var(--cortex-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 14%, transparent);
+}
+
+.logs-counter-chip__count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.logs-highlight {
+  padding: 0 1px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cortex-accent) 28%, transparent);
+  color: inherit;
+}
+
 .logs-filters__time-row {
   display: flex;
   gap: 6px;

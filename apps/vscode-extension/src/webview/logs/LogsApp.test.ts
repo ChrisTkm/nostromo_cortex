@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -103,6 +103,33 @@ describe("LogsApp helpers", () => {
       const old = { ...sampleLogs[0]!, level: "ERROR", timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() };
       const timeFiltered = filterLogsByTime([recent, recentError, old], "24h");
       expect(timeFiltered).toEqual([recent, recentError]);
+    });
+  });
+
+  describe("level counters", () => {
+    it("countLogsByLevel yields {ERROR: 2, INFO: 1} for [ERROR, ERROR, INFO]", () => {
+      const logs = [
+        { level: "ERROR" },
+        { level: "ERROR" },
+        { level: "INFO" }
+      ] as any;
+      expect(countLogsByLevel(logs)).toEqual({ ERROR: 2, INFO: 1 });
+    });
+
+    it("countLogsByLevel reflects only logs passed after source filter", () => {
+      const logs = [
+        { level: "ERROR", source: "A" },
+        { level: "ERROR", source: "B" },
+        { level: "INFO", source: "A" }
+      ] as any;
+      const filteredBySource = logs.filter((entry: any) => entry.source === "B");
+      expect(countLogsByLevel(filteredBySource)).toEqual({ ERROR: 1 });
+    });
+
+    it("sortLogLevelKeys orders ERROR, WARNING, INFO, DEBUG, custom at end", () => {
+      expect(sortLogLevelKeys(["INFO", "CUSTOM", "DEBUG", "ERROR", "WARNING"])).toEqual([
+        "ERROR", "WARNING", "INFO", "DEBUG", "CUSTOM"
+      ]);
     });
   });
 });

@@ -18,6 +18,29 @@ export type LogExecutionGroup = {
   isUngrouped: boolean;
 };
 
+export const LOG_LEVEL_ORDER = ["ERROR", "WARNING", "WARN", "INFO", "DEBUG", "TRACE"] as const;
+
+export function countLogsByLevel(logs: LogRecord[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const entry of logs) {
+    const key = entry.level.toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export function sortLogLevelKeys(keys: string[]): string[] {
+  const known = LOG_LEVEL_ORDER.map((value) => value as string);
+  return [...keys].sort((left, right) => {
+    const leftIndex = known.indexOf(left);
+    const rightIndex = known.indexOf(right);
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  });
+}
+
 export function filterLogsByTime(logs: LogRecord[], timeRange: "all" | "1h" | "24h" | "7d"): LogRecord[] {
   if (timeRange === "all") return logs;
   const cutoff = Date.now() - TIME_RANGE_MS[timeRange];
