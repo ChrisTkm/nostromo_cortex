@@ -4,6 +4,7 @@ import {
   Controls,
   MarkerType,
   MiniMap,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -11,7 +12,7 @@ import {
   useEdgesState,
   useNodesState
 } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { computeLayout } from "../lib/layout";
 import type { CriticalPathResult, GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
@@ -34,6 +35,8 @@ export function Graph(props: {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TaskNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [instance, setInstance] = useState<ReactFlowInstance<Node<TaskNodeData>, Edge> | null>(null);
+  const layoutCacheRef = useRef<Map<string, Map<string, { x: number; y: number }>>>(new Map());
+  const LAYOUT_CACHE_MAX = 5;
 
   const nodeTypes = useMemo(() => ({ task: TaskNode }), []);
   const rawNodes = useMemo<Array<Node<TaskNodeData>>>(() => {
@@ -106,9 +109,37 @@ export function Graph(props: {
       return;
     }
 
-    const layouted = computeLayout(rawNodes, rawEdges, props.orientation);
-    setNodes(layouted.nodes);
-    setEdges(layouted.edges);
+    const nodeIdSig = rawNodes.map((n) => n.id).sort().join(",");
+    const edgeSig = rawEdges.map((e) => `${e.source}>${e.target}`).sort().join("|");
+    const layoutKey = `${props.orientation}::${nodeIdSig}::${edgeSig}`;
+
+    const cache = layoutCacheRef.current;
+    const sourcePosition = props.orientation === "LR" ? Position.Right : Position.Bottom;
+    const targetPosition = props.orientation === "LR" ? Position.Left : Position.Top;
+
+    let positions = cache.get(layoutKey);
+    if (positions) {
+      cache.delete(layoutKey);
+      cache.set(layoutKey, positions);
+    } else {
+      const layouted = computeLayout(rawNodes, rawEdges, props.orientation);
+      positions = new Map(layouted.nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }]));
+      cache.set(layoutKey, positions);
+      while (cache.size > LAYOUT_CACHE_MAX) {
+        const oldest = cache.keys().next().value;
+        if (oldest === undefined) break;
+        cache.delete(oldest);
+      }
+    }
+
+    const positionedNodes = rawNodes.map((n) => {
+      const pos = positions!.get(n.id);
+      if (!pos) return n;
+      return { ...n, position: pos, sourcePosition, targetPosition };
+    });
+
+    setNodes(positionedNodes);
+    setEdges(rawEdges);
   }, [props.orientation, props.snapshot, rawEdges, rawNodes, setEdges, setNodes]);
 
   useEffect(() => {
