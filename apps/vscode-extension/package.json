@@ -27,6 +27,8 @@
     "onCommand:cortex.archivePlan",
     "onCommand:cortex.restorePlan",
     "onCommand:cortex.deleteArchivedPlan",
+    "onCommand:cortex.exportArchive",
+    "onCommand:cortex.importArchive",
     "onCommand:cortex.setMongoUrl",
     "onCommand:cortex.clearMongoUrl"
   ],
@@ -161,6 +163,14 @@
       {
         "command": "cortex.deleteArchivedPlan",
         "title": "Cortex: Delete Archived Plan"
+      },
+      {
+        "command": "cortex.exportArchive",
+        "title": "Cortex: Export Archive (ZIP)"
+      },
+      {
+        "command": "cortex.importArchive",
+        "title": "Cortex: Import Archive (ZIP)"
       },
       {
         "command": "cortex.listCycles",
@@ -372,6 +382,7 @@
     "html-to-image": "^1.11.13",
     "mongodb": "^6.16.0",
     "node-sql-parser": "^5.4.0",
+    "jszip": "^3.10.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "web-tree-sitter": "^0.26.8"

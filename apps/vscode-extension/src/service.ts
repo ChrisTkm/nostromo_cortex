@@ -53,6 +53,15 @@ type DeleteArchivedPlanResult = {
   noteCount: number;
   jsonDeleted: boolean;
 };
+type ExportArchiveResult = {
+  zipPath: string;
+  planCount: number;
+};
+type ImportArchiveResult = {
+  imported: string[];
+  skipped: string[];
+  failed: Array<{ name: string; error: string }>;
+};
 export type ArchivedTaskSummary = {
   code: string;
   shortTask: string;
@@ -530,6 +539,156 @@ export class ExtensionTaskService {
       noteCount: archivedNotesList.length,
       jsonDeleted
     };
+  }
+
+  async exportArchive(targetZipPath: string): Promise<ExportArchiveResult> {
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+
+    const archivePath = path.join(this.resolveArchivePath(), "plans");
+    let entries: string[];
+    try {
+      entries = await fs.readdir(archivePath);
+    } catch (error) {
+      throw new Error(`Could not read archive folder: ${String(error)}`);
+    }
+    const jsonFiles = entries.filter((name) => name.toLowerCase().endsWith(".json"));
+
+    const manifestPlans: Array<{ code: string; archived_at?: string; task_count: number; note_count: number }> = [];
+
+    for (const fileName of jsonFiles) {
+      const fullPath = path.join(archivePath, fileName);
+      const content = await fs.readFile(fullPath, "utf8");
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const plan = (parsed.plan as { code?: string; archived_at?: string }) ?? {};
+      if (typeof plan.code !== "string") continue;
+      zip.folder("plans")?.file(fileName, content);
+      manifestPlans.push({
+        code: plan.code,
+        archived_at: plan.archived_at,
+        task_count: Array.isArray(parsed.tasks) ? parsed.tasks.length : 0,
+        note_count: Array.isArray(parsed.notes) ? parsed.notes.length : 0
+      });
+    }
+
+    const manifest = {
+      version: 1,
+      generated_at: new Date().toISOString(),
+      source: "cortex-vscode-extension",
+      count: manifestPlans.length,
+      plans: manifestPlans
+    };
+    zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    await fs.writeFile(targetZipPath, zipBuffer);
+
+    return { zipPath: targetZipPath, planCount: manifestPlans.length };
+  }
+
+  async importArchive(sourceZipPath: string): Promise<ImportArchiveResult> {
+    const JSZip = (await import("jszip")).default;
+
+    let zipBuffer: Buffer;
+    try {
+      zipBuffer = await fs.readFile(sourceZipPath);
+    } catch (error) {
+      throw new Error(`Could not read ZIP file: ${String(error)}`);
+    }
+
+    let zip: typeof JSZip.prototype;
+    try {
+      zip = await JSZip.loadAsync(zipBuffer);
+    } catch (error) {
+      throw new Error(`Invalid ZIP file: ${String(error)}`);
+    }
+
+    const manifestFile = zip.file("manifest.json");
+    if (!manifestFile) {
+      throw new Error("ZIP missing manifest.json. Not a Cortex archive export.");
+    }
+    const manifestRaw = await manifestFile.async("string");
+    let manifest: { version?: number; plans?: Array<{ code?: string }> };
+    try {
+      manifest = JSON.parse(manifestRaw);
+    } catch {
+      throw new Error("Invalid manifest.json in ZIP.");
+    }
+    if (manifest.version !== 1) {
+      throw new Error(`Unsupported manifest version: ${manifest.version}.`);
+    }
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const archivedPlans = db.collection("archived_plans");
+    const archivedTasks = db.collection("archived_tasks");
+    const archivedNotes = db.collection("archived_notes");
+
+    const plansDir = path.join(this.resolveArchivePath(), "plans");
+    await fs.mkdir(plansDir, { recursive: true });
+
+    const imported: string[] = [];
+    const skipped: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+
+    for (const planRef of manifest.plans ?? []) {
+      const code = typeof planRef.code === "string" ? planRef.code : undefined;
+      if (!code) continue;
+      const fileName = `${code}.json`;
+      const zipEntry = zip.file(`plans/${fileName}`);
+      if (!zipEntry) {
+        failed.push({ name: code, error: `Missing plans/${fileName} in ZIP.` });
+        continue;
+      }
+
+      const existing = await archivedPlans.findOne({ code });
+      if (existing) {
+        skipped.push(code);
+        continue;
+      }
+
+      try {
+        const content = await zipEntry.async("string");
+        const parsed = JSON.parse(content) as { plan?: Record<string, unknown>; tasks?: Record<string, unknown>[]; notes?: Record<string, unknown>[] };
+        const planDoc = parsed.plan;
+        if (!planDoc) {
+          failed.push({ name: code, error: "Missing plan in snapshot." });
+          continue;
+        }
+
+        const stripId = <T extends Record<string, unknown>>(doc: T): Omit<T, "_id"> => {
+          const { _id: _drop, ...rest } = doc;
+          return rest;
+        };
+
+        await archivedPlans.insertOne(stripId(planDoc));
+        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+          await archivedTasks.insertMany(parsed.tasks.map(stripId), { ordered: false });
+        }
+        if (Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+          await archivedNotes.insertMany(parsed.notes.map(stripId), { ordered: false });
+        }
+
+        const fullPath = path.join(plansDir, fileName);
+        try {
+          await fs.access(fullPath);
+        } catch {
+          await fs.writeFile(fullPath, content, "utf8");
+        }
+
+        imported.push(code);
+      } catch (error) {
+        failed.push({ name: code, error: String(error) });
+      }
+    }
+
+    return { imported, skipped, failed };
   }
 
   async listArchivedPlans(): Promise<ArchivedPlanSummary[]> {

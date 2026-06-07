@@ -7,6 +7,7 @@ import {
   type TaskRecord
 } from "@cortex/core";
 import { MongoClient } from "mongodb";
+import path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -1054,6 +1055,51 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       } catch (error) {
         void vscode.window.showErrorMessage(`Could not delete archived plan ${planCode}: ${String(error)}`);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.exportArchive", async () => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const defaultUri = vscode.Uri.file(path.join(service.getArchivePath(), `cortex-archive-export-${stamp}.zip`));
+      const target = await vscode.window.showSaveDialog({
+        defaultUri,
+        filters: { "ZIP archive": ["zip"] },
+        title: "Export Cortex Archive"
+      });
+      if (!target) return;
+
+      try {
+        const result = await service.exportArchive(target.fsPath);
+        void vscode.window.showInformationMessage(
+          `Exported ${result.planCount} archived plan(s) to ${result.zipPath}.`
+        );
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Could not export archive: ${String(error)}`);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.importArchive", async () => {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { "ZIP archive": ["zip"] },
+        title: "Import Cortex Archive"
+      });
+      if (!picked || picked.length === 0) return;
+
+      try {
+        const result = await service.importArchive(picked[0].fsPath);
+        treeProvider.refresh();
+        await postSnapshot();
+        await postArchiveList();
+        const parts = [
+          `${result.imported.length} imported`,
+          result.skipped.length > 0 ? `${result.skipped.length} skipped` : null,
+          result.failed.length > 0 ? `${result.failed.length} failed` : null
+        ].filter(Boolean).join(", ");
+        void vscode.window.showInformationMessage(`Archive import: ${parts}.`);
+        if (result.failed.length > 0) {
+          service.logger.warn("importArchive failures", { failed: result.failed });
+        }
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Could not import archive: ${String(error)}`);
       }
     }),
     vscode.commands.registerCommand("cortex.setMongoUrl", async () => {
