@@ -74,7 +74,7 @@ describe("LogsApp helpers", () => {
       isUngrouped: false
     });
     expect(groups[0]?.logs.map((entry) => entry.tag)).toEqual(["END", "BEGIN"]);
-    expect(groups[1]).toMatchObject({ id: "ungrouped", isUngrouped: true });
+    expect(groups[1]).toMatchObject({ isUngrouped: true });
   });
 
   describe("filterLogsByTime", () => {

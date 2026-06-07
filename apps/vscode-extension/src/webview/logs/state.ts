@@ -83,28 +83,32 @@ export function buildLogKey(entry: LogRecord) {
 
 export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
   const byExecution = new Map<string, LogRecord[]>();
-  const ungrouped: LogRecord[] = [];
+  const ungroupedByDay = new Map<string, LogRecord[]>();
 
   for (const entry of logs) {
-    if (!entry.executionId) {
-      ungrouped.push(entry);
-      continue;
+    if (entry.executionId) {
+      const current = byExecution.get(entry.executionId) ?? [];
+      current.push(entry);
+      byExecution.set(entry.executionId, current);
+    } else {
+      const day = entry.day || entry.timestamp.slice(0, 10);
+      const current = ungroupedByDay.get(day) ?? [];
+      current.push(entry);
+      ungroupedByDay.set(day, current);
     }
-
-    const current = byExecution.get(entry.executionId) ?? [];
-    current.push(entry);
-    byExecution.set(entry.executionId, current);
   }
 
-  const groups = [...byExecution.entries()]
-    .map(([executionId, entries]) => buildExecutionGroup(executionId, entries))
-    .sort((left, right) => right.beginTimestamp.localeCompare(left.beginTimestamp));
+  const groups: LogExecutionGroup[] = [];
 
-  if (ungrouped.length > 0) {
-    groups.push(buildExecutionGroup("ungrouped", ungrouped, true));
+  for (const [executionId, entries] of byExecution) {
+    groups.push(buildExecutionGroup(executionId, entries));
   }
 
-  return groups;
+  for (const [day, entries] of ungroupedByDay) {
+    groups.push(buildExecutionGroup(`ungrouped:${day}`, entries, true, `ungrouped · ${day}`));
+  }
+
+  return groups.sort((left, right) => right.beginTimestamp.localeCompare(left.beginTimestamp));
 }
 
 export function coerceLogFilterValue(current: string, availableValues: string[]) {
@@ -135,7 +139,7 @@ export function buildLogJson(log: LogRecord): string {
   return JSON.stringify(log, null, 2);
 }
 
-function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrouped = false): LogExecutionGroup {
+function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrouped = false, labelOverride?: string): LogExecutionGroup {
   const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const begin = ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;
   const end = [...ordered].reverse().find((entry) => matchesTag(entry, "END"));
@@ -147,7 +151,7 @@ function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrou
 
   return {
     id: executionId,
-    label: isUngrouped ? "ungrouped" : executionId,
+    label: labelOverride ?? (isUngrouped ? "ungrouped" : executionId),
     logs: newestFirst,
     beginTimestamp: begin.timestamp,
     ...(end ? { endTimestamp: end.timestamp } : {}),

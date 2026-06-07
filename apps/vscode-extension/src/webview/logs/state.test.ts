@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildLogJson, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
+import type { LogRecord } from "../../logs";
+
+function mockLog(overrides: Partial<LogRecord>): LogRecord {
+  return {
+    day: "2026-06-07",
+    folder: "root",
+    level: "INFO",
+    message: "msg",
+    source: "src",
+    summary: "sum",
+    timestamp: "2026-06-07T10:00:00.000Z",
+    details: [],
+    ...overrides
+  } as LogRecord;
+}
 
 describe("countLogsByLevel", () => {
   it("returns counts by uppercased level for a mixed list", () => {
@@ -61,5 +76,97 @@ describe("LOGS_PYTHON_SNIPPET", () => {
     expect(LOGS_PYTHON_SNIPPET).toContain('"execution_id"');
     expect(LOGS_PYTHON_SNIPPET).toContain('"tag"');
     expect(LOGS_PYTHON_SNIPPET).toContain('"level"');
+  });
+});
+
+describe("buildExecutionGroups", () => {
+  it("3 ungrouped logs in 3 different days → 3 subgroups sorted desc", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06" }),
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", day: "2026-06-05" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(3);
+    groups.forEach((g) => expect(g.isUngrouped).toBe(true));
+    expect(groups[0]!.label).toBe("ungrouped · 2026-06-07");
+    expect(groups[1]!.label).toBe("ungrouped · 2026-06-06");
+    expect(groups[2]!.label).toBe("ungrouped · 2026-06-05");
+  });
+
+  it("5 ungrouped logs across 2 days (3+2) → 2 groups, newest first", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T08:00:00.000Z", day: "2026-06-07" }),
+      mockLog({ timestamp: "2026-06-07T09:00:00.000Z", day: "2026-06-07" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06" }),
+      mockLog({ timestamp: "2026-06-06T11:00:00.000Z", day: "2026-06-06" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.label).toBe("ungrouped · 2026-06-07");
+    expect(groups[0]!.logs).toHaveLength(3);
+    expect(groups[1]!.label).toBe("ungrouped · 2026-06-06");
+    expect(groups[1]!.logs).toHaveLength(2);
+  });
+
+  it("mixed: executions + ungrouped subgroups interleaved by timestamp desc", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", day: "2026-06-08", executionId: "exec-late" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06", executionId: "exec-early" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(3);
+    expect(groups[0]!.id).toBe("exec-late");
+    expect(groups[1]!.id).toBe("ungrouped:2026-06-07");
+    expect(groups[2]!.id).toBe("exec-early");
+  });
+
+  it("only executions, no ungrouped → no isUngrouped groups", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", day: "2026-06-08", executionId: "a" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07", executionId: "b" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups.every((g) => !g.isUngrouped)).toBe(true);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.id).toBe("a");
+    expect(groups[1]!.id).toBe("b");
+  });
+
+  it("only ungrouped, all same day → 1 group", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.isUngrouped).toBe(true);
+    expect(groups[0]!.label).toBe("ungrouped · 2026-06-07");
+    expect(groups[0]!.logs).toHaveLength(2);
+  });
+
+  it("empty input → empty array", () => {
+    expect(buildExecutionGroups([])).toEqual([]);
+  });
+
+  it("subgroup contains correct beginTimestamp and endTimestamp", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T08:00:00.000Z", day: "2026-06-07", tag: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T09:00:00.000Z", day: "2026-06-07", tag: "END" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.beginTimestamp).toBe("2026-06-07T08:00:00.000Z");
+    expect(groups[0]!.endTimestamp).toBe("2026-06-07T09:00:00.000Z");
+  });
+
+  it("preserves dominantTag and classMethod from representative log", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07", level: "ERROR", className: "MyClass", methodName: "run" })
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.dominantTag).toBe("ERROR");
+    expect(groups[0]!.classMethod).toBe("MyClass.run");
   });
 });
