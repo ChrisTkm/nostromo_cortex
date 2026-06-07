@@ -41,7 +41,7 @@ export function TaskNode({ data, selected }: NodeProps) {
           <span className="task-node__code">{data.code}</span>
           <span className={`task-node__status ${STATUS_CLASS_NAMES[data.status]}`}>{STATUS_LABELS[data.status]}</span>
         </div>
-        <div className="task-node__label">{data.label}</div>
+        <div className="task-node__label" title={data.label}>{data.label}</div>
         {data.lane ? <div className="task-node__lane">{data.lane}</div> : null}
       </div>
       <Handle className="task-node__handle" position={sourcePosition} type="source" />

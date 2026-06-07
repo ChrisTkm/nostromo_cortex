@@ -5,7 +5,7 @@ import type { TaskNodeData } from "../components/TaskNode";
 import type { GraphDirection } from "../types";
 
 const NODE_WIDTH = 244;
-const NODE_HEIGHT = 112;
+const NODE_HEIGHT = 140;
 
 export function computeLayout(
   nodes: Array<Node<TaskNodeData>>,

@@ -370,8 +370,10 @@
 
 .task-node {
   position: relative;
-  min-width: 244px;
-  min-height: 112px;
+  width: 244px;
+  height: 140px;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 12px;
   border: 1px solid var(--vscode-widget-border);
   border-radius: 16px;
@@ -422,6 +424,11 @@
   font-size: var(--cortex-text-sm);
   font-weight: 700;
   line-height: var(--cortex-line-height);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .task-node__lane,
