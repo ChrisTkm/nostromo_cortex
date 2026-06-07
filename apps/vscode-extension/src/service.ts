@@ -47,6 +47,12 @@ type RestorePlanResult = {
   taskCount: number;
   noteCount: number;
 };
+type DeleteArchivedPlanResult = {
+  planCode: string;
+  taskCount: number;
+  noteCount: number;
+  jsonDeleted: boolean;
+};
 export type ArchivedTaskSummary = {
   code: string;
   shortTask: string;
@@ -431,6 +437,98 @@ export class ExtensionTaskService {
       planCode: code,
       taskCount: archivedTasksList.length,
       noteCount: archivedNotesList.length
+    };
+  }
+
+  async deleteArchivedPlan(planCode: string, options: { keepJson: boolean }): Promise<DeleteArchivedPlanResult> {
+    const code = planCode.trim();
+    if (!code) {
+      throw new Error("Plan code is required.");
+    }
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const archivedPlans = db.collection("archived_plans");
+    const archivedTasks = db.collection("archived_tasks");
+    const archivedNotes = db.collection("archived_notes");
+
+    const archivedPlan = await archivedPlans.findOne({ code });
+    if (!archivedPlan) {
+      throw new Error(`Archived plan ${code} not found.`);
+    }
+
+    const archivedTasksList = await archivedTasks.find({ plan_code: code }).toArray();
+    const taskCodes = archivedTasksList
+      .map((task) => (typeof task.code === "string" ? task.code : undefined))
+      .filter((value): value is string => Boolean(value));
+    const archivedNotesList = await archivedNotes
+      .find({
+        $or: [
+          { plan_code: code },
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
+        ]
+      })
+      .toArray();
+
+    const jsonPath = typeof archivedPlan.json_path === "string" ? archivedPlan.json_path : undefined;
+
+    const runDeleteWrites = async (session?: ClientSession) => {
+      const deletedNotes = archivedNotesList.length > 0
+        ? await archivedNotes.deleteMany({ _id: { $in: archivedNotesList.map((n) => n._id) } }, session ? { session } : undefined)
+        : { deletedCount: 0 };
+      const deletedTasks = archivedTasksList.length > 0
+        ? await archivedTasks.deleteMany({ _id: { $in: archivedTasksList.map((t) => t._id) } }, session ? { session } : undefined)
+        : { deletedCount: 0 };
+      const deletedPlan = await archivedPlans.deleteOne({ _id: archivedPlan._id }, session ? { session } : undefined);
+      if (
+        (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length ||
+        (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length ||
+        deletedPlan.deletedCount !== 1
+      ) {
+        this.logger.warn("deleteArchivedPlan delete count mismatch", {
+          planCode: code,
+          expectedNotes: archivedNotesList.length,
+          deletedNotes: deletedNotes.deletedCount,
+          expectedTasks: archivedTasksList.length,
+          deletedTasks: deletedTasks.deletedCount,
+          expectedPlans: 1,
+          deletedPlans: deletedPlan.deletedCount
+        });
+      }
+    };
+
+    const client = sharedClient.get();
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await runDeleteWrites(session);
+      });
+    } catch (error) {
+      this.logger.warn("deleteArchivedPlan transaction failed; falling back to ordered writes", {
+        planCode: code,
+        error: String(error)
+      });
+      await runDeleteWrites();
+    } finally {
+      await session.endSession();
+    }
+
+    let jsonDeleted = false;
+    if (!options.keepJson && jsonPath) {
+      try {
+        await fs.unlink(jsonPath);
+        jsonDeleted = true;
+      } catch (error) {
+        this.logger.warn("deleteArchivedPlan json unlink failed", { jsonPath, error: String(error) });
+      }
+    }
+
+    return {
+      planCode: code,
+      taskCount: archivedTasksList.length,
+      noteCount: archivedNotesList.length,
+      jsonDeleted
     };
   }
 

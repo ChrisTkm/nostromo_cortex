@@ -455,6 +455,10 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand("cortex.restorePlan", message.planCode.trim());
         return;
       }
+      if (message?.type === "archive:deletePlan" && typeof message.planCode === "string" && message.planCode.trim()) {
+        await vscode.commands.executeCommand("cortex.deleteArchivedPlan", message.planCode.trim());
+        return;
+      }
       if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {
         const trimmed = message.jsonPath.trim();
         if (!service.isJsonPathInArchive(trimmed)) {
@@ -1023,6 +1027,33 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       } catch (error) {
         void vscode.window.showErrorMessage(`Could not restore plan ${planCode}: ${String(error)}`);
+      }
+    }),
+    vscode.commands.registerCommand("cortex.deleteArchivedPlan", async (arg?: string | { planCode?: string; kind?: string; label?: string }) => {
+      const planCode = await resolveArchivePlanCode(service, arg);
+      if (!planCode) return;
+
+      const KEEP = "Delete (keep JSON)";
+      const ALL = "Delete all (incl. JSON)";
+      const choice = await vscode.window.showWarningMessage(
+        `Delete archived plan ${planCode} permanently? This removes the archived_plans/tasks/notes documents from Mongo. The JSON snapshot can be kept on disk as a backup or deleted with the data.`,
+        { modal: true },
+        KEEP,
+        ALL
+      );
+      if (choice !== KEEP && choice !== ALL) return;
+      const keepJson = choice === KEEP;
+
+      try {
+        const result = await service.deleteArchivedPlan(planCode, { keepJson });
+        treeProvider.refresh();
+        await postSnapshot();
+        await postArchiveList();
+        void vscode.window.showInformationMessage(
+          `Archived plan ${result.planCode} deleted (${result.taskCount} tasks, ${result.noteCount} notes${result.jsonDeleted ? ", JSON deleted" : ", JSON kept"}).`
+        );
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Could not delete archived plan ${planCode}: ${String(error)}`);
       }
     }),
     vscode.commands.registerCommand("cortex.setMongoUrl", async () => {

@@ -213,7 +213,8 @@ export function ArchiveApp() {
 
 function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
   return (
-    <div className="archive-details">
+    <>
+      <div className="archive-details">
       <div className="archive-details__toolbar">
         <div className="archive-tags">
           {plan.tags.length > 0 ? plan.tags.map((tag) => <span className="archive-chip archive-chip--static" key={tag}>{tag}</span>) : <span className="archive-muted">No tags</span>}
@@ -286,7 +287,17 @@ function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
         </div>
       </section>
     </div>
-  );
+    <div className="archive-details__footer">
+      <button
+        className="archive-button archive-button--danger"
+        onClick={() => vscode.postMessage({ type: "archive:deletePlan", planCode: plan.code })}
+        type="button"
+      >
+        Delete archived plan
+      </button>
+    </div>
+  </>
+);
 }
 
 type AgeBucket = "today" | "week" | "month" | "older" | "unknown";

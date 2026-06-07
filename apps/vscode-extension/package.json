@@ -26,6 +26,7 @@
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
     "onCommand:cortex.restorePlan",
+    "onCommand:cortex.deleteArchivedPlan",
     "onCommand:cortex.setMongoUrl",
     "onCommand:cortex.clearMongoUrl"
   ],
@@ -156,6 +157,10 @@
       {
         "command": "cortex.restorePlan",
         "title": "Cortex: Restore Plan"
+      },
+      {
+        "command": "cortex.deleteArchivedPlan",
+        "title": "Cortex: Delete Archived Plan"
       },
       {
         "command": "cortex.listCycles",

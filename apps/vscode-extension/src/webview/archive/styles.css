@@ -99,6 +99,23 @@
   background: rgba(248, 113, 113, 0.1);
 }
 
+.archive-details__footer {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--vscode-widget-border) 40%, transparent);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.archive-button--danger {
+  border-color: color-mix(in srgb, var(--status-failed) 50%, transparent);
+  color: var(--status-failed);
+}
+
+.archive-button--danger:hover {
+  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
+}
+
 .archive-chip--static {
   cursor: default;
   font-size: 11px;
