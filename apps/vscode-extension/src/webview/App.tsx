@@ -7,6 +7,7 @@ import { PlanBanner } from "./components/PlanBanner";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import type { ActionPlanRecord, CriticalPathResult, FilterCatalog, GraphDirection, GraphSnapshot, PlanTaskSummary, SnapshotMessage, SnapshotNode, TaskFilter } from "./types";
+import { toPng, toSvg } from "html-to-image";
 
 declare global {
   interface Window {
@@ -19,6 +20,26 @@ declare global {
 }
 
 const vscode = window.acquireVsCodeApi();
+
+async function exportGraph(format: "png" | "svg", planCodeForName: string | undefined) {
+  const element = document.querySelector<HTMLElement>(".app-graph .react-flow");
+  if (!element) return;
+
+  const backgroundColor = window.getComputedStyle(element).backgroundColor || "#0d1117";
+
+  const dataUrl = format === "png"
+    ? await toPng(element, { backgroundColor, pixelRatio: 2, cacheBust: true })
+    : await toSvg(element, { backgroundColor, cacheBust: true });
+
+  const planSlug = (planCodeForName ?? "all").toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `cortex-graph-${planSlug}-${stamp}.${format}`;
+
+  const link = document.createElement("a");
+  link.download = filename;
+  link.href = dataUrl;
+  link.click();
+}
 
 export function App() {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
@@ -243,6 +264,14 @@ export function App() {
     vscode.postMessage({ type: "showOrphanWarnings" });
   }
 
+  function handleExportPng() {
+    void exportGraph("png", snapshot?.planContext?.code ?? filters.planCode);
+  }
+
+  function handleExportSvg() {
+    void exportGraph("svg", snapshot?.planContext?.code ?? filters.planCode);
+  }
+
   const orphanCount = snapshot?.warnings?.orphans.length ?? 0;
 
   return (
@@ -297,6 +326,8 @@ export function App() {
         onOrientationChange={handleOrientationChange}
         onToggleMiniMap={handleToggleMiniMap}
         onToggleLanes={handleToggleLanes}
+        onExportPng={handleExportPng}
+        onExportSvg={handleExportSvg}
         orientation={orientation}
         showMiniMap={showMiniMap}
         statusCounts={{

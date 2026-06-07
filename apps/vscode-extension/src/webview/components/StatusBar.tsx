@@ -11,6 +11,8 @@ const STATUS_META: Array<{ status: TaskStatus; label: string; className: string 
 export function StatusBar(props: {
   criticalPath?: CriticalPathResult;
   groupByLane: boolean;
+  onExportPng(): void;
+  onExportSvg(): void;
   onOrientationChange(direction: GraphDirection): void;
   onToggleMiniMap(): void;
   onToggleLanes(): void;
@@ -47,6 +49,8 @@ export function StatusBar(props: {
             Critical path n/a
           </button>
         )}
+        <button className="status-bar__button" onClick={props.onExportPng} type="button" title="Exportar PNG (2x)">PNG</button>
+        <button className="status-bar__button" onClick={props.onExportSvg} type="button" title="Exportar SVG">SVG</button>
         <span className="status-bar__label">{Math.round(props.zoom * 100)}%</span>
         <button className="status-bar__button" onClick={() => props.onOrientationChange(props.orientation === "LR" ? "TB" : "LR")} type="button">
           {props.orientation}
