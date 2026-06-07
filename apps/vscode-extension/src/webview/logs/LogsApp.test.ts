@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -145,6 +145,33 @@ describe("LogsApp helpers", () => {
     it("LOGS_PYTHON_SNIPPET is a non-empty string with pymongo", () => {
       expect(LOGS_PYTHON_SNIPPET.length).toBeGreaterThan(0);
       expect(LOGS_PYTHON_SNIPPET).toContain("from pymongo import MongoClient");
+    });
+  });
+
+  describe("export serializers", () => {
+    it("buildLogsJsonExport returns a JSON array with all logs", () => {
+      const json = buildLogsJsonExport(sampleLogs);
+      const parsed = JSON.parse(json);
+      expect(parsed).toHaveLength(2);
+      expect(parsed[0]?.source).toBe("nostromo.bootstrap");
+    });
+
+    it("buildLogsCsvExport produces header and data rows", () => {
+      const csv = buildLogsCsvExport(sampleLogs);
+      const lines = csv.split("\n");
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain("timestamp");
+      expect(lines[0]).toContain("level");
+      expect(lines[0]).toContain("summary");
+      expect(lines[1]).toContain("2026-04-20T10:00:00.000Z");
+    });
+
+    it("buildLogsCsvExport handles array values (details) as JSON", () => {
+      const logsWithDetails = [
+        { ...sampleLogs[0]!, details: [{ key: "k", label: "K", value: "v" }] }
+      ];
+      const csv = buildLogsCsvExport(logsWithDetails);
+      expect(csv).toContain('"[{""key"":""k""');
     });
   });
 });

@@ -1,6 +1,6 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { buildExecutionGroups, buildLogJson, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
@@ -153,6 +153,16 @@ export function LogsApp() {
     }, 1500);
   }
 
+  function exportLogs(format: "csv" | "json") {
+    if (filteredLogs.length === 0) return;
+    const content = format === "csv"
+      ? buildLogsCsvExport(filteredLogs)
+      : buildLogsJsonExport(filteredLogs);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const defaultFilename = `cortex-logs-${timestamp}.${format}`;
+    vscode.postMessage({ type: "logs:export", format, content, defaultFilename });
+  }
+
   function toggleGroup(groupId: string) {
     setCollapsedGroups((current) => {
       const next = new Set(current);
@@ -179,6 +189,12 @@ export function LogsApp() {
             </span>
             <button className="logs-button logs-button--primary" onClick={() => vscode.postMessage({ type: "logs:refresh" })} type="button">
               Refresh
+            </button>
+            <button className="logs-button" onClick={() => exportLogs("csv")} disabled={filteredLogs.length === 0} type="button" title="Export the currently filtered logs as CSV">
+              Export CSV
+            </button>
+            <button className="logs-button" onClick={() => exportLogs("json")} disabled={filteredLogs.length === 0} type="button" title="Export the currently filtered logs as JSON">
+              Export JSON
             </button>
             {autoRefreshSeconds > 0 ? (
               <span className="logs-toolbar__autorefresh" title={`Auto-refreshing every ${autoRefreshSeconds}s`}>

@@ -139,6 +139,50 @@ export function buildLogJson(log: LogRecord): string {
   return JSON.stringify(log, null, 2);
 }
 
+export function buildLogsJsonExport(logs: LogRecord[]): string {
+  return JSON.stringify(logs, null, 2);
+}
+
+const CSV_COLUMNS = [
+  "timestamp",
+  "level",
+  "source",
+  "folder",
+  "executionId",
+  "tag",
+  "event",
+  "className",
+  "methodName",
+  "process",
+  "loggerName",
+  "title",
+  "summary",
+  "message",
+  "day",
+  "details"
+] as const;
+
+export function buildLogsCsvExport(logs: LogRecord[]): string {
+  const header = CSV_COLUMNS.join(",");
+  const rows = logs.map((log) => CSV_COLUMNS.map((column) => csvCell(csvValue(log, column))).join(","));
+  return [header, ...rows].join("\n");
+}
+
+function csvValue(log: LogRecord, column: (typeof CSV_COLUMNS)[number]): string {
+  if (column === "details") {
+    return JSON.stringify(log.details ?? []);
+  }
+  const value = (log as unknown as Record<string, unknown>)[column];
+  return value === undefined || value === null ? "" : String(value);
+}
+
+function csvCell(value: string): string {
+  if (value.includes(",") || value.includes("\"") || value.includes("\n") || value.includes("\r")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
 function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrouped = false, labelOverride?: string): LogExecutionGroup {
   const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const begin = ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;

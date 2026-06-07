@@ -45,6 +45,8 @@ const {
   outputClearMock,
   outputShowMock,
   clipboardWriteTextMock,
+  showSaveDialogMock,
+  fsWriteFileMock,
   treePlansRef,
   treeProviderInstances,
   treeRefreshMock
@@ -117,6 +119,8 @@ const {
   const outputClearMock = vi.fn();
   const outputShowMock = vi.fn();
   const clipboardWriteTextMock = vi.fn();
+  const showSaveDialogMock = vi.fn();
+  const fsWriteFileMock = vi.fn();
   const createOutputChannelMock = vi.fn(() => ({
     appendLine: outputAppendLineMock,
     clear: outputClearMock,
@@ -237,6 +241,8 @@ const {
     outputClearMock,
     outputShowMock,
     clipboardWriteTextMock,
+    showSaveDialogMock,
+    fsWriteFileMock,
     treePlansRef,
     treeProviderInstances,
     treeRefreshMock
@@ -279,6 +285,7 @@ vi.mock("vscode", () => ({
     showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: showErrorMessageMock,
+    showSaveDialog: showSaveDialogMock,
     createOutputChannel: createOutputChannelMock
   },
   commands: {
@@ -313,7 +320,10 @@ vi.mock("vscode", () => ({
       update: updateConfigMock
     })),
     onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
-    openTextDocument: openTextDocumentMock
+    openTextDocument: openTextDocumentMock,
+    fs: {
+      writeFile: fsWriteFileMock
+    }
   },
   env: {
     clipboard: {
@@ -979,6 +989,58 @@ describe("activate notes commands", () => {
         language: "markdown"
       });
       expect(showTextDocumentMock).toHaveBeenCalledWith(fakeDoc, { preview: false });
+    });
+  });
+
+  describe("logs:export host handler", () => {
+    beforeEach(() => {
+      showSaveDialogMock.mockReset();
+      fsWriteFileMock.mockReset();
+    });
+
+    it("export csv calls showSaveDialog with csv filter and writes file on confirm", async () => {
+      showSaveDialogMock.mockResolvedValueOnce({ fsPath: "C:\\temp\\cortex-logs-export.csv" });
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "csv", content: "a,b\n1,2", defaultFilename: "cortex-logs-test.csv" });
+      expect(showSaveDialogMock).toHaveBeenCalledWith({
+        defaultUri: { fsPath: "cortex-logs-test.csv" },
+        filters: { CSV: ["csv"] }
+      });
+      expect(fsWriteFileMock).toHaveBeenCalledWith(
+        { fsPath: "C:\\temp\\cortex-logs-export.csv" },
+        expect.any(Uint8Array)
+      );
+    });
+
+    it("export json calls showSaveDialog with json filter and writes file on confirm", async () => {
+      showSaveDialogMock.mockResolvedValueOnce({ fsPath: "C:\\temp\\cortex-logs-export.json" });
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "json", content: "[{}]", defaultFilename: "cortex-logs-test.json" });
+      expect(showSaveDialogMock).toHaveBeenCalledWith({
+        defaultUri: { fsPath: "cortex-logs-test.json" },
+        filters: { JSON: ["json"] }
+      });
+      expect(fsWriteFileMock).toHaveBeenCalledWith(
+        { fsPath: "C:\\temp\\cortex-logs-export.json" },
+        expect.any(Uint8Array)
+      );
+    });
+
+    it("does not write file when showSaveDialog returns undefined (cancelled)", async () => {
+      showSaveDialogMock.mockResolvedValueOnce(undefined);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "csv", content: "a,b\n1,2", defaultFilename: "cortex-logs.csv" });
+      expect(fsWriteFileMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores invalid format value", async () => {
+      showSaveDialogMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:export", format: "xlsx", content: "x", defaultFilename: "f.xlsx" });
+      expect(showSaveDialogMock).not.toHaveBeenCalled();
+      expect(fsWriteFileMock).not.toHaveBeenCalled();
     });
   });
 

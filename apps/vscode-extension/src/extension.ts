@@ -524,6 +524,24 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           language: "markdown"
         });
         await vscode.window.showTextDocument(doc, { preview: false });
+        return;
+      }
+      if (
+        message?.type === "logs:export" &&
+        (message.format === "csv" || message.format === "json") &&
+        typeof message.content === "string" &&
+        typeof message.defaultFilename === "string" &&
+        message.defaultFilename.length > 0
+      ) {
+        const uri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(message.defaultFilename),
+          filters: message.format === "csv"
+            ? { "CSV": ["csv"] }
+            : { "JSON": ["json"] }
+        });
+        if (uri) {
+          await vscode.workspace.fs.writeFile(uri, Buffer.from(message.content, "utf8"));
+        }
       }
     });
   }

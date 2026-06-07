@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExecutionGroups, buildLogJson, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
 import type { LogRecord } from "../../logs";
 
 function mockLog(overrides: Partial<LogRecord>): LogRecord {
@@ -159,6 +159,79 @@ describe("buildExecutionGroups", () => {
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.beginTimestamp).toBe("2026-06-07T08:00:00.000Z");
     expect(groups[0]!.endTimestamp).toBe("2026-06-07T09:00:00.000Z");
+  });
+
+  describe("buildLogsJsonExport", () => {
+    it("produces a valid JSON array string from an array of logs", () => {
+      const logs = [
+        mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "ERROR" }),
+        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" })
+      ];
+      const result = buildLogsJsonExport(logs);
+      const parsed = JSON.parse(result);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(2);
+    });
+
+    it("prettifies with 2-space indent", () => {
+      const logs = [mockLog({})];
+      const result = buildLogsJsonExport(logs);
+      expect(result).toContain("  ");
+      expect(result.startsWith("[")).toBe(true);
+      expect(result.endsWith("]")).toBe(true);
+    });
+
+    it("returns '[]' for empty array", () => {
+      expect(buildLogsJsonExport([])).toBe("[]");
+    });
+
+    it("includes details array in each entry", () => {
+      const logs = [
+        mockLog({ details: [{ key: "k", label: "K", value: "v" }] })
+      ];
+      const result = buildLogsJsonExport(logs);
+      expect(result).toContain("\"details\"");
+    });
+  });
+
+  describe("buildLogsCsvExport", () => {
+    it("produces CSV with header and one row per log", () => {
+      const logs = [
+        mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "ERROR" }),
+        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" })
+      ];
+      const result = buildLogsCsvExport(logs);
+      const lines = result.split("\n");
+      expect(lines[0]).toBe("timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details");
+      expect(lines[1]).toContain("2026-06-07T10:00:00.000Z");
+      expect(lines[1]).toContain("ERROR");
+      expect(lines).toHaveLength(3);
+    });
+
+    it("only returns header for empty array", () => {
+      const result = buildLogsCsvExport([]);
+      expect(result).toBe("timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details");
+    });
+
+    it("escapes commas and quotes in field values", () => {
+      const logs = [
+        mockLog({ summary: "hello, world" }),
+        mockLog({ message: 'say "hi"' })
+      ];
+      const result = buildLogsCsvExport(logs);
+      const lines = result.split("\n");
+      expect(lines[1]).toContain('"hello, world"');
+      expect(lines[2]).toContain('"say ""hi"""');
+    });
+
+    it("serializes details as JSON string in CSV", () => {
+      const logs = [
+        mockLog({ details: [{ key: "host", label: "Host", value: "localhost" }] })
+      ];
+      const result = buildLogsCsvExport(logs);
+      const rows = result.split("\n");
+      expect(rows[1]).toContain("localhost");
+    });
   });
 
   it("preserves dominantTag and classMethod from representative log", () => {
