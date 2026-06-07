@@ -101,6 +101,10 @@ export function getLogsEmptyState(logCount: number, filteredCount: number, hasAc
   return "ready";
 }
 
+export function buildLogJson(log: LogRecord): string {
+  return JSON.stringify(log, null, 2);
+}
+
 function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrouped = false): LogExecutionGroup {
   const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const begin = ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;

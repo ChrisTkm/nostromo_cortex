@@ -484,6 +484,10 @@ export async function activate(context: vscode.ExtensionContext) {
         logsPanelReady = true;
         await postLogsList();
         refreshLogsPollFromConfig();
+        return;
+      }
+      if (message?.type === "logs:copy" && typeof message.value === "string" && message.value.length > 0) {
+        await vscode.env.clipboard.writeText(message.value);
       }
     });
   }

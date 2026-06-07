@@ -44,6 +44,7 @@ const {
   outputAppendLineMock,
   outputClearMock,
   outputShowMock,
+  clipboardWriteTextMock,
   treePlansRef,
   treeProviderInstances,
   treeRefreshMock
@@ -115,6 +116,7 @@ const {
   const outputAppendLineMock = vi.fn();
   const outputClearMock = vi.fn();
   const outputShowMock = vi.fn();
+  const clipboardWriteTextMock = vi.fn();
   const createOutputChannelMock = vi.fn(() => ({
     appendLine: outputAppendLineMock,
     clear: outputClearMock,
@@ -234,6 +236,7 @@ const {
     outputAppendLineMock,
     outputClearMock,
     outputShowMock,
+    clipboardWriteTextMock,
     treePlansRef,
     treeProviderInstances,
     treeRefreshMock
@@ -311,6 +314,11 @@ vi.mock("vscode", () => ({
     })),
     onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
     openTextDocument: openTextDocumentMock
+  },
+  env: {
+    clipboard: {
+      writeText: clipboardWriteTextMock
+    }
   }
 }));
 
@@ -926,6 +934,33 @@ describe("activate notes commands", () => {
 
     expect(panelState.panel?.reveal).toHaveBeenCalled();
     expect(listLogsMock).toHaveBeenCalledTimes(3);
+  });
+
+  describe("logs:copy host handler", () => {
+    it("copies a non-empty string to clipboard", async () => {
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:copy", value: "test-value" });
+      expect(clipboardWriteTextMock).toHaveBeenCalledWith("test-value");
+    });
+
+    it("ignores empty string message", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy", value: "" });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores missing value field", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy" });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores non-string value", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy", value: 123 });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
   });
 
   it("opens the archive panel, posts archived plans, and opens JSON snapshots", async () => {

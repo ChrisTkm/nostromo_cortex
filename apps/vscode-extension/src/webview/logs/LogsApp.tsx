@@ -1,6 +1,6 @@
 import type { LogRecord } from "../../logs";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { buildExecutionGroups, buildLogJson, buildLogKey, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
@@ -33,6 +33,8 @@ export function LogsApp() {
   const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   useEffect(() => {
@@ -132,6 +134,23 @@ export function LogsApp() {
     setFolder("all");
     setTag("all");
     setTimeRange("all");
+  }
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    };
+  }, []);
+
+  function copyValue(value: string, key: string) {
+    if (!value) return;
+    vscode.postMessage({ type: "logs:copy", value });
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    setCopiedKey(key);
+    copiedTimeoutRef.current = setTimeout(() => {
+      setCopiedKey((current) => (current === key ? null : current));
+      copiedTimeoutRef.current = null;
+    }, 1500);
   }
 
   function toggleGroup(groupId: string) {
@@ -317,16 +336,35 @@ export function LogsApp() {
               <div className="logs-toolbar__eyebrow">Log detail</div>
               <h2 className="logs-detail__title">{highlightLogText(selectedLog.summary, deferredSearch)}</h2>
             </div>
-            <button className="logs-button" onClick={() => setDetailOpen(false)} type="button">
-              Close
-            </button>
+            <div className="logs-detail__header-actions">
+              <button
+                className="logs-button logs-detail__copy-json"
+                onClick={() => copyValue(buildLogJson(selectedLog), "json")}
+                type="button"
+                title="Copy the full log entry as formatted JSON"
+              >
+                {copiedKey === "json" ? "Copied" : "Copy JSON"}
+              </button>
+              <button className="logs-button" onClick={() => setDetailOpen(false)} type="button">
+                Close
+              </button>
+            </div>
           </header>
 
           <div className="logs-detail__meta">
             <span className={`log-pill log-pill--${selectedLog.level.toLowerCase()}`}>{selectedLog.level}</span>
             <span className="log-chip">{selectedLog.source}</span>
             <span className="log-chip">{formatTimestamp(selectedLog.timestamp)}</span>
-            {selectedLog.executionId ? <span className="log-chip">{selectedLog.executionId}</span> : null}
+            {selectedLog.executionId ? (
+              <button
+                type="button"
+                className={`log-chip logs-detail__copy-chip${copiedKey === "executionId" ? " logs-detail__copy-chip--copied" : ""}`}
+                onClick={() => copyValue(selectedLog.executionId!, "executionId")}
+                title="Click to copy executionId"
+              >
+                {copiedKey === "executionId" ? "Copied" : selectedLog.executionId}
+              </button>
+            ) : null}
             {selectedLog.tag ? <span className="log-chip">{selectedLog.tag}</span> : null}
             {selectedLog.className || selectedLog.methodName ? (
               <span className="log-chip">{[selectedLog.className, selectedLog.methodName].filter(Boolean).join(".")}</span>
@@ -344,12 +382,23 @@ export function LogsApp() {
             <section className="logs-detail__section">
               <div className="logs-detail__label">Structured fields</div>
               <div className="logs-detail__fields">
-                {selectedLog.details.map((detail) => (
-                  <div className="logs-detail__field" key={detail.key}>
-                    <div className="logs-detail__field-label">{detail.label}</div>
-                    <div className="logs-detail__field-value">{detail.value}</div>
-                  </div>
-                ))}
+                {selectedLog.details.map((detail) => {
+                  const fieldKey = `field:${detail.key}`;
+                  const isCopied = copiedKey === fieldKey;
+                  return (
+                    <div className="logs-detail__field" key={detail.key}>
+                      <div className="logs-detail__field-label">{detail.label}</div>
+                      <button
+                        type="button"
+                        className={`logs-detail__field-value logs-detail__field-value--copyable${isCopied ? " logs-detail__field-value--copied" : ""}`}
+                        onClick={() => copyValue(detail.value, fieldKey)}
+                        title="Click to copy value"
+                      >
+                        {isCopied ? "Copied" : detail.value}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           ) : null}

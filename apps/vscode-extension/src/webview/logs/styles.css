@@ -407,3 +407,53 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.logs-detail__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs-detail__copy-chip {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--cortex-border) 70%, transparent);
+}
+
+.logs-detail__copy-chip:hover {
+  border-color: var(--cortex-border-strong);
+}
+
+.logs-detail__copy-chip--copied {
+  color: var(--cortex-accent);
+  border-color: color-mix(in srgb, var(--cortex-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 14%, transparent);
+}
+
+.logs-detail__field-value--copyable {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 120ms ease;
+}
+
+.logs-detail__field-value--copyable:hover {
+  background: color-mix(in srgb, var(--cortex-accent) 8%, transparent);
+}
+
+.logs-detail__field-value--copied {
+  color: var(--cortex-accent);
+  font-weight: 600;
+}
+
+.logs-detail__copy-json {
+  font-size: 12px;
+}
