@@ -185,7 +185,6 @@ export function LogsApp() {
             {sources.map((option) => (
               <option key={option} value={option}>
                 {option === "all" ? "All sources" : option}
-                {option !== "all" ? option : null}
               </option>
             ))}
           </select>
