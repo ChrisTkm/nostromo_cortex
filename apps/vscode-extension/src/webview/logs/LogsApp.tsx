@@ -6,6 +6,7 @@ import { highlightLogText } from "./highlightText";
 type LogsMessage = {
   type: "logs:list";
   logs: LogRecord[];
+  autoRefreshSeconds: number;
 };
 
 declare global {
@@ -31,6 +32,7 @@ export function LogsApp() {
   const [tag, setTag] = useState("all");
   const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   useEffect(() => {
@@ -41,6 +43,7 @@ export function LogsApp() {
       }
 
       setLogs(message.logs);
+      setAutoRefreshSeconds(message.autoRefreshSeconds ?? 0);
       setLevel((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.level)));
       setSource((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.source)));
       setFolder((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.folder)));
@@ -158,6 +161,12 @@ export function LogsApp() {
             <button className="logs-button logs-button--primary" onClick={() => vscode.postMessage({ type: "logs:refresh" })} type="button">
               Refresh
             </button>
+            {autoRefreshSeconds > 0 ? (
+              <span className="logs-toolbar__autorefresh" title={`Auto-refreshing every ${autoRefreshSeconds}s`}>
+                <span className="logs-toolbar__autorefresh-dot" />
+                {autoRefreshSeconds}s
+              </span>
+            ) : null}
           </div>
         </header>
 

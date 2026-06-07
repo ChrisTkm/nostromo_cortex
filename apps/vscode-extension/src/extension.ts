@@ -14,6 +14,7 @@ import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { buildMdxGraphSnapshot } from "./mdGraph/indexer.js";
 import type { MdxGraphSnapshot } from "./mdGraph/types.js";
 import { ExtensionTaskService } from "./service.js";
+import { clampAutoRefreshSeconds } from "./logsAutoRefresh.js";
 import { analyzeScriptFlowDocument, resolveScriptFlowLanguage } from "./scriptFlow/analyzers/index.js";
 import { isScriptFlowWebviewMessage, sendError, sendSnapshot, sendUnsupported } from "./scriptFlow/bridge.js";
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
@@ -251,7 +252,10 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     await panel.webview.postMessage({
       type: "logs:list",
-      logs
+      logs,
+      autoRefreshSeconds: clampAutoRefreshSeconds(
+        vscode.workspace.getConfiguration("cortex").get<number>("logsAutoRefreshSeconds", 0)
+      )
     });
   }
 
@@ -424,7 +428,54 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     setWebviewPanelIcon(context, logsPanel, "cortex-logs.svg");
     logsPanel.webview.html = getLogsHtml(logsPanel.webview, context.extensionUri, nonce());
+
+    let logsPollTimer: ReturnType<typeof setInterval> | undefined;
+    let logsPollSecs = 0;
+
+    function startLogsPoll(seconds: number) {
+      stopLogsPoll();
+      if (seconds > 0 && logsPanel) {
+        logsPollSecs = seconds;
+        logsPollTimer = setInterval(() => { postLogsList(); }, seconds * 1000);
+      }
+    }
+
+    function stopLogsPoll() {
+      if (logsPollTimer !== undefined) {
+        clearInterval(logsPollTimer);
+        logsPollTimer = undefined;
+      }
+      logsPollSecs = 0;
+    }
+
+    function refreshLogsPollFromConfig() {
+      const cfg = vscode.workspace.getConfiguration("cortex");
+      const raw = cfg.get<number>("logsAutoRefreshSeconds", 0);
+      const secs = clampAutoRefreshSeconds(raw);
+      if (secs !== logsPollSecs) {
+        startLogsPoll(secs);
+      }
+    }
+
+    const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("cortex.logsAutoRefreshSeconds")) {
+        refreshLogsPollFromConfig();
+      }
+    });
+
+    const viewStateWatcher = logsPanel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.visible) {
+        postLogsList();
+        refreshLogsPollFromConfig();
+      } else {
+        stopLogsPoll();
+      }
+    });
+
     logsPanel.onDidDispose(() => {
+      stopLogsPoll();
+      configWatcher.dispose();
+      viewStateWatcher.dispose();
       logsPanel = undefined;
       logsPanelReady = false;
     });
@@ -432,6 +483,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "ready" || message?.type === "logs:refresh") {
         logsPanelReady = true;
         await postLogsList();
+        refreshLogsPollFromConfig();
       }
     });
   }

@@ -118,6 +118,32 @@
   color: inherit;
 }
 
+.logs-toolbar__autorefresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--cortex-accent) 32%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-accent) 10%, transparent);
+  color: var(--cortex-accent);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.logs-toolbar__autorefresh-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cortex-accent);
+  animation: cortex-logs-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cortex-logs-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
 .logs-filters__time-row {
   display: flex;
   gap: 6px;

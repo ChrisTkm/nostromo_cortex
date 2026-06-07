@@ -183,6 +183,7 @@ const {
         panelState.disposeHandler = handler;
         return { dispose: vi.fn() };
       }),
+      onDidChangeViewState: vi.fn(() => ({ dispose: vi.fn() })),
       iconPath: undefined
     };
     panelState.panel = panel;
@@ -308,6 +309,7 @@ vi.mock("vscode", () => ({
       get: getConfigMock,
       update: updateConfigMock
     })),
+    onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
     openTextDocument: openTextDocumentMock
   }
 }));
@@ -912,7 +914,8 @@ describe("activate notes commands", () => {
     expect(listLogsMock).toHaveBeenCalledTimes(1);
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "logs:list",
-      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })])
+      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })]),
+      autoRefreshSeconds: 0
     });
 
     await panelState.messageHandler?.({ type: "logs:refresh" });

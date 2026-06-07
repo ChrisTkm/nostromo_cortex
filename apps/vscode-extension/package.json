@@ -332,6 +332,13 @@
           "maximum": 5000,
           "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
         },
+        "cortex.logsAutoRefreshSeconds": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 600,
+          "description": "Auto-refresh interval for the Cortex Logs panel, in seconds. 0 disables it."
+        },
         "cortex.mongoPlansCollection": {
           "type": "string",
           "default": "action_plans",
