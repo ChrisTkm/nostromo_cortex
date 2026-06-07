@@ -246,6 +246,17 @@ export class ExtensionTaskService {
       })
       .toArray();
 
+    const logsCollection = await this.getLogsCollection(settings);
+    const logs = await logsCollection
+      .find({
+        $or: [
+          { plan_code: code },
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
+        ]
+      })
+      .sort({ timestamp: 1 })
+      .toArray();
+
     const archivedAt = new Date().toISOString();
     const archivePath = this.resolveArchivePath();
     const plansArchivePath = path.join(archivePath, "plans");
@@ -258,7 +269,8 @@ export class ExtensionTaskService {
           archived_at: archivedAt,
           plan,
           tasks,
-          notes
+          notes,
+          logs
         },
         null,
         2
