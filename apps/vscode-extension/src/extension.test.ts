@@ -933,7 +933,8 @@ describe("activate notes commands", () => {
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "logs:list",
       logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })]),
-      autoRefreshSeconds: 0
+      autoRefreshSeconds: 0,
+      hasMore: false
     });
 
     await panelState.messageHandler?.({ type: "logs:refresh" });
@@ -1041,6 +1042,104 @@ describe("activate notes commands", () => {
       await panelState.messageHandler?.({ type: "logs:export", format: "xlsx", content: "x", defaultFilename: "f.xlsx" });
       expect(showSaveDialogMock).not.toHaveBeenCalled();
       expect(fsWriteFileMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("logs:loadOlder host handler + hasMore", () => {
+    beforeEach(() => {
+      listLogsMock.mockReset();
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-18T00:00:00.000Z",
+        day: "2026-04-18",
+        level: "INFO",
+        source: "nostromo.bootstrap",
+        folder: "nostromo",
+        message: "Mongo ready",
+        summary: "Mongo ready (nostromo.bootstrap)",
+        details: []
+      }]);
+    });
+
+    it("postLogsList sets hasMore=false when fewer results than limit", async () => {
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "logs:list", hasMore: false })
+      );
+    });
+
+    it("postLogsList sets hasMore=true when results equal limit", async () => {
+      const manyLogs = Array.from({ length: 500 }, (_, index) => ({
+        timestamp: `2026-04-${String(18 - Math.floor(index / 100)).padStart(2, "0")}T${String((index * 3) % 24).padStart(2, "0")}:00:00.000Z`,
+        day: `2026-04-${String(18 - Math.floor(index / 100)).padStart(2, "0")}`,
+        level: "INFO",
+        source: "nostromo.bootstrap",
+        folder: "nostromo",
+        message: `Log ${index}`,
+        summary: `Log ${index} (nostromo.bootstrap)`,
+        details: []
+      }));
+      listLogsMock.mockResolvedValue(manyLogs);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "logs:list", hasMore: true })
+      );
+    });
+
+    it("handler calls listLogs with cursor and posts logs:append", async () => {
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-17T00:00:00.000Z",
+        day: "2026-04-17",
+        level: "WARNING",
+        source: "nostromo.old",
+        folder: "nostromo",
+        message: "Old log",
+        summary: "Old log (nostromo.old)",
+        details: []
+      }]);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+
+      listLogsMock.mockClear();
+      panelState.panel?.webview.postMessage.mockClear();
+
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-17T00:00:00.000Z",
+        day: "2026-04-17",
+        level: "WARNING",
+        source: "nostromo.old",
+        folder: "nostromo",
+        message: "Old log",
+        summary: "Old log (nostromo.old)",
+        details: []
+      }]);
+
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: "2026-04-18T00:00:00.000Z" });
+
+      expect(listLogsMock).toHaveBeenCalledWith(500, "2026-04-18T00:00:00.000Z");
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "logs:append",
+          logs: expect.arrayContaining([expect.objectContaining({ level: "WARNING" })]),
+          hasMore: false
+        })
+      );
+    });
+
+    it("ignores logs:loadOlder with empty beforeTimestamp", async () => {
+      listLogsMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: "" });
+      expect(listLogsMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores logs:loadOlder with non-string beforeTimestamp", async () => {
+      listLogsMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: 123 });
+      expect(listLogsMock).not.toHaveBeenCalled();
     });
   });
 

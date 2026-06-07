@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, LOGS_PYTHON_SNIPPET, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, sortLogLevelKeys } from "./state";
 import type { LogRecord } from "../../logs";
 
 function mockLog(overrides: Partial<LogRecord>): LogRecord {
@@ -241,5 +241,87 @@ describe("buildExecutionGroups", () => {
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.dominantTag).toBe("ERROR");
     expect(groups[0]!.classMethod).toBe("MyClass.run");
+  });
+});
+
+describe("getOldestLogTimestamp", () => {
+  it("returns null for empty array", () => {
+    expect(getOldestLogTimestamp([])).toBeNull();
+  });
+
+  it("returns the timestamp of a single log", () => {
+    const log = mockLog({ timestamp: "2026-06-07T10:00:00.000Z" });
+    expect(getOldestLogTimestamp([log])).toBe("2026-06-07T10:00:00.000Z");
+  });
+
+  it("returns oldest among mixed timestamps", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-04T10:00:00.000Z" })
+    ];
+    expect(getOldestLogTimestamp(logs)).toBe("2026-06-04T10:00:00.000Z");
+  });
+});
+
+describe("mergeLogPages", () => {
+  it("merges disjoint pages sorted desc by timestamp", () => {
+    const existing = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+    ];
+    const incoming = [
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", id: "c" }),
+      mockLog({ timestamp: "2026-06-04T10:00:00.000Z", id: "d" })
+    ];
+    const result = mergeLogPages(existing, incoming);
+    expect(result).toHaveLength(4);
+    expect(result[0]!.id).toBe("a");
+    expect(result[3]!.id).toBe("d");
+  });
+
+  it("deduplicates by id when incoming has overlap", () => {
+    const existing = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+    ];
+    const incoming = [
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" }),
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", id: "c" })
+    ];
+    const result = mergeLogPages(existing, incoming);
+    expect(result).toHaveLength(3);
+    expect(result.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("merges into empty existing array", () => {
+    const incoming = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+    ];
+    const result = mergeLogPages([], incoming);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.id).toBe("a");
+  });
+
+  it("returns existing unchanged when incoming is empty", () => {
+    const existing = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" })
+    ];
+    const result = mergeLogPages(existing, []);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe("a");
+  });
+
+  it("deduplicates by fallback key when id is absent", () => {
+    const existing = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "INFO", source: "src", summary: "msg" })
+    ];
+    const incoming = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "INFO", source: "src", summary: "msg" })
+    ];
+    const result = mergeLogPages(existing, incoming);
+    expect(result).toHaveLength(1);
   });
 });

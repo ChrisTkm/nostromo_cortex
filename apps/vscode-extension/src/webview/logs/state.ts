@@ -81,6 +81,29 @@ export function buildLogKey(entry: LogRecord) {
   return entry.id ?? `${entry.timestamp}:${entry.source}:${entry.level}:${entry.summary}`;
 }
 
+export function getOldestLogTimestamp(logs: LogRecord[]): string | null {
+  if (logs.length === 0) return null;
+  let oldest = logs[0]!.timestamp;
+  for (let index = 1; index < logs.length; index += 1) {
+    if (logs[index]!.timestamp < oldest) {
+      oldest = logs[index]!.timestamp;
+    }
+  }
+  return oldest;
+}
+
+export function mergeLogPages(existing: readonly LogRecord[], incoming: readonly LogRecord[]): LogRecord[] {
+  const seen = new Set(existing.map((entry) => buildLogKey(entry)));
+  const merged: LogRecord[] = [...existing];
+  for (const entry of incoming) {
+    const key = buildLogKey(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(entry);
+  }
+  return merged.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+}
+
 export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
   const byExecution = new Map<string, LogRecord[]>();
   const ungroupedByDay = new Map<string, LogRecord[]>();

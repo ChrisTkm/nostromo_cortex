@@ -16,19 +16,26 @@ import {
   stableStringify,
   type ActionPlanRecord,
   type TaskDocumentInput,
-  type TaskRecord
+  type TaskRecord,
 } from "@cortex/core";
-import { createLogger, JsonlTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
+import {
+  createLogger,
+  JsonlTelemetryStore,
+  TelemetryRecorder,
+} from "@cortex/telemetry";
 import type { ClientSession, Collection, Document } from "mongodb";
 import * as vscode from "vscode";
 
 import { normalizeLogCollection, type LogRecord } from "./logs.js";
+import { clampLogsLimit } from "./logsAutoRefresh.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
 const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
 const DEFAULT_MONGO_URL = "mongodb://127.0.0.1:27017";
 
-type ConnectionSettings = ReturnType<ExtensionTaskService["getConnectionSettings"]>;
+type ConnectionSettings = ReturnType<
+  ExtensionTaskService["getConnectionSettings"]
+>;
 type ExtensionFilterStatePatch = {
   [K in keyof ExtensionFilterState]?: ExtensionFilterState[K] | undefined;
 };
@@ -108,14 +115,20 @@ export class ExtensionTaskService {
       MONGO_DB_NAME: this.config.get("mongoDbName", "cortex"),
       MONGO_TASKS_COLLECTION: this.config.get("mongoTasksCollection", "tasks"),
       TELEMETRY_BACKEND: this.config.get("telemetryBackend", "sqlite"),
-      TELEMETRY_SQLITE_PATH: this.config.get("telemetrySqlitePath", path.join(context.globalStorageUri.fsPath, "telemetry.db"))
+      TELEMETRY_SQLITE_PATH: this.config.get(
+        "telemetrySqlitePath",
+        path.join(context.globalStorageUri.fsPath, "telemetry.db"),
+      ),
     });
 
-    this.telemetryJsonlPath = path.join(context.globalStorageUri.fsPath, "cortex-telemetry.jsonl");
+    this.telemetryJsonlPath = path.join(
+      context.globalStorageUri.fsPath,
+      "cortex-telemetry.jsonl",
+    );
     this.logger = createLogger({
       level: runtimeConfig.logLevel,
       format: runtimeConfig.logFormat,
-      context: { app: "cortex-vscode-extension" }
+      context: { app: "cortex-vscode-extension" },
     });
   }
 
@@ -136,7 +149,10 @@ export class ExtensionTaskService {
   }
 
   getFilterState(): ExtensionFilterState {
-    const persisted = this.context.workspaceState.get<Partial<ExtensionFilterState>>("cortex.filterState") ?? {};
+    const persisted =
+      this.context.workspaceState.get<Partial<ExtensionFilterState>>(
+        "cortex.filterState",
+      ) ?? {};
     const clampedZoom =
       typeof persisted.zoom === "number" && Number.isFinite(persisted.zoom)
         ? Math.min(Math.max(persisted.zoom, 0.2), 2.8)
@@ -147,14 +163,30 @@ export class ExtensionTaskService {
       ...persisted,
       pan: { ...DEFAULT_FILTER_STATE.pan, ...(persisted.pan ?? {}) },
       zoom: clampedZoom,
-      selectedTags: Array.isArray(persisted.selectedTags) ? persisted.selectedTags : [],
-      selectedProjects: Array.isArray(persisted.selectedProjects) ? persisted.selectedProjects : [],
-      selectedGroups: Array.isArray(persisted.selectedGroups) ? persisted.selectedGroups : [],
-      selectedStatuses: Array.isArray(persisted.selectedStatuses) ? persisted.selectedStatuses : [],
-      selectedSeverities: Array.isArray(persisted.selectedSeverities) ? persisted.selectedSeverities : [],
+      selectedTags: Array.isArray(persisted.selectedTags)
+        ? persisted.selectedTags
+        : [],
+      selectedProjects: Array.isArray(persisted.selectedProjects)
+        ? persisted.selectedProjects
+        : [],
+      selectedGroups: Array.isArray(persisted.selectedGroups)
+        ? persisted.selectedGroups
+        : [],
+      selectedStatuses: Array.isArray(persisted.selectedStatuses)
+        ? persisted.selectedStatuses
+        : [],
+      selectedSeverities: Array.isArray(persisted.selectedSeverities)
+        ? persisted.selectedSeverities
+        : [],
       graphOrientation: persisted.graphOrientation === "TB" ? "TB" : "LR",
-      showMiniMap: typeof persisted.showMiniMap === "boolean" ? persisted.showMiniMap : DEFAULT_FILTER_STATE.showMiniMap,
-      groupByLane: typeof persisted.groupByLane === "boolean" ? persisted.groupByLane : DEFAULT_FILTER_STATE.groupByLane
+      showMiniMap:
+        typeof persisted.showMiniMap === "boolean"
+          ? persisted.showMiniMap
+          : DEFAULT_FILTER_STATE.showMiniMap,
+      groupByLane:
+        typeof persisted.groupByLane === "boolean"
+          ? persisted.groupByLane
+          : DEFAULT_FILTER_STATE.groupByLane,
     };
   }
 
@@ -165,61 +197,86 @@ export class ExtensionTaskService {
       mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
       mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
       mongoLogsCollection: this.config.get("mongoLogsCollection", "logs"),
-      mongoPlansCollection: this.config.get("mongoPlansCollection", "action_plans")
+      mongoPlansCollection: this.config.get(
+        "mongoPlansCollection",
+        "action_plans",
+      ),
     };
   }
 
   async updateFilterState(nextState: ExtensionFilterStatePatch) {
     await this.context.workspaceState.update("cortex.filterState", {
       ...this.getFilterState(),
-      ...nextState
+      ...nextState,
     });
   }
 
   async loadTasks(): Promise<TaskRecord[]> {
-    return this.withTaskStore(this.getConnectionSettings(), (store) => store.listTasks());
+    return this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.listTasks(),
+    );
   }
 
   async loadPlans(): Promise<ActionPlanRecord[]> {
-    return this.withPlanStore(this.getConnectionSettings(), (store) => store.listPlans());
+    return this.withPlanStore(this.getConnectionSettings(), (store) =>
+      store.listPlans(),
+    );
   }
 
   async loadBundle(): Promise<TaskBundle> {
-    const [tasks, plans] = await Promise.all([this.loadTasks(), this.loadPlans()]);
+    const [tasks, plans] = await Promise.all([
+      this.loadTasks(),
+      this.loadPlans(),
+    ]);
     return { tasks, plans };
   }
 
   async loadSnapshot(
     filter?: Parameters<typeof buildGraphSnapshot>[1],
     bundle?: TaskBundle,
-    selectedPlan?: ActionPlanRecord | null
+    selectedPlan?: ActionPlanRecord | null,
   ) {
     const sourceBundle = bundle ?? (await this.loadBundle());
     const plan =
-      selectedPlan ?? (filter?.planCode ? sourceBundle.plans.find((candidate) => candidate.code === filter.planCode) : undefined);
-    const snapshot = buildGraphSnapshot(sourceBundle.tasks, filter, plan ? { plan } : undefined);
+      selectedPlan ??
+      (filter?.planCode
+        ? sourceBundle.plans.find(
+            (candidate) => candidate.code === filter.planCode,
+          )
+        : undefined);
+    const snapshot = buildGraphSnapshot(
+      sourceBundle.tasks,
+      filter,
+      plan ? { plan } : undefined,
+    );
     this.logger.debug("loadSnapshot", {
       filter,
       taskCount: sourceBundle.tasks.length,
       visibleNodeCount: snapshot.nodes.length,
-      visibleEdgeCount: snapshot.edges.length
+      visibleEdgeCount: snapshot.edges.length,
     });
     return snapshot;
   }
 
   async getTask(codeOrId: string): Promise<TaskRecord | null> {
-    return this.withTaskStore(this.getConnectionSettings(), (store) => store.getTask(codeOrId));
+    return this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.getTask(codeOrId),
+    );
   }
 
   async getPlan(code: string): Promise<ActionPlanRecord | null> {
-    return this.withPlanStore(this.getConnectionSettings(), (store) => store.getPlan(code));
+    return this.withPlanStore(this.getConnectionSettings(), (store) =>
+      store.getPlan(code),
+    );
   }
 
   isJsonPathInArchive(rawJsonPath: string): boolean {
     if (typeof rawJsonPath !== "string" || !rawJsonPath.trim()) return false;
     const candidate = path.normalize(rawJsonPath.trim());
     if (!candidate.toLowerCase().endsWith(".json")) return false;
-    const archiveRoot = path.normalize(path.join(this.resolveArchivePath(), "plans"));
+    const archiveRoot = path.normalize(
+      path.join(this.resolveArchivePath(), "plans"),
+    );
     const relative = path.relative(archiveRoot, candidate);
     if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
     return true;
@@ -249,18 +306,22 @@ export class ExtensionTaskService {
     if (!plan) {
       throw new Error(`Plan ${code} not found.`);
     }
-    if (String((plan as { status?: unknown }).status).toUpperCase() !== "DONE") {
+    if (
+      String((plan as { status?: unknown }).status).toUpperCase() !== "DONE"
+    ) {
       throw new Error(`Plan ${code} is not DONE.`);
     }
 
     const tasks = await tasksCollection.find({ plan_code: code }).toArray();
-    const taskCodes = tasks.map((task) => (typeof task.code === "string" ? task.code : undefined)).filter((value): value is string => Boolean(value));
+    const taskCodes = tasks
+      .map((task) => (typeof task.code === "string" ? task.code : undefined))
+      .filter((value): value is string => Boolean(value));
     const notes = await notesCollection
       .find({
         $or: [
           { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
-        ]
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
+        ],
       })
       .toArray();
 
@@ -269,8 +330,8 @@ export class ExtensionTaskService {
       .find({
         $or: [
           { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
-        ]
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
+        ],
       })
       .sort({ timestamp: 1 })
       .toArray();
@@ -288,27 +349,40 @@ export class ExtensionTaskService {
           plan,
           tasks,
           notes,
-          logs
+          logs,
         },
         null,
-        2
+        2,
       ),
-      "utf8"
+      "utf8",
     );
     const archivedPlan = {
       ...plan,
       archived_at: archivedAt,
-      json_path: jsonPath
+      json_path: jsonPath,
     };
 
     const runArchiveWrites = async (session?: ClientSession) => {
       await archiveDocuments(archivedPlans, [archivedPlan], session);
       await archiveDocuments(archivedTasks, tasks, session);
       await archiveDocuments(archivedNotes, notes, session);
-      const deletedNotes = await notesCollection.deleteMany({ _id: { $in: notes.map((note) => note._id) } }, session ? { session } : undefined);
-      const deletedTasks = await tasksCollection.deleteMany({ _id: { $in: tasks.map((task) => task._id) } }, session ? { session } : undefined);
-      const deletedPlan = await plans.deleteOne({ _id: plan._id }, session ? { session } : undefined);
-      if (deletedNotes.deletedCount !== notes.length || deletedTasks.deletedCount !== tasks.length || deletedPlan.deletedCount !== 1) {
+      const deletedNotes = await notesCollection.deleteMany(
+        { _id: { $in: notes.map((note) => note._id) } },
+        session ? { session } : undefined,
+      );
+      const deletedTasks = await tasksCollection.deleteMany(
+        { _id: { $in: tasks.map((task) => task._id) } },
+        session ? { session } : undefined,
+      );
+      const deletedPlan = await plans.deleteOne(
+        { _id: plan._id },
+        session ? { session } : undefined,
+      );
+      if (
+        deletedNotes.deletedCount !== notes.length ||
+        deletedTasks.deletedCount !== tasks.length ||
+        deletedPlan.deletedCount !== 1
+      ) {
         this.logger.warn("archivePlan delete count mismatch", {
           planCode: code,
           expectedNotes: notes.length,
@@ -316,7 +390,7 @@ export class ExtensionTaskService {
           expectedTasks: tasks.length,
           deletedTasks: deletedTasks.deletedCount,
           expectedPlans: 1,
-          deletedPlans: deletedPlan.deletedCount
+          deletedPlans: deletedPlan.deletedCount,
         });
       }
     };
@@ -328,10 +402,13 @@ export class ExtensionTaskService {
         await runArchiveWrites(session);
       });
     } catch (error) {
-      this.logger.warn("archivePlan transaction failed; falling back to ordered writes", {
-        planCode: code,
-        error: String(error)
-      });
+      this.logger.warn(
+        "archivePlan transaction failed; falling back to ordered writes",
+        {
+          planCode: code,
+          error: String(error),
+        },
+      );
       await runArchiveWrites();
     } finally {
       await session.endSession();
@@ -341,7 +418,7 @@ export class ExtensionTaskService {
       jsonPath,
       noteCount: notes.length,
       planCode: code,
-      taskCount: tasks.length
+      taskCount: tasks.length,
     };
   }
 
@@ -368,10 +445,14 @@ export class ExtensionTaskService {
 
     const existingActive = await plans.findOne({ code });
     if (existingActive) {
-      throw new Error(`Active plan ${code} already exists; cannot restore over it.`);
+      throw new Error(
+        `Active plan ${code} already exists; cannot restore over it.`,
+      );
     }
 
-    const archivedTasksList = await archivedTasks.find({ plan_code: code }).toArray();
+    const archivedTasksList = await archivedTasks
+      .find({ plan_code: code })
+      .toArray();
     const taskCodes = archivedTasksList
       .map((task) => (typeof task.code === "string" ? task.code : undefined))
       .filter((value): value is string => Boolean(value));
@@ -379,19 +460,23 @@ export class ExtensionTaskService {
       .find({
         $or: [
           { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
-        ]
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
+        ],
       })
       .toArray();
 
-    const { archived_at: _archivedAt, json_path: _jsonPath, ...planRest } = archivedPlan as Document & {
+    const {
+      archived_at: _archivedAt,
+      json_path: _jsonPath,
+      ...planRest
+    } = archivedPlan as Document & {
       archived_at?: unknown;
       json_path?: unknown;
     };
     const restoredPlan = {
       ...planRest,
       status: "IN_PROGRESS",
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
 
     const runRestoreWrites = async (session?: ClientSession) => {
@@ -402,13 +487,24 @@ export class ExtensionTaskService {
       if (archivedNotesList.length > 0) {
         await archiveDocuments(notesCollection, archivedNotesList, session);
       }
-      const deletedNotes = archivedNotesList.length > 0
-        ? await archivedNotes.deleteMany({ _id: { $in: archivedNotesList.map((n) => n._id) } }, session ? { session } : undefined)
-        : { deletedCount: 0 };
-      const deletedTasks = archivedTasksList.length > 0
-        ? await archivedTasks.deleteMany({ _id: { $in: archivedTasksList.map((t) => t._id) } }, session ? { session } : undefined)
-        : { deletedCount: 0 };
-      const deletedPlan = await archivedPlans.deleteOne({ _id: archivedPlan._id }, session ? { session } : undefined);
+      const deletedNotes =
+        archivedNotesList.length > 0
+          ? await archivedNotes.deleteMany(
+              { _id: { $in: archivedNotesList.map((n) => n._id) } },
+              session ? { session } : undefined,
+            )
+          : { deletedCount: 0 };
+      const deletedTasks =
+        archivedTasksList.length > 0
+          ? await archivedTasks.deleteMany(
+              { _id: { $in: archivedTasksList.map((t) => t._id) } },
+              session ? { session } : undefined,
+            )
+          : { deletedCount: 0 };
+      const deletedPlan = await archivedPlans.deleteOne(
+        { _id: archivedPlan._id },
+        session ? { session } : undefined,
+      );
       if (
         (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length ||
         (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length ||
@@ -421,7 +517,7 @@ export class ExtensionTaskService {
           expectedTasks: archivedTasksList.length,
           deletedTasks: deletedTasks.deletedCount,
           expectedPlans: 1,
-          deletedPlans: deletedPlan.deletedCount
+          deletedPlans: deletedPlan.deletedCount,
         });
       }
     };
@@ -433,10 +529,13 @@ export class ExtensionTaskService {
         await runRestoreWrites(session);
       });
     } catch (error) {
-      this.logger.warn("restorePlan transaction failed; falling back to ordered writes", {
-        planCode: code,
-        error: String(error)
-      });
+      this.logger.warn(
+        "restorePlan transaction failed; falling back to ordered writes",
+        {
+          planCode: code,
+          error: String(error),
+        },
+      );
       await runRestoreWrites();
     } finally {
       await session.endSession();
@@ -445,11 +544,14 @@ export class ExtensionTaskService {
     return {
       planCode: code,
       taskCount: archivedTasksList.length,
-      noteCount: archivedNotesList.length
+      noteCount: archivedNotesList.length,
     };
   }
 
-  async deleteArchivedPlan(planCode: string, options: { keepJson: boolean }): Promise<DeleteArchivedPlanResult> {
+  async deleteArchivedPlan(
+    planCode: string,
+    options: { keepJson: boolean },
+  ): Promise<DeleteArchivedPlanResult> {
     const code = planCode.trim();
     if (!code) {
       throw new Error("Plan code is required.");
@@ -467,7 +569,9 @@ export class ExtensionTaskService {
       throw new Error(`Archived plan ${code} not found.`);
     }
 
-    const archivedTasksList = await archivedTasks.find({ plan_code: code }).toArray();
+    const archivedTasksList = await archivedTasks
+      .find({ plan_code: code })
+      .toArray();
     const taskCodes = archivedTasksList
       .map((task) => (typeof task.code === "string" ? task.code : undefined))
       .filter((value): value is string => Boolean(value));
@@ -475,21 +579,35 @@ export class ExtensionTaskService {
       .find({
         $or: [
           { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : [])
-        ]
+          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
+        ],
       })
       .toArray();
 
-    const jsonPath = typeof archivedPlan.json_path === "string" ? archivedPlan.json_path : undefined;
+    const jsonPath =
+      typeof archivedPlan.json_path === "string"
+        ? archivedPlan.json_path
+        : undefined;
 
     const runDeleteWrites = async (session?: ClientSession) => {
-      const deletedNotes = archivedNotesList.length > 0
-        ? await archivedNotes.deleteMany({ _id: { $in: archivedNotesList.map((n) => n._id) } }, session ? { session } : undefined)
-        : { deletedCount: 0 };
-      const deletedTasks = archivedTasksList.length > 0
-        ? await archivedTasks.deleteMany({ _id: { $in: archivedTasksList.map((t) => t._id) } }, session ? { session } : undefined)
-        : { deletedCount: 0 };
-      const deletedPlan = await archivedPlans.deleteOne({ _id: archivedPlan._id }, session ? { session } : undefined);
+      const deletedNotes =
+        archivedNotesList.length > 0
+          ? await archivedNotes.deleteMany(
+              { _id: { $in: archivedNotesList.map((n) => n._id) } },
+              session ? { session } : undefined,
+            )
+          : { deletedCount: 0 };
+      const deletedTasks =
+        archivedTasksList.length > 0
+          ? await archivedTasks.deleteMany(
+              { _id: { $in: archivedTasksList.map((t) => t._id) } },
+              session ? { session } : undefined,
+            )
+          : { deletedCount: 0 };
+      const deletedPlan = await archivedPlans.deleteOne(
+        { _id: archivedPlan._id },
+        session ? { session } : undefined,
+      );
       if (
         (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length ||
         (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length ||
@@ -502,7 +620,7 @@ export class ExtensionTaskService {
           expectedTasks: archivedTasksList.length,
           deletedTasks: deletedTasks.deletedCount,
           expectedPlans: 1,
-          deletedPlans: deletedPlan.deletedCount
+          deletedPlans: deletedPlan.deletedCount,
         });
       }
     };
@@ -514,10 +632,13 @@ export class ExtensionTaskService {
         await runDeleteWrites(session);
       });
     } catch (error) {
-      this.logger.warn("deleteArchivedPlan transaction failed; falling back to ordered writes", {
-        planCode: code,
-        error: String(error)
-      });
+      this.logger.warn(
+        "deleteArchivedPlan transaction failed; falling back to ordered writes",
+        {
+          planCode: code,
+          error: String(error),
+        },
+      );
       await runDeleteWrites();
     } finally {
       await session.endSession();
@@ -529,7 +650,10 @@ export class ExtensionTaskService {
         await fs.unlink(jsonPath);
         jsonDeleted = true;
       } catch (error) {
-        this.logger.warn("deleteArchivedPlan json unlink failed", { jsonPath, error: String(error) });
+        this.logger.warn("deleteArchivedPlan json unlink failed", {
+          jsonPath,
+          error: String(error),
+        });
       }
     }
 
@@ -537,7 +661,7 @@ export class ExtensionTaskService {
       planCode: code,
       taskCount: archivedTasksList.length,
       noteCount: archivedNotesList.length,
-      jsonDeleted
+      jsonDeleted,
     };
   }
 
@@ -552,9 +676,16 @@ export class ExtensionTaskService {
     } catch (error) {
       throw new Error(`Could not read archive folder: ${String(error)}`);
     }
-    const jsonFiles = entries.filter((name) => name.toLowerCase().endsWith(".json"));
+    const jsonFiles = entries.filter((name) =>
+      name.toLowerCase().endsWith(".json"),
+    );
 
-    const manifestPlans: Array<{ code: string; archived_at?: string; task_count: number; note_count: number }> = [];
+    const manifestPlans: Array<{
+      code: string;
+      archived_at?: string;
+      task_count: number;
+      note_count: number;
+    }> = [];
 
     for (const fileName of jsonFiles) {
       const fullPath = path.join(archivePath, fileName);
@@ -565,14 +696,15 @@ export class ExtensionTaskService {
       } catch {
         continue;
       }
-      const plan = (parsed.plan as { code?: string; archived_at?: string }) ?? {};
+      const plan =
+        (parsed.plan as { code?: string; archived_at?: string }) ?? {};
       if (typeof plan.code !== "string") continue;
       zip.folder("plans")?.file(fileName, content);
       manifestPlans.push({
         code: plan.code,
         archived_at: plan.archived_at,
         task_count: Array.isArray(parsed.tasks) ? parsed.tasks.length : 0,
-        note_count: Array.isArray(parsed.notes) ? parsed.notes.length : 0
+        note_count: Array.isArray(parsed.notes) ? parsed.notes.length : 0,
       });
     }
 
@@ -581,11 +713,15 @@ export class ExtensionTaskService {
       generated_at: new Date().toISOString(),
       source: "cortex-vscode-extension",
       count: manifestPlans.length,
-      plans: manifestPlans
+      plans: manifestPlans,
     };
     zip.file("manifest.json", JSON.stringify(manifest, null, 2));
 
-    const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    const zipBuffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
     await fs.writeFile(targetZipPath, zipBuffer);
 
     return { zipPath: targetZipPath, planCount: manifestPlans.length };
@@ -610,7 +746,9 @@ export class ExtensionTaskService {
 
     const manifestFile = zip.file("manifest.json");
     if (!manifestFile) {
-      throw new Error("ZIP missing manifest.json. Not a Cortex archive export.");
+      throw new Error(
+        "ZIP missing manifest.json. Not a Cortex archive export.",
+      );
     }
     const manifestRaw = await manifestFile.async("string");
     let manifest: { version?: number; plans?: Array<{ code?: string }> };
@@ -655,24 +793,34 @@ export class ExtensionTaskService {
 
       try {
         const content = await zipEntry.async("string");
-        const parsed = JSON.parse(content) as { plan?: Record<string, unknown>; tasks?: Record<string, unknown>[]; notes?: Record<string, unknown>[] };
+        const parsed = JSON.parse(content) as {
+          plan?: Record<string, unknown>;
+          tasks?: Record<string, unknown>[];
+          notes?: Record<string, unknown>[];
+        };
         const planDoc = parsed.plan;
         if (!planDoc) {
           failed.push({ name: code, error: "Missing plan in snapshot." });
           continue;
         }
 
-        const stripId = <T extends Record<string, unknown>>(doc: T): Omit<T, "_id"> => {
+        const stripId = <T extends Record<string, unknown>>(
+          doc: T,
+        ): Omit<T, "_id"> => {
           const { _id: _drop, ...rest } = doc;
           return rest;
         };
 
         await archivedPlans.insertOne(stripId(planDoc));
         if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-          await archivedTasks.insertMany(parsed.tasks.map(stripId), { ordered: false });
+          await archivedTasks.insertMany(parsed.tasks.map(stripId), {
+            ordered: false,
+          });
         }
         if (Array.isArray(parsed.notes) && parsed.notes.length > 0) {
-          await archivedNotes.insertMany(parsed.notes.map(stripId), { ordered: false });
+          await archivedNotes.insertMany(parsed.notes.map(stripId), {
+            ordered: false,
+          });
         }
 
         const fullPath = path.join(plansDir, fileName);
@@ -698,17 +846,27 @@ export class ExtensionTaskService {
     const [plans, tasks, notes] = await Promise.all([
       db.collection("archived_plans").find({}).toArray(),
       db.collection("archived_tasks").find({}).toArray(),
-      db.collection("archived_notes").find({}).toArray()
+      db.collection("archived_notes").find({}).toArray(),
     ]);
     const archivePath = this.resolveArchivePath();
 
     return plans
       .map((plan) => {
         const code = stringField(plan, "code");
-        const planTasks = tasks.filter((task) => stringField(task, "plan_code") === code);
-        const taskCodes = new Set(planTasks.map((task) => stringField(task, "code")).filter(Boolean));
-        const planNotes = notes.filter((note) => stringField(note, "plan_code") === code || taskCodes.has(stringField(note, "task_code")));
-        const jsonPath = stringField(plan, "json_path") || path.join(archivePath, "plans", `${code}.json`);
+        const planTasks = tasks.filter(
+          (task) => stringField(task, "plan_code") === code,
+        );
+        const taskCodes = new Set(
+          planTasks.map((task) => stringField(task, "code")).filter(Boolean),
+        );
+        const planNotes = notes.filter(
+          (note) =>
+            stringField(note, "plan_code") === code ||
+            taskCodes.has(stringField(note, "task_code")),
+        );
+        const jsonPath =
+          stringField(plan, "json_path") ||
+          path.join(archivePath, "plans", `${code}.json`);
 
         return {
           code,
@@ -729,7 +887,7 @@ export class ExtensionTaskService {
               status: optionalStringField(task, "status"),
               completedAt: optionalStringField(task, "completed_at"),
               completionNote: optionalStringField(task, "completion_note"),
-              commitHash: optionalStringField(task, "commit_hash")
+              commitHash: optionalStringField(task, "commit_hash"),
             }))
             .sort((left, right) => left.code.localeCompare(right.code)),
           notes: planNotes
@@ -737,13 +895,19 @@ export class ExtensionTaskService {
               title: stringField(note, "title"),
               body: stringField(note, "body"),
               createdAt: optionalStringField(note, "created_at"),
-              tags: stringArrayField(note, "tags")
+              tags: stringArrayField(note, "tags"),
             }))
-            .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))
+            .sort((left, right) =>
+              (right.createdAt ?? "").localeCompare(left.createdAt ?? ""),
+            ),
         } satisfies ArchivedPlanSummary;
       })
       .filter((plan) => plan.code)
-      .sort((left, right) => (right.archivedAt ?? right.completedAt ?? "").localeCompare(left.archivedAt ?? left.completedAt ?? ""));
+      .sort((left, right) =>
+        (right.archivedAt ?? right.completedAt ?? "").localeCompare(
+          left.archivedAt ?? left.completedAt ?? "",
+        ),
+      );
   }
 
   async listNotes(): Promise<NoteRecord[]> {
@@ -762,16 +926,25 @@ export class ExtensionTaskService {
     return this.getNotesStore().deleteNote(code);
   }
 
-  async listPendingReminders(options: { now: string | Date }): Promise<NoteRecord[]> {
+  async listPendingReminders(options: {
+    now: string | Date;
+  }): Promise<NoteRecord[]> {
     const now = normalizeReminderIso(options.now);
     const notes = await this.listNotes();
 
     return notes
-      .filter((note) => note.remindAt && !note.remindedAt && note.remindAt <= now)
-      .sort((left, right) => String(left.remindAt).localeCompare(String(right.remindAt)));
+      .filter(
+        (note) => note.remindAt && !note.remindedAt && note.remindAt <= now,
+      )
+      .sort((left, right) =>
+        String(left.remindAt).localeCompare(String(right.remindAt)),
+      );
   }
 
-  async markReminded(code: string, when: string | Date): Promise<NoteRecord | null> {
+  async markReminded(
+    code: string,
+    when: string | Date,
+  ): Promise<NoteRecord | null> {
     const note = await this.getNote(code);
     if (!note) {
       return null;
@@ -786,11 +959,14 @@ export class ExtensionTaskService {
       ...(note.planCode ? { plan_code: note.planCode } : {}),
       ...(note.pinned ? { pinned: true } : {}),
       ...(note.remindAt ? { remind_at: note.remindAt } : {}),
-      reminded_at: normalizeReminderIso(when)
+      reminded_at: normalizeReminderIso(when),
     });
   }
 
-  async rescheduleReminder(code: string, remindAt: string | Date): Promise<NoteRecord | null> {
+  async rescheduleReminder(
+    code: string,
+    remindAt: string | Date,
+  ): Promise<NoteRecord | null> {
     const note = await this.getNote(code);
     if (!note) {
       return null;
@@ -805,32 +981,49 @@ export class ExtensionTaskService {
       ...(note.planCode ? { plan_code: note.planCode } : {}),
       ...(note.pinned ? { pinned: true } : {}),
       remind_at: normalizeReminderIso(remindAt),
-      reminded_at: null
+      reminded_at: null,
     });
   }
 
-  async listLogs(limit?: number): Promise<LogRecord[]> {
+  async listLogs(
+    limit?: number,
+    beforeTimestamp?: string,
+  ): Promise<LogRecord[]> {
     const collection = await this.getLogsCollection();
-    const resolved = clampLogsLimit(limit ?? this.config.get<number>("logsLimit", 500));
-    const items = await collection.find({}).sort({ timestamp: -1 }).limit(resolved).toArray();
+    const resolved = clampLogsLimit(
+      limit ?? this.config.get<number>("logsLimit", 500),
+    );
+    const filter: Record<string, unknown> = {};
+    if (typeof beforeTimestamp === "string" && beforeTimestamp.length > 0) {
+      filter.timestamp = { $lt: beforeTimestamp };
+    }
+    const items = await collection
+      .find(filter)
+      .sort({ timestamp: -1 })
+      .limit(resolved)
+      .toArray();
     return normalizeLogCollection(items);
   }
 
   async saveTask(task: TaskDocumentInput) {
-    return this.withTaskStore(this.getConnectionSettings(), (store) => store.upsertTasks([task]));
+    return this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.upsertTasks([task]),
+    );
   }
 
   async listDatabaseNames() {
-    return this.withTaskStore(this.getConnectionSettings(), (store) => store.listDatabaseNames());
+    return this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.listDatabaseNames(),
+    );
   }
 
   async listCollectionNames(overrides?: Partial<ConnectionSettings>) {
     return this.withTaskStore(
       {
         ...this.getConnectionSettings(),
-        ...overrides
+        ...overrides,
       },
-      (store) => store.listCollectionNames()
+      (store) => store.listCollectionNames(),
     );
   }
 
@@ -838,32 +1031,48 @@ export class ExtensionTaskService {
     return this.withTaskStore(
       {
         ...this.getConnectionSettings(),
-        ...overrides
+        ...overrides,
       },
-      (store) => store.inspectCollection()
+      (store) => store.inspectCollection(),
     );
   }
 
   async updateConnectionSettings(next: Partial<ConnectionSettings>) {
     const updatedSettings = {
       ...this.getConnectionSettings(),
-      ...next
+      ...next,
     };
 
     if (next.mongoUrl) {
       await this.storeMongoUrl(next.mongoUrl);
     }
     if (next.mongoDbName) {
-      await this.config.update("mongoDbName", next.mongoDbName, vscode.ConfigurationTarget.Workspace);
+      await this.config.update(
+        "mongoDbName",
+        next.mongoDbName,
+        vscode.ConfigurationTarget.Workspace,
+      );
     }
     if (next.mongoTasksCollection) {
-      await this.config.update("mongoTasksCollection", next.mongoTasksCollection, vscode.ConfigurationTarget.Workspace);
+      await this.config.update(
+        "mongoTasksCollection",
+        next.mongoTasksCollection,
+        vscode.ConfigurationTarget.Workspace,
+      );
     }
     if (next.mongoNotesCollection) {
-      await this.config.update("mongoNotesCollection", next.mongoNotesCollection, vscode.ConfigurationTarget.Workspace);
+      await this.config.update(
+        "mongoNotesCollection",
+        next.mongoNotesCollection,
+        vscode.ConfigurationTarget.Workspace,
+      );
     }
     if (next.mongoLogsCollection) {
-      await this.config.update("mongoLogsCollection", next.mongoLogsCollection, vscode.ConfigurationTarget.Workspace);
+      await this.config.update(
+        "mongoLogsCollection",
+        next.mongoLogsCollection,
+        vscode.ConfigurationTarget.Workspace,
+      );
     }
 
     if (next.mongoUrl) {
@@ -886,14 +1095,14 @@ export class ExtensionTaskService {
   async bootstrapSampleDatabase(overrides?: Partial<ConnectionSettings>) {
     const settings = {
       ...this.getConnectionSettings(),
-      ...overrides
+      ...overrides,
     };
     await this.withTaskStore(settings, async (store) => {
       await store.upsertTasks(
         sampleTasks.map((task) => ({
           ...task,
-          project: task.project ?? settings.mongoDbName
-        }))
+          project: task.project ?? settings.mongoDbName,
+        })),
       );
     });
     await this.updateConnectionSettings(settings);
@@ -906,46 +1115,54 @@ export class ExtensionTaskService {
       actor: "human",
       toolName,
       provider: "local",
-      prompt: stableStringify(metadata)
+      prompt: stableStringify(metadata),
     });
 
     await started.finish({
       success: true,
-      metadata
+      metadata,
     });
   }
 
-  private createStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+  private createStore(
+    settings: ConnectionSettings = this.getConnectionSettings(),
+  ) {
     const sharedClient = this.getSharedClient(settings);
     return createMongoTaskStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoTasksCollection,
-      ...(sharedClient ? { sharedClient } : {})
+      ...(sharedClient ? { sharedClient } : {}),
     });
   }
 
-  private createPlanStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+  private createPlanStore(
+    settings: ConnectionSettings = this.getConnectionSettings(),
+  ) {
     const sharedClient = this.getSharedClient(settings);
     return createMongoActionPlanStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoPlansCollection,
-      ...(sharedClient ? { sharedClient } : {})
+      ...(sharedClient ? { sharedClient } : {}),
     });
   }
 
-  private createNotesStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+  private createNotesStore(
+    settings: ConnectionSettings = this.getConnectionSettings(),
+  ) {
     const sharedClient = this.getSharedClient(settings);
     return createMongoNoteStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoNotesCollection,
-      ...(sharedClient ? { sharedClient } : {})
+      ...(sharedClient ? { sharedClient } : {}),
     });
   }
 
-  private getNotesStore(settings: ConnectionSettings = this.getConnectionSettings()) {
+  private getNotesStore(
+    settings: ConnectionSettings = this.getConnectionSettings(),
+  ) {
     if (!this.notesStore) {
       this.notesStore = this.createNotesStore(settings);
     }
@@ -953,7 +1170,10 @@ export class ExtensionTaskService {
   }
 
   private getSharedClient(settings: ConnectionSettings) {
-    if (!this.sharedClient || this.sharedClient.mongoUrl !== settings.mongoUrl) {
+    if (
+      !this.sharedClient ||
+      this.sharedClient.mongoUrl !== settings.mongoUrl
+    ) {
       return undefined;
     }
     return this.sharedClient;
@@ -973,7 +1193,9 @@ export class ExtensionTaskService {
   }
 
   private async refreshMongoUrlFromSecrets() {
-    this.mongoUrl = (await this.context.secrets.get(MONGO_URL_SECRET_KEY)) || DEFAULT_MONGO_URL;
+    this.mongoUrl =
+      (await this.context.secrets.get(MONGO_URL_SECRET_KEY)) ||
+      DEFAULT_MONGO_URL;
   }
 
   private async storeMongoUrl(mongoUrl: string) {
@@ -991,13 +1213,13 @@ export class ExtensionTaskService {
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoTasksCollection,
-      ...(sharedClient ? { sharedClient } : {})
+      ...(sharedClient ? { sharedClient } : {}),
     });
     const planStore = createMongoActionPlanStore({
       mongoUrl: settings.mongoUrl,
       dbName: settings.mongoDbName,
       collectionName: settings.mongoPlansCollection,
-      ...(sharedClient ? { sharedClient } : {})
+      ...(sharedClient ? { sharedClient } : {}),
     });
     const notesStore = this.getNotesStore(settings);
     const logsCollection = await this.getLogsCollection(settings);
@@ -1010,19 +1232,39 @@ export class ExtensionTaskService {
         logsCollection.createIndexes([
           { key: { source: 1, timestamp: -1 }, name: "logs_source_timestamp" },
           { key: { level: 1, timestamp: -1 }, name: "logs_level_timestamp" },
-          { key: { process: 1, timestamp: -1 }, name: "logs_process_timestamp", partialFilterExpression: { process: { $type: "string" } } },
-          { key: { execution_id: 1, timestamp: -1 }, name: "logs_execution_timestamp", partialFilterExpression: { execution_id: { $type: "string" } } },
-          { key: { tag: 1, timestamp: -1 }, name: "logs_tag_timestamp", partialFilterExpression: { tag: { $type: "string" } } }
-        ])
+          {
+            key: { process: 1, timestamp: -1 },
+            name: "logs_process_timestamp",
+            partialFilterExpression: { process: { $type: "string" } },
+          },
+          {
+            key: { execution_id: 1, timestamp: -1 },
+            name: "logs_execution_timestamp",
+            partialFilterExpression: { execution_id: { $type: "string" } },
+          },
+          {
+            key: { tag: 1, timestamp: -1 },
+            name: "logs_tag_timestamp",
+            partialFilterExpression: { tag: { $type: "string" } },
+          },
+        ]),
       ]);
     } finally {
-      await Promise.all([taskStore.close(), planStore.close(), notesStore.close()]);
+      await Promise.all([
+        taskStore.close(),
+        planStore.close(),
+        notesStore.close(),
+      ]);
     }
   }
 
-  private async getLogsCollection(settings: ConnectionSettings = this.getConnectionSettings()) {
+  private async getLogsCollection(
+    settings: ConnectionSettings = this.getConnectionSettings(),
+  ) {
     const sharedClient = await this.requireSharedClient(settings);
-    return sharedClient.db(settings.mongoDbName).collection<Record<string, unknown>>(settings.mongoLogsCollection);
+    return sharedClient
+      .db(settings.mongoDbName)
+      .collection<Record<string, unknown>>(settings.mongoLogsCollection);
   }
 
   private async requireSharedClient(settings: ConnectionSettings) {
@@ -1042,7 +1284,10 @@ export class ExtensionTaskService {
     return configured || path.join(os.homedir(), "cortex-archive");
   }
 
-  private async withTaskStore<T>(settings: ConnectionSettings, handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>): Promise<T> {
+  private async withTaskStore<T>(
+    settings: ConnectionSettings,
+    handler: (store: ReturnType<typeof createMongoTaskStore>) => Promise<T>,
+  ): Promise<T> {
     const store = this.createStore(settings);
     try {
       return await handler(store);
@@ -1053,7 +1298,9 @@ export class ExtensionTaskService {
 
   private async withPlanStore<T>(
     settings: ConnectionSettings,
-    handler: (store: ReturnType<typeof createMongoActionPlanStore>) => Promise<T>
+    handler: (
+      store: ReturnType<typeof createMongoActionPlanStore>,
+    ) => Promise<T>,
   ): Promise<T> {
     const store = this.createPlanStore(settings);
     try {
@@ -1071,15 +1318,15 @@ function normalizeReminderIso(value: string | Date) {
 async function archiveDocuments(
   collection: Collection<Document>,
   documents: Document[],
-  session?: ClientSession
+  session?: ClientSession,
 ) {
   await Promise.all(
     documents.map((document) =>
       collection.replaceOne({ _id: document._id }, document, {
         upsert: true,
-        ...(session ? { session } : {})
-      })
-    )
+        ...(session ? { session } : {}),
+      }),
+    ),
   );
 }
 
@@ -1098,10 +1345,9 @@ function optionalStringField(document: Document, key: string) {
 
 function stringArrayField(document: Document, key: string) {
   const value = document[key];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").sort((left, right) => left.localeCompare(right)) : [];
-}
-
-function clampLogsLimit(value: number): number {
-  if (!Number.isFinite(value)) return 500;
-  return Math.max(50, Math.min(5000, Math.trunc(value)));
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .sort((left, right) => left.localeCompare(right))
+    : [];
 }

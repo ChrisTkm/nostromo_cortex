@@ -1,12 +1,17 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { buildExecutionGroups, buildLogJson, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
   type: "logs:list";
   logs: LogRecord[];
   autoRefreshSeconds: number;
+  hasMore: boolean;
+} | {
+  type: "logs:append";
+  logs: LogRecord[];
+  hasMore: boolean;
 };
 
 declare global {
@@ -34,26 +39,34 @@ export function LogsApp() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   useEffect(() => {
     function onMessage(event: MessageEvent<LogsMessage>) {
       const message = event.data;
-      if (message?.type !== "logs:list" || !Array.isArray(message.logs)) {
+      if (message?.type === "logs:list" && Array.isArray(message.logs)) {
+        setLogs(message.logs);
+        setAutoRefreshSeconds(message.autoRefreshSeconds ?? 0);
+        setHasMore(Boolean(message.hasMore));
+        setLoadingOlder(false);
+        setLevel((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.level)));
+        setSource((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.source)));
+        setFolder((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.folder)));
+        setTag((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.tag ?? entry.event ?? "untagged")));
+        setSelectedKey((current) => {
+          return reconcileSelectedLogKey(current, message.logs);
+        });
+        setDetailOpen((current) => (message.logs.length === 0 ? false : current));
         return;
       }
-
-      setLogs(message.logs);
-      setAutoRefreshSeconds(message.autoRefreshSeconds ?? 0);
-      setLevel((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.level)));
-      setSource((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.source)));
-      setFolder((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.folder)));
-      setTag((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.tag ?? entry.event ?? "untagged")));
-      setSelectedKey((current) => {
-        return reconcileSelectedLogKey(current, message.logs);
-      });
-      setDetailOpen((current) => (message.logs.length === 0 ? false : current));
+      if (message?.type === "logs:append" && Array.isArray(message.logs)) {
+        setLogs((current) => mergeLogPages(current, message.logs));
+        setHasMore(Boolean(message.hasMore));
+        setLoadingOlder(false);
+      }
     }
 
     window.addEventListener("message", onMessage);
@@ -161,6 +174,14 @@ export function LogsApp() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const defaultFilename = `cortex-logs-${timestamp}.${format}`;
     vscode.postMessage({ type: "logs:export", format, content, defaultFilename });
+  }
+
+  function loadOlder() {
+    if (loadingOlder || !hasMore) return;
+    const cursor = getOldestLogTimestamp(logs);
+    if (!cursor) return;
+    setLoadingOlder(true);
+    vscode.postMessage({ type: "logs:loadOlder", beforeTimestamp: cursor });
   }
 
   function toggleGroup(groupId: string) {
@@ -369,6 +390,18 @@ export function LogsApp() {
               </section>
             ))
           )}
+          {hasMore && filteredLogs.length > 0 ? (
+            <div className="logs-load-older">
+              <button
+                type="button"
+                className="logs-button"
+                onClick={loadOlder}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? "Loading older..." : "Load older"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
 

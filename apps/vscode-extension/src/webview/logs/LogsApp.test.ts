@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, LOGS_PYTHON_SNIPPET, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -172,6 +172,52 @@ describe("LogsApp helpers", () => {
       ];
       const csv = buildLogsCsvExport(logsWithDetails);
       expect(csv).toContain('"[{""key"":""k""');
+    });
+  });
+
+  describe("pagination helpers (getOldestLogTimestamp / mergeLogPages)", () => {
+    it("getOldestLogTimestamp returns null for empty list", () => {
+      expect(getOldestLogTimestamp([])).toBeNull();
+    });
+
+    it("getOldestLogTimestamp returns the oldest timestamp", () => {
+      const result = getOldestLogTimestamp(sampleLogs);
+      expect(result).toBe("2026-04-20T09:00:00.000Z");
+    });
+
+    it("mergeLogPages merges + sorts desc by timestamp", () => {
+      const incoming = [
+        { ...sampleLogs[0]!, timestamp: "2026-04-19T10:00:00.000Z" }
+      ];
+      const result = mergeLogPages(sampleLogs, incoming);
+      expect(result).toHaveLength(3);
+      expect(result[0]!.timestamp).toBe("2026-04-20T10:00:00.000Z");
+      expect(result[1]!.timestamp).toBe("2026-04-20T09:00:00.000Z");
+      expect(result[2]!.timestamp).toBe("2026-04-19T10:00:00.000Z");
+    });
+
+    it("mergeLogPages deduplicates by fallback key when id is absent", () => {
+      const incoming = [sampleLogs[0]!];
+      const result = mergeLogPages(sampleLogs, incoming);
+      expect(result).toHaveLength(2);
+    });
+
+    it("mergeLogPages deduplicates by id", () => {
+      const logsWithId = sampleLogs.map((entry, index) => ({ ...entry, id: `id-${index}` }));
+      const incoming = [logsWithId[0]!];
+      const result = mergeLogPages(logsWithId, incoming);
+      expect(result).toHaveLength(2);
+    });
+
+    it("mergeLogPages handles empty existing", () => {
+      const result = mergeLogPages([], sampleLogs);
+      expect(result).toHaveLength(2);
+      expect(result[0]!.timestamp).toBe("2026-04-20T10:00:00.000Z");
+    });
+
+    it("mergeLogPages handles empty incoming", () => {
+      const result = mergeLogPages(sampleLogs, []);
+      expect(result).toHaveLength(2);
     });
   });
 });
