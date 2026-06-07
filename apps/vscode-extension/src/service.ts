@@ -202,6 +202,10 @@ export class ExtensionTaskService {
     return true;
   }
 
+  getArchivePath(): string {
+    return this.resolveArchivePath();
+  }
+
   async archivePlan(planCode: string): Promise<ArchivePlanResult> {
     const code = planCode.trim();
     if (!code) {

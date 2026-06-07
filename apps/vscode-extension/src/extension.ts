@@ -252,7 +252,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     await panel.webview.postMessage({
       type: "archive:list",
-      plans
+      plans,
+      archivePath: service.getArchivePath()
     });
   }
 
@@ -444,6 +445,10 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "ready" || message?.type === "archive:refresh") {
         archivePanelReady = true;
         await postArchiveList();
+        return;
+      }
+      if (message?.type === "archive:openFolder") {
+        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(service.getArchivePath()));
         return;
       }
       if (message?.type === "archive:openJson" && typeof message.jsonPath === "string" && message.jsonPath.trim()) {

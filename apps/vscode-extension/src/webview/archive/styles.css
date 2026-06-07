@@ -19,6 +19,31 @@
   border-bottom: 1px solid var(--vscode-widget-border);
 }
 
+.archive-header__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.archive-header__path {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.archive-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .archive-header__eyebrow {
   color: var(--vscode-descriptionForeground);
   font-size: 11px;

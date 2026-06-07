@@ -382,7 +382,8 @@ vi.mock("./service.js", () => ({
     saveMongoUrl: saveMongoUrlMock,
     bootstrapSampleDatabase: vi.fn().mockResolvedValue(undefined),
     loadPlans: loadPlansMock,
-    isJsonPathInArchive: vi.fn(() => true)
+    isJsonPathInArchive: vi.fn(() => true),
+    getArchivePath: vi.fn(() => "C:\\temp\\cortex-archive")
   }))
 }));
 
@@ -930,7 +931,8 @@ describe("activate notes commands", () => {
     expect(listArchivedPlansMock).toHaveBeenCalledTimes(1);
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "archive:list",
-      plans: expect.arrayContaining([expect.objectContaining({ code: "PLAN-B" })])
+      plans: expect.arrayContaining([expect.objectContaining({ code: "PLAN-B" })]),
+      archivePath: "C:\\temp\\cortex-archive"
     });
 
     openTextDocumentMock.mockResolvedValueOnce({ uri: { fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json" } });

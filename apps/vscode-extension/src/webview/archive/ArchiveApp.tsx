@@ -5,6 +5,7 @@ import type { ArchivedPlanSummary } from "../../service";
 type ArchiveMessage = {
   type: "archive:list";
   plans: ArchivedPlanSummary[];
+  archivePath?: string;
 };
 
 declare global {
@@ -21,6 +22,7 @@ const vscode = window.acquireVsCodeApi();
 
 export function ArchiveApp() {
   const [plans, setPlans] = useState<ArchivedPlanSummary[]>([]);
+  const [archivePath, setArchivePath] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
@@ -33,6 +35,7 @@ export function ArchiveApp() {
         return;
       }
       setPlans(message.plans);
+      setArchivePath(message.archivePath);
       setSelectedTags((current) => current.filter((tag) => message.plans.some((plan) => plan.tags.includes(tag))));
       setExpandedCode((current) => (current && message.plans.some((plan) => plan.code === current) ? current : null));
     }
@@ -62,13 +65,25 @@ export function ArchiveApp() {
   return (
     <div className="archive-app">
       <header className="archive-header">
-        <div>
+        <div className="archive-header__meta">
           <div className="archive-header__eyebrow">Read-only</div>
           <h1 className="archive-header__title">Cortex Archive</h1>
+          {archivePath ? (
+            <div className="archive-header__path" title={archivePath}>
+              Folder: {archivePath}
+            </div>
+          ) : null}
         </div>
-        <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:refresh" })} type="button">
-          Refresh
-        </button>
+        <div className="archive-header__actions">
+          {archivePath ? (
+            <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:openFolder" })} type="button">
+              Open folder
+            </button>
+          ) : null}
+          <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:refresh" })} type="button">
+            Refresh
+          </button>
+        </div>
       </header>
 
       <section className="archive-toolbar">
