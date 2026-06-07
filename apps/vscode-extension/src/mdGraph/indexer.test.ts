@@ -20,7 +20,7 @@ vi.mock("vscode", () => ({
   }
 }));
 
-import { buildMdxGraphSnapshot } from "./indexer.js";
+import { buildMdxGraphSnapshot, parseFrontmatter } from "./indexer.js";
 
 describe("buildMdxGraphSnapshot", () => {
   beforeEach(() => {
@@ -265,5 +265,439 @@ describe("buildMdxGraphSnapshot", () => {
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
     expect(snapshot.issues.filter((issue) => issue.kind === "cycle")).toHaveLength(0);
+  });
+
+  it("does not resolve wikilink when stem is ambiguous", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const aPath = "C:\\site\\src\\content\\docs\\a\\foo.mdx";
+    const bPath = "C:\\site\\src\\content\\docs\\b\\foo.mdx";
+    const linkerPath = "C:\\site\\src\\content\\docs\\linker.mdx";
+    filesRef.current = [{ fsPath: aPath }, { fsPath: bPath }, { fsPath: linkerPath }];
+    sourcesRef.current.set(aPath, ["---", "title: Foo A", "---", "", "# Foo A"].join("\n"));
+    sourcesRef.current.set(bPath, ["---", "title: Foo B", "---", "", "# Foo B"].join("\n"));
+    sourcesRef.current.set(linkerPath, ["---", "title: Linker", "---", "", "See [[foo]] for details."].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:a/foo.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:b/foo.mdx")).toBe(false);
+  });
+
+  it("resolves wikilink when stem is unique", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const uniquePath = "C:\\site\\src\\content\\docs\\unic.mdx";
+    const linkerPath = "C:\\site\\src\\content\\docs\\linker2.mdx";
+    filesRef.current = [{ fsPath: uniquePath }, { fsPath: linkerPath }];
+    sourcesRef.current.set(uniquePath, ["---", "title: Unique", "---", "", "# Unique"].join("\n"));
+    sourcesRef.current.set(linkerPath, ["---", "title: Linker 2", "---", "", "See [[unic]] for details."].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.some((e) => e.to === "doc:unic.mdx" && e.from === "doc:linker2.mdx")).toBe(true);
+    expect(snapshot.issues.filter((i) => i.kind === "broken-ref")).toHaveLength(0);
+  });
+
+  it("does not resolve markdown link when stem is ambiguous", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const aPath = "C:\\site\\src\\content\\docs\\x\\bar.mdx";
+    const bPath = "C:\\site\\src\\content\\docs\\y\\bar.mdx";
+    const linkerPath = "C:\\site\\src\\content\\docs\\linker3.mdx";
+    filesRef.current = [{ fsPath: aPath }, { fsPath: bPath }, { fsPath: linkerPath }];
+    sourcesRef.current.set(aPath, ["---", "title: Bar A", "---", "", "# Bar A"].join("\n"));
+    sourcesRef.current.set(bPath, ["---", "title: Bar B", "---", "", "# Bar B"].join("\n"));
+    sourcesRef.current.set(linkerPath, ["---", "title: Linker 3", "---", "", 'See [bar](bar) for details.'].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:x/bar.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:y/bar.mdx")).toBe(false);
+  });
+
+  it("flags all docs as orphans in non-Starlight workspace", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const page1 = "C:\\project\\pages\\page1.mdx";
+    const page2 = "C:\\project\\pages\\page2.mdx";
+    filesRef.current = [{ fsPath: page1 }, { fsPath: page2 }];
+    sourcesRef.current.set(page1, ["---", "title: Page 1", "---", "", "# Page 1"].join("\n"));
+    sourcesRef.current.set(page2, ["---", "title: Page 2", "---", "", "# Page 2"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.stats.orphanCount).toBe(2);
+    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
+  });
+
+  it("resolves explicit relative refs even when docs are orphans", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const aPath = "C:\\project\\pages\\a.mdx";
+    const bPath = "C:\\project\\pages\\b.mdx";
+    filesRef.current = [{ fsPath: aPath }, { fsPath: bPath }];
+    sourcesRef.current.set(aPath, ["---", "title: A", "---", "", "# A"].join("\n"));
+    sourcesRef.current.set(bPath, ["---", "title: B", "---", "", "See [A](./a.mdx)"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.some((e) => e.to === "doc:pages/a.mdx" && e.from === "doc:pages/b.mdx")).toBe(true);
+    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
+  });
+
+  it("formats broken-ref detail as '<relation>: <href>'", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const docPath = "C:\\site\\src\\content\\docs\\test-br.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, [
+      "---",
+      "title: Test",
+      "related:",
+      "  references:",
+      "    - /does-not-exist/",
+      "---",
+      "",
+      "# Test",
+    ].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    const br = snapshot.issues.find((i) => i.kind === "broken-ref");
+    expect(br?.detail).toBe("references: /does-not-exist/");
+  });
+
+  it("detects self-reference via frontmatter", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const docPath = "C:\\site\\src\\content\\docs\\selftest.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, [
+      "---",
+      "title: Self Test",
+      "related:",
+      "  references:",
+      "    - /selftest/",
+      "---",
+      "",
+      "# Self Test",
+    ].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.issues.some((i) => i.kind === "self-reference" && i.nodeId === "doc:selftest.mdx")).toBe(true);
+    expect(snapshot.issues.find((i) => i.kind === "self-reference")?.detail).toBe("references");
+  });
+
+  it("ignores http and https links", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test-http.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, [
+      "---",
+      "title: Test",
+      "---",
+      "",
+      "See [Example](https://example.com) and [HTTP](http://httpbin.org).",
+    ].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.every((e) => !e.to.includes("example.com") && !e.to.includes("httpbin"))).toBe(true);
+    expect(snapshot.issues.filter((i) => i.kind === "broken-ref")).toHaveLength(0);
+  });
+});
+
+describe("parseFrontmatter", () => {
+  const fm = (body: string) => `---\n${body}\n---\n`;
+
+  it("parses happy path with all fields", () => {
+    const result = parseFrontmatter(fm([
+      'title: Manual de Contabilidad',
+      'description: Descripción completa',
+      'domain: Finanzas',
+      'layer: core',
+      'kind: guide',
+      'badge: new',
+      'tags: [contabilidad, niff]',
+      'related:',
+      '  references:',
+      '    - /manual/referencia/',
+      '  standards:',
+      '    - /normas/ifrs/',
+      '  accounts:',
+      '    - 1201500',
+    ].join("\n")));
+    expect(result.title).toBe("Manual de Contabilidad");
+    expect(result.description).toBe("Descripción completa");
+    expect(result.domain).toBe("finanzas");
+    expect(result.layer).toBe("core");
+    expect(result.docKind).toBe("guide");
+    expect(result.badge).toBe("new");
+    expect(result.tags).toEqual(["contabilidad", "niff"]);
+    expect(result.related).toHaveLength(2);
+    expect(result.related.find((r) => r.relation === "references")?.href).toBe("/manual/referencia/");
+    expect(result.related.find((r) => r.relation === "standards")?.href).toBe("/normas/ifrs/");
+    expect(result.accounts).toEqual(["1201500"]);
+  });
+
+  it("returns empty when no opening ---", () => {
+    const result = parseFrontmatter("title: foo\n");
+    expect(result).toEqual({ tags: [], related: [], accounts: [] });
+  });
+
+  it("returns empty when no closing ---", () => {
+    const result = parseFrontmatter("---\ntitle: foo\n");
+    expect(result).toEqual({ tags: [], related: [], accounts: [] });
+  });
+
+  it("returns empty on invalid YAML without throwing", () => {
+    const result = parseFrontmatter("---\ntitle: \"unclosed\n---\n");
+    expect(result).toEqual({ tags: [], related: [], accounts: [] });
+  });
+
+  it("preserves multi-line description with literal block", () => {
+    const result = parseFrontmatter(fm([
+      'title: Test',
+      'description: |',
+      '  Línea uno',
+      '  Línea dos',
+    ].join("\n")));
+    expect(result.description).toBe("Línea uno\nLínea dos");
+  });
+
+  it("ignores YAML inline comments in scalar values", () => {
+    const result = parseFrontmatter(fm('title: foo  # comentario'));
+    expect(result.title).toBe("foo");
+  });
+
+  it("handles tags with commas inside quoted strings", () => {
+    const result = parseFrontmatter(fm('tags: ["a,b", "c"]'));
+    expect(result.tags).toEqual(["a,b", "c"]);
+  });
+
+  it("ignores related.upstream and related.downstream", () => {
+    const result = parseFrontmatter(fm([
+      'title: Test',
+      'related:',
+      '  upstream:',
+      '    - /should-ignore/',
+      '  downstream:',
+      '    - /also-ignore/',
+    ].join("\n")));
+    expect(result.related).toHaveLength(0);
+  });
+
+  it("filters accounts by pattern \\d{4,}", () => {
+    const result = parseFrontmatter(fm([
+      'title: Test',
+      'related:',
+      '  accounts:',
+      '    - 1100',
+      '    - 12',
+      '    - 9999',
+    ].join("\n")));
+    expect(result.accounts).toEqual(["1100", "9999"]);
+  });
+
+  it("handles null tags and null related without throwing", () => {
+    const result = parseFrontmatter(fm([
+      'title: Test',
+      'tags: null',
+      'related: null',
+    ].join("\n")));
+    expect(result.title).toBe("Test");
+    expect(result.tags).toEqual([]);
+    expect(result.related).toEqual([]);
+    expect(result.accounts).toEqual([]);
+  });
+
+  it("parses folded description block", () => {
+    const result = parseFrontmatter(fm([
+      'title: Test',
+      'description: >',
+      '  This is a',
+      '  folded block',
+    ].join("\n")));
+    expect(result.description).toBe("This is a folded block");
+  });
+
+  it("parses title with escaped quotes", () => {
+    const result = parseFrontmatter(fm('title: "Manual de \\"Contabilidad\\""'));
+    expect(result.title).toBe('Manual de "Contabilidad"');
+  });
+});
+
+describe("stripCodeBlocks", () => {
+  function doc(body: string) {
+    return ["---", "title: Test", "---", "", body].join("\n");
+  }
+
+  beforeEach(() => {
+    filesRef.current = [];
+    sourcesRef.current = new Map<string, string>();
+  });
+
+  it("ignores markdown links inside fenced code blocks", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, doc([
+      "```md",
+      "[foo](/foo-fake)",
+      "```",
+    ].join("\n")));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("foo-fake"))).toBe(false);
+  });
+
+  it("ignores links inside inline code spans", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, doc('Some text `[a](/b)` here.'));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("/b"))).toBe(false);
+  });
+
+  it("ignores accounts inside fenced code blocks", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, doc([
+      "```",
+      "/manual-cuentas/x/1100/",
+      "```",
+    ].join("\n")));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.nodes.some((n) => n.id === "account:1100")).toBe(false);
+  });
+
+  it("detects only real links outside fenced blocks, not fake ones inside", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const docPath = "C:\\site\\src\\content\\docs\\section\\test.mdx";
+    const targetPath = "C:\\site\\src\\content\\docs\\section\\actual.mdx";
+    filesRef.current = [{ fsPath: docPath }, { fsPath: targetPath }];
+    sourcesRef.current.set(docPath, doc([
+      "```",
+      "[bad](/bad)",
+      "```",
+      "",
+      "[good](/section/actual/)",
+    ].join("\n")));
+    sourcesRef.current.set(targetPath, doc(""));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("bad"))).toBe(false);
+    expect(snapshot.edges.some((e) => e.to.includes("actual"))).toBe(true);
+  });
+
+  it("ignores links inside tilde-fenced code blocks", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, doc([
+      "~~~",
+      "[a](/b)",
+      "~~~",
+    ].join("\n")));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("/b"))).toBe(false);
+  });
+
+  it("still detects real links and accounts outside code blocks", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const docPath = "C:\\site\\src\\content\\docs\\section\\test.mdx";
+    const targetPath = "C:\\site\\src\\content\\docs\\section\\actual.mdx";
+    filesRef.current = [{ fsPath: docPath }, { fsPath: targetPath }];
+    sourcesRef.current.set(docPath, doc([
+      "See [this](/section/actual/) and the account at /manual-cuentas/x/1201500/.",
+    ].join("\n")));
+    sourcesRef.current.set(targetPath, doc(""));
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("actual"))).toBe(true);
+    expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(true);
+  });
+
+  it("ignores HTML href inside fenced code blocks", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\test-html-in-code.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, doc([
+      "```html",
+      '<a href="/inside-code">Ignored</a>',
+      "```",
+    ].join("\n")));
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.edges.some((e) => e.to.includes("inside-code"))).toBe(false);
+  });
+});
+
+function makeFiles(count: number, dir: string) {
+  return Array.from({ length: count }, (_, i) => ({ fsPath: `${dir}\\file${i}.mdx` }));
+}
+
+describe("truncation", () => {
+  const rootUri = { fsPath: "C:\\site" } as any;
+
+  beforeEach(() => {
+    filesRef.current = [];
+    sourcesRef.current = new Map<string, string>();
+  });
+
+  it("does not add truncated issue when files < maxFiles", async () => {
+    filesRef.current = makeFiles(5, "C:\\site\\docs");
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(0);
+    expect(snapshot.stats.fileCount).toBe(5);
+  });
+
+  it("does not add truncated issue when files exactly equal maxFiles", async () => {
+    filesRef.current = makeFiles(10, "C:\\site\\docs");
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(0);
+    expect(snapshot.stats.fileCount).toBe(10);
+  });
+
+  it("adds truncated issue and caps fileCount when files exceed maxFiles", async () => {
+    filesRef.current = makeFiles(15, "C:\\site\\docs");
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(1);
+    expect(snapshot.issues.find((i) => i.kind === "truncated")?.nodeId).toBe("__workspace__");
+    expect(snapshot.issues.find((i) => i.kind === "truncated")?.detail).toContain("10");
+    expect(snapshot.stats.fileCount).toBe(10);
+  });
+
+  it("only produces one truncated issue even when mixed with other issue kinds", async () => {
+    filesRef.current = makeFiles(15, "C:\\site\\docs");
+    for (let i = 0; i < filesRef.current.length; i++) {
+      const f = filesRef.current[i];
+      if (i === 0) {
+        sourcesRef.current.set(f.fsPath, [
+          "---",
+          "title: Broken",
+          "related:",
+          "  references:",
+          "    - /non-existent/",
+          "---",
+          "",
+          "# Broken",
+        ].join("\n"));
+      } else {
+        sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+      }
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    const truncatedIssues = snapshot.issues.filter((i) => i.kind === "truncated");
+    expect(truncatedIssues).toHaveLength(1);
+    expect(truncatedIssues[0].nodeId).toBe("__workspace__");
+    expect(snapshot.issues.some((i) => i.kind === "broken-ref")).toBe(true);
   });
 });

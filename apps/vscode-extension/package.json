@@ -415,7 +415,8 @@
     "jszip": "^3.10.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "web-tree-sitter": "^0.26.8"
+    "web-tree-sitter": "^0.26.8",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

@@ -51,18 +51,20 @@ type RelatedLink = {
 };
 
 const ISSUE_SEVERITY: Record<MdxGraphIssueKind, number> = {
+  truncated: 5,
   cycle: 4,
   "broken-ref": 3,
   "self-reference": 2,
   orphan: 1
 };
 const ISSUE_LABEL: Record<MdxGraphIssueKind, string> = {
+  truncated: "Scan truncated",
   cycle: "Cycles",
   "broken-ref": "Broken references",
   "self-reference": "Self-references",
   orphan: "Orphans"
 };
-const ISSUE_ORDER: MdxGraphIssueKind[] = ["cycle", "broken-ref", "self-reference", "orphan"];
+const ISSUE_ORDER: MdxGraphIssueKind[] = ["truncated", "cycle", "broken-ref", "self-reference", "orphan"];
 
 export function MdxGraphApp() {
   const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(() => {
@@ -242,6 +244,11 @@ export function MdxGraphApp() {
           <div className="md-graph-stats">
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
+            {snapshot.issues.some((issue) => issue.kind === "truncated") ? (
+              <span className="md-graph-stats__truncated" title="Scan reached cortex.mdxGraphMaxFiles. Some .md/.mdx files were not analyzed.">
+                Scan truncated ({snapshot.stats.fileCount}/+)
+              </span>
+            ) : null}
             {snapshot.issues.length > 0 ? (
               <span className="md-graph-stats__warn">{snapshot.issues.length} issues</span>
             ) : null}
@@ -397,12 +404,22 @@ function BrainInspector({
                   {ISSUE_LABEL[kind]} ({items.length})
                 </p>
                 <div className="md-graph-related">
-                  {items.slice(0, 30).map((issue, index) => (
-                    <button key={`${issue.nodeId}-${index}`} onClick={() => onSelectNode(issue.nodeId)} type="button">
-                      <span>{kind}</span>
-                      {labelOf(issue.nodeId)}
-                    </button>
-                  ))}
+                  {items.slice(0, 30).map((issue, index) => {
+                    const isWorkspace = issue.nodeId === "__workspace__";
+                    if (isWorkspace) {
+                      return (
+                        <span key={`${issue.nodeId}-${index}`} className="md-graph-inspector__issue-workspace">
+                          {issue.detail ?? "Workspace"}
+                        </span>
+                      );
+                    }
+                    return (
+                      <button key={`${issue.nodeId}-${index}`} onClick={() => onSelectNode(issue.nodeId)} type="button">
+                        <span>{kind}</span>
+                        {labelOf(issue.nodeId)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );

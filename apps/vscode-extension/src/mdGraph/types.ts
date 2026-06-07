@@ -2,7 +2,7 @@ export type MdxGraphNodeKind = "doc" | "tag" | "account" | "external";
 
 export type MdxGraphEdgeKind = "link" | "tag" | "account" | "unresolved";
 
-export type MdxGraphIssueKind = "orphan" | "cycle" | "self-reference" | "broken-ref";
+export type MdxGraphIssueKind = "orphan" | "cycle" | "self-reference" | "broken-ref" | "truncated";
 
 export type MdxGraphIssue = {
   kind: MdxGraphIssueKind;

@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import * as vscode from "vscode";
+import { parse as parseYaml } from "yaml";
 
 import type { MdxGraphEdge, MdxGraphIssue, MdxGraphNode, MdxGraphSnapshot } from "./types.js";
 
@@ -31,7 +32,9 @@ const ACCOUNT_ROUTE_RE = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
 export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800): Promise<MdxGraphSnapshot> {
   const startedAt = Date.now();
   const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
-  const files = (await vscode.workspace.findFiles(pattern, "**/{node_modules,.git,dist,build,.astro,.next}/**", maxFiles)).sort((left, right) =>
+  const rawFiles = await vscode.workspace.findFiles(pattern, "**/{node_modules,.git,dist,build,.astro,.next}/**", maxFiles + 1);
+  const truncated = rawFiles.length > maxFiles;
+  const files = rawFiles.slice(0, maxFiles).sort((left, right) =>
     left.fsPath.localeCompare(right.fsPath)
   );
 
@@ -149,6 +152,14 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     issues.push({ kind: "cycle", nodeId: cycleNodeId });
   }
 
+  if (truncated) {
+    issues.push({
+      kind: "truncated",
+      nodeId: "__workspace__",
+      detail: `Scanned ${files.length} of more .md/.mdx files. Increase cortex.mdxGraphMaxFiles to scan more.`
+    });
+  }
+
   return {
     rootPath: rootUri.fsPath,
     generatedAt: new Date().toISOString(),
@@ -174,6 +185,7 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
   const title = frontmatter.title ?? headingTitle ?? titleFromPath(uri.fsPath);
   const explicitTags = frontmatter.tags;
   const tags = unique(explicitTags);
+  const bodyForLinks = stripCodeBlocks(source);
 
   return {
     id: `doc:${relativePath}`,
@@ -186,12 +198,12 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
     ...(frontmatter.docKind ? { docKind: frontmatter.docKind } : {}),
     ...(frontmatter.badge ? { badge: frontmatter.badge } : {}),
     tags,
-    links: uniqueLinks([...frontmatter.related, ...extractLinks(source).map((href) => ({ href, relation: "link" as const }))]),
-    accounts: unique([...frontmatter.accounts, ...extractAccounts(source)])
+    links: uniqueLinks([...frontmatter.related, ...extractLinks(bodyForLinks).map((href) => ({ href, relation: "link" as const }))]),
+    accounts: unique([...frontmatter.accounts, ...extractAccounts(bodyForLinks)])
   };
 }
 
-function parseFrontmatter(source: string): {
+export function parseFrontmatter(source: string): {
   title?: string;
   description?: string;
   domain?: string;
@@ -205,28 +217,32 @@ function parseFrontmatter(source: string): {
   if (!source.startsWith("---")) {
     return { tags: [], related: [], accounts: [] };
   }
-  const end = source.indexOf("\n---", 3);
-  if (end === -1) {
+  const closing = source.slice(3).match(/\r?\n---(\r?\n|$)/);
+  if (!closing || closing.index === undefined) {
     return { tags: [], related: [], accounts: [] };
   }
-  const body = source.slice(3, end);
-  const title = scalarFrontmatterValue(body, "title");
-  const description = scalarFrontmatterValue(body, "description");
-  const domain = normalizeTag(scalarFrontmatterValue(body, "domain") ?? "");
-  const layer = normalizeTag(scalarFrontmatterValue(body, "layer") ?? "");
-  const docKind = normalizeTag(scalarFrontmatterValue(body, "kind") ?? "");
-  const badge = scalarFrontmatterValue(body, "badge");
-  const tags: string[] = [];
-  const inlineTags = body.match(/^tags:\s*\[(.+)\]\s*$/m)?.[1];
-  if (inlineTags) {
-    tags.push(...inlineTags.split(",").map((tag) => tag.trim().replace(/^["']|["']$/g, "")));
+  const body = source.slice(3, 3 + closing.index);
+  let doc: unknown;
+  try {
+    doc = parseYaml(body, { prettyErrors: false });
+  } catch {
+    return { tags: [], related: [], accounts: [] };
   }
-  const tagBlock = body.match(/^tags:\s*\n((?:\s*-\s*.+\n?)+)/m)?.[1];
-  if (tagBlock) {
-    tags.push(...tagBlock.split(/\r?\n/).map((line) => line.replace(/^\s*-\s*/, "").trim()).filter(Boolean));
+  if (!isPlainObject(doc)) {
+    return { tags: [], related: [], accounts: [] };
   }
-  const relatedBlock = body.match(/^related:\s*\n((?:\s{2,}.+\n?)+)/m)?.[1] ?? "";
-  const related = extractRelatedRefs(relatedBlock);
+  const record = doc as Record<string, unknown>;
+
+  const title = coerceString(record.title);
+  const description = coerceString(record.description);
+  const domain = normalizeTag(coerceString(record.domain) ?? "");
+  const layer = normalizeTag(coerceString(record.layer) ?? "");
+  const docKind = normalizeTag(coerceString(record.kind) ?? "");
+  const badge = coerceString(record.badge);
+
+  const tags = unique(coerceStringList(record.tags).map(normalizeTag).filter(Boolean));
+  const { links: related, accounts } = parseRelatedBlock(record.related);
+
   return {
     ...(title ? { title } : {}),
     ...(description ? { description } : {}),
@@ -234,52 +250,59 @@ function parseFrontmatter(source: string): {
     ...(layer ? { layer } : {}),
     ...(docKind ? { docKind } : {}),
     ...(badge ? { badge } : {}),
-    tags: unique(tags.map(normalizeTag).filter(Boolean)),
-    related: related.links,
-    accounts: related.accounts
+    tags,
+    related,
+    accounts
   };
 }
 
-function scalarFrontmatterValue(body: string, key: string) {
-  return body.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim().replace(/^["']|["']$/g, "");
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function extractRelatedRefs(block: string) {
+function coerceString(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function coerceStringList(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => coerceString(entry))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+  const single = coerceString(value);
+  if (!single) return [];
+  return single.split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseRelatedBlock(value: unknown): { links: LinkRef[]; accounts: string[] } {
+  if (!isPlainObject(value)) {
+    return { links: [], accounts: [] };
+  }
   const links: LinkRef[] = [];
   const accounts: string[] = [];
-  let relation: LinkRef["relation"] | "accounts" = "link";
-
-  for (const rawLine of block.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    const section = line.match(/^(upstream|downstream|references|standards|accounts):\s*$/);
-    if (section?.[1]) {
-      relation = section[1] as LinkRef["relation"] | "accounts";
-      continue;
-    }
-    if (!line.startsWith("- ")) {
-      continue;
-    }
-    // upstream/downstream se derivan de la estructura de carpetas en
-    // synthesizeTreeEdges; ignoramos lo que diga el frontmatter.
-    if (relation === "upstream" || relation === "downstream") {
-      continue;
-    }
-    const value = line.slice(2).trim().replace(/^["']|["']$/g, "");
-    if (relation === "accounts") {
-      if (/^\d{4,}$/.test(value)) {
-        accounts.push(value);
+  const linkSections: ReadonlyArray<{ key: string; relation: LinkRef["relation"] }> = [
+    { key: "references", relation: "references" },
+    { key: "standards", relation: "standards" },
+  ];
+  for (const section of linkSections) {
+    for (const raw of coerceStringList(value[section.key])) {
+      const clean = raw.replace(/^["']|["']$/g, "");
+      if (isRoutableLink(clean)) {
+        links.push({ href: clean, relation: section.relation });
       }
-      continue;
-    }
-    if (isRoutableLink(value)) {
-      links.push({ href: value, relation });
     }
   }
-
-  return {
-    links: uniqueLinks(links),
-    accounts: unique(accounts)
-  };
+  for (const raw of coerceStringList(value.accounts)) {
+    const clean = raw.replace(/^["']|["']$/g, "");
+    if (/^\d{4,}$/.test(clean)) {
+      accounts.push(clean);
+    }
+  }
+  return { links: uniqueLinks(links), accounts: unique(accounts) };
 }
 
 function extractLinks(source: string) {
@@ -304,6 +327,13 @@ function extractRegexGroup(source: string, regex: RegExp, group = 1) {
     }
   }
   return values;
+}
+
+function stripCodeBlocks(source: string): string {
+  return source
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/~~~[\s\S]*?~~~/g, "")
+    .replace(/`[^`\n]+`/g, "");
 }
 
 function resolveLink(
