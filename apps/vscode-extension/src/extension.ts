@@ -117,6 +117,15 @@ export async function activate(context: vscode.ExtensionContext) {
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
   let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
+
+  function isPathWithinRoot(rawPath: string, root: vscode.Uri | undefined): boolean {
+    if (!root || typeof rawPath !== "string" || !rawPath.trim()) return false;
+    const candidate = path.normalize(rawPath.trim());
+    const rootPath = path.normalize(root.fsPath);
+    const relative = path.relative(rootPath, candidate);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+    return true;
+  }
   let pendingTaskEditorLoad: { task: TaskRecord; catalogCodes: string[] } | undefined;
   const cortexOutput = vscode.window.createOutputChannel("Cortex");
   let pendingNotesMode: NotesPanelMode = "list";
@@ -530,6 +539,14 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message?.type === "mdxGraph:openNode" && typeof message.nodeId === "string") {
         const node = currentMdxGraphSnapshot?.nodes.find((candidate) => candidate.id === message.nodeId);
         if (node?.kind === "doc" && node.path) {
+          if (!isPathWithinRoot(node.path, currentMdxGraphRoot)) {
+            service.logger.warn("mdxGraph:openNode rejected: path outside current MDX root", {
+              nodeId: message.nodeId,
+              path: node.path,
+              root: currentMdxGraphRoot?.fsPath
+            });
+            return;
+          }
           const document = await vscode.workspace.openTextDocument(vscode.Uri.file(node.path));
           await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside);
         }
@@ -1810,10 +1827,14 @@ async function pickConnectionSettings(
 }
 
 async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<ScriptFlowDelivery> {
-  const document = await resolveScriptFlowDocument(request);
-  if (!document) {
+  const resolved = await resolveScriptFlowDocument(request);
+  if (resolved.kind === "error") {
+    return { type: "error", error: resolved.error };
+  }
+  if (resolved.kind === "none") {
     return { type: "unsupported" };
   }
+  const document = resolved.document;
 
   const documentPath = document.uri.fsPath;
   const language = resolveScriptFlowLanguage(documentPath);
@@ -1859,16 +1880,29 @@ async function buildScriptFlowDelivery(request: ScriptFlowRequest): Promise<Scri
   }
 }
 
-async function resolveScriptFlowDocument(request: ScriptFlowRequest): Promise<vscode.TextDocument | undefined> {
+type ResolveScriptFlowDocumentResult =
+  | { kind: "document"; document: vscode.TextDocument }
+  | { kind: "error"; error: string }
+  | { kind: "none" };
+
+async function resolveScriptFlowDocument(request: ScriptFlowRequest): Promise<ResolveScriptFlowDocumentResult> {
   if (request.documentUri) {
+    const fsPath = request.documentUri.fsPath;
+    if (typeof fsPath !== "string" || !path.isAbsolute(fsPath)) {
+      return { kind: "error", error: `Invalid document URI: ${request.documentUri.toString()}` };
+    }
     try {
-      return await vscode.workspace.openTextDocument(request.documentUri);
-    } catch {
-      // fall through to active editor
+      const document = await vscode.workspace.openTextDocument(request.documentUri);
+      return { kind: "document", document };
+    } catch (error) {
+      return { kind: "error", error: `Could not open ${fsPath}: ${String(error)}` };
     }
   }
   const editor = vscode.window.activeTextEditor;
-  return editor?.document;
+  if (editor?.document) {
+    return { kind: "document", document: editor.document };
+  }
+  return { kind: "none" };
 }
 
 function formatCollectionMessage(

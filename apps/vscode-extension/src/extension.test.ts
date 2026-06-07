@@ -957,6 +957,9 @@ describe("activate notes commands", () => {
 
     await activate(createContext());
     await executeCommandMock("cortex.showOptions");
+
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
 
     const [items] = showQuickPickMock.mock.calls[0] ?? [];
@@ -1322,6 +1325,8 @@ describe("activate notes commands", () => {
   it("records node selection telemetry from the Script Flow webview", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
     await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
 
@@ -1346,6 +1351,8 @@ describe("activate notes commands", () => {
   it("records drawer click telemetry from the Script Flow webview", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
     await panelState.messageHandler?.({ type: "scriptFlow:drawerClick", section: "decisions" });
 
