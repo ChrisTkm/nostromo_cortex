@@ -18,5 +18,7 @@ apps/vscode-extension/playground-*.mongodb.js
 # scratch / ad-hoc scripts (prefijo _)
 scripts/_*
 
-# Claude Code per-user config
+# AI
 .claude/
+.codex/
+.github/
