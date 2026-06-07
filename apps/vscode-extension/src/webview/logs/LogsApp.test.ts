@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, shouldShowFilter, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -218,6 +218,30 @@ describe("LogsApp helpers", () => {
     it("mergeLogPages handles empty incoming", () => {
       const result = mergeLogPages(sampleLogs, []);
       expect(result).toHaveLength(2);
+    });
+  });
+
+  describe("filter visibility (shouldShowFilter)", () => {
+    it("folder filter hidden when all logs share same folder", () => {
+      const folders = ["all", ...new Set(sampleLogs.map((entry) => entry.folder))];
+      expect(shouldShowFilter(folders)).toBe(false);
+    });
+
+    it("level filter visible when 2+ distinct levels exist", () => {
+      const levels = ["all", ...new Set(sampleLogs.map((entry) => entry.level))];
+      expect(shouldShowFilter(levels)).toBe(true);
+    });
+
+    it("process filter visible when 2+ processes and filtering reduces visible count", () => {
+      const logsWithProcess = [
+        ...sampleLogs.map((entry) => ({ ...entry, process: "loader_a" })),
+        { ...sampleLogs[0]!, timestamp: "2026-04-21T10:00:00.000Z", process: "loader_b" }
+      ];
+      const processes = ["all", ...new Set(logsWithProcess.map((entry) => entry.process ?? "unknown"))];
+      expect(shouldShowFilter(processes)).toBe(true);
+
+      const filteredByProcess = logsWithProcess.filter((entry) => (entry.process ?? "unknown") === "loader_a");
+      expect(filteredByProcess).toHaveLength(2);
     });
   });
 });

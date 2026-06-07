@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, sortLogLevelKeys } from "./state";
+import { PROCESS_FALLBACK_THRESHOLD, buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, detectRuns, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, shouldShowFilter, sortLogLevelKeys } from "./state";
 import type { LogRecord } from "../../logs";
 
 function mockLog(overrides: Partial<LogRecord>): LogRecord {
@@ -241,6 +241,215 @@ describe("buildExecutionGroups", () => {
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.dominantTag).toBe("ERROR");
     expect(groups[0]!.classMethod).toBe("MyClass.run");
+  });
+
+  it("coverage >= threshold keeps current execution grouping (no process groups)", () => {
+    const logs = Array.from({ length: 4 }, (_, i) =>
+      mockLog({
+        timestamp: `2026-06-0${7 - i}T10:00:00.000Z`,
+        day: `2026-06-0${7 - i}`,
+        executionId: i < 2 ? `exec-${i}` : undefined,
+        process: `process-${i}`,
+      }),
+    );
+    const groups = buildExecutionGroups(logs);
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    for (const group of groups) {
+      expect(group.kind).not.toBe("process");
+    }
+  });
+
+  it("coverage < threshold groups by process when no executionId", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "sii_loader" }),
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z", process: "cargas_sii" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: "sii_loader" }),
+      mockLog({ timestamp: "2026-06-06T11:00:00.000Z", process: "previred_runner" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(3);
+    const processGroups = groups.filter((g) => g.kind === "process");
+    expect(processGroups).toHaveLength(3);
+    expect(processGroups.map((g) => g.label).sort()).toEqual(["cargas_sii", "previred_runner", "sii_loader"]);
+    for (const group of processGroups) {
+      expect(group.isUngrouped).toBe(false);
+    }
+  });
+
+  it("coverage < threshold with mix: execution groups + process groups", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", executionId: "exec-a" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "loader" }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: "loader" }),
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", process: "transformer" }),
+      mockLog({ timestamp: "2026-06-04T10:00:00.000Z", process: "transformer" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups).toHaveLength(3);
+    expect(groups.find((g) => g.kind === "execution")?.id).toBe("exec-a");
+    expect(groups.find((g) => g.kind === "process")?.label).toBeDefined();
+  });
+
+  it("coverage 0 with no process nor loggerName falls to ungrouped by day", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: undefined, loggerName: undefined }),
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: undefined, loggerName: undefined }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups.every((g) => g.kind === "ungrouped")).toBe(true);
+  });
+
+  it("process groups sort by beginTimestamp desc like other groups", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "early_p" }),
+      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", process: "late_p" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.label).toBe("late_p");
+    expect(groups[1]!.label).toBe("early_p");
+  });
+
+  it("process groups have kind process and process field set", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "my_loader" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.kind).toBe("process");
+    expect(groups[0]!.process).toBe("my_loader");
+    expect(groups[0]!.id).toBe("process:my_loader");
+  });
+
+  it("process groups have correct beginTimestamp and endTimestamp", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T08:00:00.000Z", process: "my_loader" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "my_loader" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.beginTimestamp).toBe("2026-06-07T08:00:00.000Z");
+    expect(groups[0]!.endTimestamp).toBe("2026-06-07T10:00:00.000Z");
+  });
+
+  it("PROCESS_FALLBACK_THRESHOLD is exported as 0.25", () => {
+    expect(PROCESS_FALLBACK_THRESHOLD).toBe(0.25);
+  });
+
+  it("detectRuns: 1 BEGIN/END pair → 1 closed run with durationMs", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", event: "END" }),
+    ];
+    const runs = detectRuns(logs);
+    expect(runs).toHaveLength(1);
+    expect(runs![0]!.isLoose).toBe(false);
+    expect(runs![0]!.label).toBe("run #1");
+    expect(runs![0]!.durationMs).toBe(300_000);
+    expect(runs![0]!.endTimestamp).toBe("2026-06-07T10:05:00.000Z");
+  });
+
+  it("detectRuns: BEGIN without END → 1 open run (no endTimestamp, no durationMs)", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z" }),
+    ];
+    const runs = detectRuns(logs);
+    expect(runs).toHaveLength(1);
+    expect(runs![0]!.isLoose).toBe(false);
+    expect(runs![0]!.endTimestamp).toBeUndefined();
+    expect(runs![0]!.durationMs).toBeUndefined();
+  });
+
+  it("detectRuns: logs before first BEGIN → loose run + normal run", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T09:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", event: "END" }),
+    ];
+    const runs = detectRuns(logs);
+    expect(runs).toHaveLength(2);
+    expect(runs![0]!.isLoose).toBe(true);
+    expect(runs![0]!.label).toBe("(loose)");
+    expect(runs![1]!.isLoose).toBe(false);
+    expect(runs![1]!.label).toBe("run #2");
+  });
+
+  it("detectRuns: no BEGIN → undefined", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z" }),
+    ];
+    expect(detectRuns(logs)).toBeUndefined();
+  });
+
+  it("detectRuns: 3 BEGIN/END pairs → 3 runs", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", event: "END" }),
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T11:05:00.000Z", event: "END" }),
+      mockLog({ timestamp: "2026-06-07T12:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T12:05:00.000Z", event: "END" }),
+    ];
+    const runs = detectRuns(logs);
+    expect(runs).toHaveLength(3);
+    expect(runs!.every((r) => !r.isLoose)).toBe(true);
+    expect(runs![0]!.beginTimestamp).toBe("2026-06-07T10:00:00.000Z");
+    expect(runs![2]!.beginTimestamp).toBe("2026-06-07T12:00:00.000Z");
+  });
+
+  it("detectRuns: loose + BEGIN/END + BEGIN/END → 3 runs", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T09:00:00.000Z" }),
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", event: "END" }),
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T11:05:00.000Z", event: "END" }),
+    ];
+    const runs = detectRuns(logs);
+    expect(runs).toHaveLength(3);
+    expect(runs![0]!.isLoose).toBe(true);
+    expect(runs![1]!.isLoose).toBe(false);
+    expect(runs![2]!.isLoose).toBe(false);
+  });
+
+  it("process group with BEGIN/END populates runs", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "my_loader", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", process: "my_loader", event: "END" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.runs).toBeDefined();
+    expect(groups[0]!.runs).toHaveLength(1);
+    expect(groups[0]!.runs![0]!.label).toBe("run #1");
+  });
+
+  it("process group without BEGIN has no runs", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "my_loader" }),
+    ];
+    const groups = buildExecutionGroups(logs);
+    expect(groups[0]!.runs).toBeUndefined();
+  });
+});
+
+describe("shouldShowFilter", () => {
+  it('["all"] → false', () => {
+    expect(shouldShowFilter(["all"])).toBe(false);
+  });
+
+  it('["all", "INFO"] → false (1 real)', () => {
+    expect(shouldShowFilter(["all", "INFO"])).toBe(false);
+  });
+
+  it('["all", "INFO", "WARNING"] → true (2 reales)', () => {
+    expect(shouldShowFilter(["all", "INFO", "WARNING"])).toBe(true);
+  });
+
+  it('["all", "", "WARNING"] → false (empty descarta)', () => {
+    expect(shouldShowFilter(["all", "", "WARNING"])).toBe(false);
+  });
+
+  it("[] → false (defensivo)", () => {
+    expect(shouldShowFilter([])).toBe(false);
   });
 });
 

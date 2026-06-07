@@ -1,6 +1,6 @@
 import type { LogRecord } from "../../logs";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { buildExecutionGroups, buildLogJson, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, sortLogLevelKeys } from "./state";
+import { buildExecutionGroups, buildLogJson, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, shouldShowFilter, sortLogLevelKeys } from "./state";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage = {
@@ -35,6 +35,7 @@ export function LogsApp() {
   const [source, setSource] = useState("all");
   const [folder, setFolder] = useState("all");
   const [tag, setTag] = useState("all");
+  const [process, setProcess] = useState("all");
   const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
@@ -56,6 +57,7 @@ export function LogsApp() {
         setSource((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.source)));
         setFolder((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.folder)));
         setTag((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.tag ?? entry.event ?? "untagged")));
+        setProcess((current) => coerceLogFilterValue(current, message.logs.map((entry) => entry.process ?? "unknown")));
         setSelectedKey((current) => {
           return reconcileSelectedLogKey(current, message.logs);
         });
@@ -78,6 +80,7 @@ export function LogsApp() {
   const sources = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.source))], [logs]);
   const folders = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.folder))], [logs]);
   const tags = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.tag ?? entry.event ?? "untagged"))], [logs]);
+  const processes = useMemo(() => ["all", ...new Set(logs.map((entry) => entry.process ?? "unknown"))], [logs]);
 
   const baseFilteredLogs = useMemo(() => {
     const timeFiltered = filterLogsByTime(logs, timeRange);
@@ -89,6 +92,9 @@ export function LogsApp() {
         return false;
       }
       if (tag !== "all" && (entry.tag ?? entry.event ?? "untagged") !== tag) {
+        return false;
+      }
+      if (process !== "all" && (entry.process ?? "unknown") !== process) {
         return false;
       }
       if (!deferredSearch) {
@@ -114,7 +120,7 @@ export function LogsApp() {
         .toLowerCase();
       return haystack.includes(deferredSearch);
     });
-  }, [deferredSearch, folder, logs, source, tag, timeRange]);
+  }, [deferredSearch, folder, logs, process, source, tag, timeRange]);
 
   const filteredLogs = useMemo(() => {
     if (level === "all") return baseFilteredLogs;
@@ -124,7 +130,7 @@ export function LogsApp() {
   const levelCounts = useMemo(() => countLogsByLevel(baseFilteredLogs), [baseFilteredLogs]);
   const orderedLevelKeys = useMemo(() => sortLogLevelKeys(Object.keys(levelCounts)), [levelCounts]);
 
-  const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all" || tag !== "all" || timeRange !== "all";
+  const hasActiveFilters = Boolean(search.trim()) || level !== "all" || source !== "all" || folder !== "all" || tag !== "all" || process !== "all" || timeRange !== "all";
   const emptyState = getLogsEmptyState(logs.length, filteredLogs.length, hasActiveFilters);
   const groupedLogs = useMemo(() => buildExecutionGroups(filteredLogs), [filteredLogs]);
 
@@ -146,6 +152,7 @@ export function LogsApp() {
     setSource("all");
     setFolder("all");
     setTag("all");
+    setProcess("all");
     setTimeRange("all");
   }
 
@@ -272,34 +279,51 @@ export function LogsApp() {
               );
             })}
           </div>
-          <select className="logs-input" onChange={(event) => setLevel(event.target.value)} value={level}>
-            {levels.map((option) => (
-              <option key={option} value={option}>
-                {option === "all" ? "All levels" : option}
-              </option>
-            ))}
-          </select>
-          <select className="logs-input" onChange={(event) => setFolder(event.target.value)} value={folder}>
-            {folders.map((option) => (
-              <option key={option} value={option}>
-                {option === "all" ? "All folders" : option}
-              </option>
-            ))}
-          </select>
-          <select className="logs-input" onChange={(event) => setTag(event.target.value)} value={tag}>
-            {tags.map((option) => (
-              <option key={option} value={option}>
-                {option === "all" ? "All tags" : option}
-              </option>
-            ))}
-          </select>
-          <select className="logs-input" onChange={(event) => setSource(event.target.value)} value={source}>
-            {sources.map((option) => (
-              <option key={option} value={option}>
-                {option === "all" ? "All sources" : option}
-              </option>
-            ))}
-          </select>
+          {shouldShowFilter(processes) ? (
+            <select className="logs-input" onChange={(event) => setProcess(event.target.value)} value={process}>
+              {processes.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All processes" : option}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {shouldShowFilter(levels) ? (
+            <select className="logs-input" onChange={(event) => setLevel(event.target.value)} value={level}>
+              {levels.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All levels" : option}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {shouldShowFilter(folders) ? (
+            <select className="logs-input" onChange={(event) => setFolder(event.target.value)} value={folder}>
+              {folders.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All folders" : option}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {shouldShowFilter(tags) ? (
+            <select className="logs-input" onChange={(event) => setTag(event.target.value)} value={tag}>
+              {tags.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All tags" : option}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {shouldShowFilter(sources) ? (
+            <select className="logs-input" onChange={(event) => setSource(event.target.value)} value={source}>
+              {sources.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All sources" : option}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
 
         <div className="logs-list">
@@ -349,43 +373,105 @@ export function LogsApp() {
             </div>
           ) : (
             groupedLogs.map((group) => (
-              <section className={`logs-execution-group${group.isUngrouped ? " logs-execution-group--ungrouped" : ""}`} key={group.id}>
+              <section
+                className={`logs-execution-group${group.isUngrouped ? " logs-execution-group--ungrouped" : ""}${group.kind === "process" ? " logs-execution-group--process" : ""}`}
+                key={group.id}
+              >
                 <button className="logs-execution-group__header" onClick={() => toggleGroup(group.id)} type="button">
                   <span className="logs-execution-group__chevron">{collapsedGroups.has(group.id) ? ">" : "v"}</span>
                   <span className={`log-pill log-pill--${group.dominantTag.toLowerCase()}`}>{group.dominantTag}</span>
-                  <span className="logs-execution-group__title">{group.classMethod}</span>
-                  <span className="logs-execution-group__time">{formatTimestamp(group.beginTimestamp)}</span>
-                  {group.endTimestamp ? <span className="log-chip">END {formatTime(group.endTimestamp)}</span> : <span className="log-chip">open</span>}
-                  {typeof group.durationMs === "number" ? <span className="log-chip">{formatDuration(group.durationMs)}</span> : null}
-                  <span className="log-chip">{group.logs.length} logs</span>
-                  <span className="logs-execution-group__id">{group.label}</span>
+                  {group.kind === "process" ? (
+                    <>
+                      <span className="logs-execution-group__title">{group.label}</span>
+                      <span className="logs-execution-group__time">
+                        {formatTime(group.beginTimestamp)} &rarr; {formatTime(group.endTimestamp ?? group.beginTimestamp)}
+                      </span>
+                      <span className="log-chip">{group.logs.length} logs</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="logs-execution-group__title">{group.classMethod}</span>
+                      <span className="logs-execution-group__time">{formatTimestamp(group.beginTimestamp)}</span>
+                      {group.endTimestamp ? <span className="log-chip">END {formatTime(group.endTimestamp)}</span> : <span className="log-chip">open</span>}
+                      {typeof group.durationMs === "number" ? <span className="log-chip">{formatDuration(group.durationMs)}</span> : null}
+                      <span className="log-chip">{group.logs.length} logs</span>
+                      <span className="logs-execution-group__id">{group.label}</span>
+                    </>
+                  )}
                 </button>
                 <div className="logs-day-group__items" hidden={collapsedGroups.has(group.id)}>
-                  {group.logs.map((entry) => {
-                    const isSelected = selectedLog ? buildLogKey(selectedLog) === buildLogKey(entry) : false;
-                    return (
-                      <button
-                        className={`log-row${isSelected ? " log-row--selected" : ""}`}
-                        key={buildLogKey(entry)}
-                        onClick={() => handleSelect(entry)}
-                        type="button"
-                      >
-                        <div className="log-row__top">
-                          <span className={`log-pill log-pill--${entry.level.toLowerCase()}`}>{entry.level}</span>
-                          <span className="log-row__time">{formatTime(entry.timestamp)}</span>
-                          <span className="log-row__source">{highlightLogText(entry.source, deferredSearch)}</span>
+                  {group.runs ? (
+                    group.runs.map((run) => {
+                      const runKey = `${group.id}::${run.id}`;
+                      return (
+                        <div className="logs-process-run" key={runKey}>
+                          <button className="logs-process-run__header" onClick={() => toggleGroup(runKey)} type="button">
+                            <span className="logs-execution-group__chevron">{collapsedGroups.has(runKey) ? ">" : "v"}</span>
+                            <span className={`log-pill log-pill--${run.dominantTag.toLowerCase()}`}>{run.dominantTag}</span>
+                            <span className="logs-process-run__label">{run.label}</span>
+                            <span className="logs-execution-group__time">
+                              {formatTime(run.beginTimestamp)} &rarr; {formatTime(run.endTimestamp ?? run.beginTimestamp)}
+                            </span>
+                            {typeof run.durationMs === "number" ? <span className="log-chip">{formatDuration(run.durationMs)}</span> : null}
+                            <span className="log-chip">{run.logs.length} logs</span>
+                          </button>
+                          <div className="logs-process-run__logs" hidden={collapsedGroups.has(runKey)}>
+                            {run.logs.map((entry) => {
+                              const isSelected = selectedLog ? buildLogKey(selectedLog) === buildLogKey(entry) : false;
+                              return (
+                                <button
+                                  className={`log-row${isSelected ? " log-row--selected" : ""}`}
+                                  key={buildLogKey(entry)}
+                                  onClick={() => handleSelect(entry)}
+                                  type="button"
+                                >
+                                  <div className="log-row__top">
+                                    <span className={`log-pill log-pill--${entry.level.toLowerCase()}`}>{entry.level}</span>
+                                    <span className="log-row__time">{formatTime(entry.timestamp)}</span>
+                                    <span className="log-row__source">{highlightLogText(entry.source, deferredSearch)}</span>
+                                  </div>
+                                  <div className="log-row__summary">{highlightLogText(entry.summary, deferredSearch)}</div>
+                                  <div className="log-row__meta">
+                                    {entry.executionId ? <span className="log-chip">{entry.executionId}</span> : null}
+                                    {entry.tag ? <span className="log-chip">{entry.tag}</span> : null}
+                                    <span className="log-chip">{entry.folder}</span>
+                                    {entry.process ? <span className="log-chip">{entry.process}</span> : null}
+                                    {entry.event ? <span className="log-chip">{entry.event}</span> : null}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="log-row__summary">{highlightLogText(entry.summary, deferredSearch)}</div>
-                        <div className="log-row__meta">
-                          {entry.executionId ? <span className="log-chip">{entry.executionId}</span> : null}
-                          {entry.tag ? <span className="log-chip">{entry.tag}</span> : null}
-                          <span className="log-chip">{entry.folder}</span>
-                          {entry.process ? <span className="log-chip">{entry.process}</span> : null}
-                          {entry.event ? <span className="log-chip">{entry.event}</span> : null}
-                        </div>
-                      </button>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    group.logs.map((entry) => {
+                      const isSelected = selectedLog ? buildLogKey(selectedLog) === buildLogKey(entry) : false;
+                      return (
+                        <button
+                          className={`log-row${isSelected ? " log-row--selected" : ""}`}
+                          key={buildLogKey(entry)}
+                          onClick={() => handleSelect(entry)}
+                          type="button"
+                        >
+                          <div className="log-row__top">
+                            <span className={`log-pill log-pill--${entry.level.toLowerCase()}`}>{entry.level}</span>
+                            <span className="log-row__time">{formatTime(entry.timestamp)}</span>
+                            <span className="log-row__source">{highlightLogText(entry.source, deferredSearch)}</span>
+                          </div>
+                          <div className="log-row__summary">{highlightLogText(entry.summary, deferredSearch)}</div>
+                          <div className="log-row__meta">
+                            {entry.executionId ? <span className="log-chip">{entry.executionId}</span> : null}
+                            {entry.tag ? <span className="log-chip">{entry.tag}</span> : null}
+                            <span className="log-chip">{entry.folder}</span>
+                            {entry.process ? <span className="log-chip">{entry.process}</span> : null}
+                            {entry.event ? <span className="log-chip">{entry.event}</span> : null}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </section>
             ))
@@ -482,19 +568,6 @@ export function LogsApp() {
       ) : null}
     </div>
   );
-}
-
-function formatDay(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  });
 }
 
 function formatTime(value: string) {

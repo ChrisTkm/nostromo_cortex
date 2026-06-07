@@ -36,6 +36,17 @@ logs.insert_one({
 })
 `;
 
+export type LogProcessRun = {
+  id: string;
+  beginTimestamp: string;
+  endTimestamp?: string;
+  durationMs?: number;
+  dominantTag: string;
+  logs: LogRecord[];
+  isLoose: boolean;
+  label: string;
+};
+
 export type LogExecutionGroup = {
   id: string;
   label: string;
@@ -46,7 +57,12 @@ export type LogExecutionGroup = {
   classMethod: string;
   dominantTag: string;
   isUngrouped: boolean;
+  kind: "execution" | "process" | "ungrouped";
+  process?: string;
+  runs?: LogProcessRun[];
 };
+
+export const PROCESS_FALLBACK_THRESHOLD = 0.25;
 
 export const LOG_LEVEL_ORDER = ["ERROR", "WARNING", "WARN", "INFO", "DEBUG", "TRACE"] as const;
 
@@ -69,6 +85,11 @@ export function sortLogLevelKeys(keys: string[]): string[] {
     if (rightIndex === -1) return -1;
     return leftIndex - rightIndex;
   });
+}
+
+export function shouldShowFilter(values: string[]): boolean {
+  const real = values.filter((value) => value !== "all" && value.trim().length > 0);
+  return real.length >= 2;
 }
 
 export function filterLogsByTime(logs: LogRecord[], timeRange: "all" | "1h" | "24h" | "7d"): LogRecord[] {
@@ -105,7 +126,13 @@ export function mergeLogPages(existing: readonly LogRecord[], incoming: readonly
 }
 
 export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
+  const total = logs.length;
+  const withExecId = logs.filter((entry) => entry.executionId).length;
+  const coverage = total === 0 ? 0 : withExecId / total;
+  const useProcessFallback = coverage < PROCESS_FALLBACK_THRESHOLD;
+
   const byExecution = new Map<string, LogRecord[]>();
+  const byProcess = new Map<string, LogRecord[]>();
   const ungroupedByDay = new Map<string, LogRecord[]>();
 
   for (const entry of logs) {
@@ -113,6 +140,11 @@ export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
       const current = byExecution.get(entry.executionId) ?? [];
       current.push(entry);
       byExecution.set(entry.executionId, current);
+    } else if (useProcessFallback && (entry.process || entry.loggerName)) {
+      const key = entry.process || entry.loggerName!;
+      const current = byProcess.get(key) ?? [];
+      current.push(entry);
+      byProcess.set(key, current);
     } else {
       const day = entry.day || entry.timestamp.slice(0, 10);
       const current = ungroupedByDay.get(day) ?? [];
@@ -124,11 +156,17 @@ export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
   const groups: LogExecutionGroup[] = [];
 
   for (const [executionId, entries] of byExecution) {
-    groups.push(buildExecutionGroup(executionId, entries));
+    groups.push(buildExecutionGroup(executionId, entries, false, undefined, "execution"));
+  }
+
+  if (useProcessFallback) {
+    for (const [processKey, entries] of byProcess) {
+      groups.push(buildProcessGroup(processKey, entries));
+    }
   }
 
   for (const [day, entries] of ungroupedByDay) {
-    groups.push(buildExecutionGroup(`ungrouped:${day}`, entries, true, `ungrouped · ${day}`));
+    groups.push(buildExecutionGroup(`ungrouped:${day}`, entries, true, `ungrouped · ${day}`, "ungrouped"));
   }
 
   return groups.sort((left, right) => right.beginTimestamp.localeCompare(left.beginTimestamp));
@@ -206,7 +244,13 @@ function csvCell(value: string): string {
   return value;
 }
 
-function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrouped = false, labelOverride?: string): LogExecutionGroup {
+function buildExecutionGroup(
+  executionId: string,
+  entries: LogRecord[],
+  isUngrouped = false,
+  labelOverride?: string,
+  kind: LogExecutionGroup["kind"] = isUngrouped ? "ungrouped" : "execution",
+): LogExecutionGroup {
   const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const begin = ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;
   const end = [...ordered].reverse().find((entry) => matchesTag(entry, "END"));
@@ -225,7 +269,79 @@ function buildExecutionGroup(executionId: string, entries: LogRecord[], isUngrou
     ...(typeof durationMs === "number" ? { durationMs } : {}),
     classMethod,
     dominantTag,
-    isUngrouped
+    isUngrouped,
+    kind,
+  };
+}
+
+function buildProcessGroup(processKey: string, entries: LogRecord[]): LogExecutionGroup {
+  const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+  const newestFirst = [...ordered].reverse();
+  const dominantTag = getDominantTag(ordered);
+  const representative = newestFirst[0]!;
+  const classMethod = [representative.className, representative.methodName].filter(Boolean).join(".") || processKey;
+  const runs = detectRuns(ordered);
+  return {
+    id: `process:${processKey}`,
+    label: processKey,
+    logs: newestFirst,
+    beginTimestamp: ordered[0]!.timestamp,
+    endTimestamp: newestFirst[0]!.timestamp,
+    classMethod,
+    dominantTag,
+    isUngrouped: false,
+    kind: "process",
+    process: processKey,
+    ...(runs ? { runs } : {}),
+  };
+}
+
+export function detectRuns(ordered: LogRecord[]): LogProcessRun[] | undefined {
+  const hasBegin = ordered.some((entry) => matchesTag(entry, "BEGIN"));
+  if (!hasBegin) return undefined;
+  const runs: LogProcessRun[] = [];
+  let current: LogRecord[] = [];
+  let loose: LogRecord[] = [];
+  let runIndex = 0;
+  for (const entry of ordered) {
+    if (matchesTag(entry, "BEGIN")) {
+      if (current.length > 0) {
+        runs.push(buildRun(runIndex++, current, false));
+        current = [];
+      } else if (loose.length > 0) {
+        runs.push(buildRun(runIndex++, loose, true));
+        loose = [];
+      }
+      current.push(entry);
+    } else if (matchesTag(entry, "END") && current.length > 0) {
+      current.push(entry);
+      runs.push(buildRun(runIndex++, current, false));
+      current = [];
+    } else if (current.length > 0) {
+      current.push(entry);
+    } else {
+      loose.push(entry);
+    }
+  }
+  if (current.length > 0) runs.push(buildRun(runIndex++, current, false));
+  if (loose.length > 0) runs.push(buildRun(runIndex++, loose, true));
+  return runs.length > 0 ? runs : undefined;
+}
+
+function buildRun(index: number, entries: LogRecord[], isLoose: boolean): LogProcessRun {
+  const begin = entries[0]!;
+  const last = entries[entries.length - 1]!;
+  const endLog = matchesTag(last, "END") ? last : undefined;
+  const durationMs = endLog ? getDurationMs(begin.timestamp, endLog.timestamp, endLog) : undefined;
+  return {
+    id: `run:${index}`,
+    beginTimestamp: begin.timestamp,
+    ...(endLog ? { endTimestamp: endLog.timestamp } : {}),
+    ...(typeof durationMs === "number" ? { durationMs } : {}),
+    dominantTag: getDominantTag(entries),
+    logs: [...entries].reverse(),
+    isLoose,
+    label: isLoose ? "(loose)" : `run #${index + 1}`,
   };
 }
 

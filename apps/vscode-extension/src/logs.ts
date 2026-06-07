@@ -39,6 +39,21 @@ const CORE_KEYS = new Set([
   "method",
   "title"
 ]);
+const EVENT_SUMMARY_KEYS: Record<string, string[]> = {
+  INSERT: ["rows", "table", "schema"],
+  DELETE: ["rows", "table", "schema"],
+  READ:   ["rows", "table", "schema"],
+  QUERY:  ["rows", "table", "schema"],
+  API:    ["endpoint", "status", "duration_ms"],
+  MOVE_FILE_START:   ["file"],
+  MOVE_FILE_SUCCESS: ["file"],
+  BEGIN:  ["file", "nemo", "fondo"],
+  END:    ["duration_ms", "filas"]
+};
+
+const MAX_SUMMARY_VALUE_LENGTH = 60;
+const MAX_SUMMARY_KEYS = 3;
+
 const PRIORITY_DETAIL_KEYS = ["file", "schema", "table", "periodo", "rows", "duration_ms", "endpoint", "status", "tipo", "test_run"];
 
 export function normalizeLogCollection(items: unknown[]): LogRecord[] {
@@ -78,7 +93,7 @@ export function normalizeLogDocument(record: Record<string, unknown>): LogRecord
     ...(methodName ? { methodName } : {}),
     ...(optionalString(record.process) ? { process: optionalString(record.process) } : {}),
     source,
-    summary: buildSummary({ event, message, process: optionalString(record.process), source, tag, title }),
+    summary: buildSummary({ event, message, process: optionalString(record.process), source, tag, title, record }),
     ...(tag ? { tag } : {}),
     timestamp,
     ...(title ? { title } : {}),
@@ -123,10 +138,28 @@ function buildDetails(record: Record<string, unknown>): LogDetail[] {
   return details;
 }
 
-function buildSummary(parts: { event?: string; message: string; process?: string; source: string; tag?: string; title?: string }) {
+function buildSummary(parts: { event?: string; message: string; process?: string; source: string; tag?: string; title?: string; record: Record<string, unknown> }) {
   const label = parts.title ?? parts.tag ?? parts.event;
-  const lead = label && label !== parts.message ? `${label} - ${parts.message}` : parts.message;
+  const extras = buildSummaryExtras(parts.event, parts.record);
+  const baseLead = label && label !== parts.message ? `${label} - ${parts.message}` : parts.message;
+  const lead = extras ? `${baseLead} ${extras}` : baseLead;
   return parts.process ? `${lead} (${parts.process})` : `${lead} (${parts.source})`;
+}
+
+function buildSummaryExtras(event: string | undefined, record: Record<string, unknown>): string | undefined {
+  if (!event) return undefined;
+  const keys = EVENT_SUMMARY_KEYS[event];
+  if (!keys || keys.length === 0) return undefined;
+  const pairs: string[] = [];
+  for (const key of keys) {
+    if (pairs.length >= MAX_SUMMARY_KEYS) break;
+    const raw = record[key];
+    const value = stringifyUnknown(raw);
+    if (!value) continue;
+    if (value.length > MAX_SUMMARY_VALUE_LENGTH) continue;
+    pairs.push(`${key}=${value}`);
+  }
+  return pairs.length > 0 ? pairs.join(" ") : undefined;
 }
 
 function formatLabel(key: string) {
