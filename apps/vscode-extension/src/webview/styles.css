@@ -381,6 +381,12 @@
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.task-node--status-pending { border-color: var(--status-pending); }
+.task-node--status-in-progress { border-color: var(--status-in-progress); }
+.task-node--status-done { border-color: var(--status-done); }
+.task-node--status-blocked { border-color: var(--status-blocked); }
+.task-node--status-failed { border-color: var(--status-failed); }
+
 .task-node:hover {
   transform: scale(1.02);
 }

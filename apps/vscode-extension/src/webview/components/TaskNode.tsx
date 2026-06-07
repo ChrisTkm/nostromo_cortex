@@ -35,7 +35,7 @@ export function TaskNode({ data, selected }: NodeProps) {
   return (
     <>
       <Handle className="task-node__handle" position={targetPosition} type="target" />
-      <div className={`task-node${selected ? " task-node--selected" : ""}${data.isCurrentTask ? " current-task" : ""}`}>
+      <div className={`task-node task-node--status-${data.status.toLowerCase().replace("_", "-")}${selected ? " task-node--selected" : ""}${data.isCurrentTask ? " current-task" : ""}`}>
         <span className={`task-node__severity-dot task-node__severity-dot--${data.severity.toLowerCase()}`} title={data.severity} />
         <div className="task-node__header">
           <span className="task-node__code">{data.code}</span>

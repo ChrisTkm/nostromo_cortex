@@ -24,8 +24,8 @@
   --cortex-text-base: 14px;
   --cortex-line-height: 1.4;
   --status-pending: #9aa8bb;
-  --status-in-progress: #56c7d7;
-  --status-blocked: #d3ae52;
+  --status-in-progress: #818cf8;  /* indigo */
+  --status-blocked: #fb7185;      /* sandía */
   --status-done: #65c8a7;
   --status-failed: #cf7878;
   --z-graph: 0;
