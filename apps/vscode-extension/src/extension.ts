@@ -971,17 +971,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     });
   }
 
-  async function openScriptFlowPanel(
-    request: ScriptFlowRequest,
-    options?: { forceReload?: boolean },
-  ) {
+  async function openScriptFlowPanel(request: ScriptFlowRequest) {
     pendingScriptFlowRequest = request;
-    if (options?.forceReload && scriptFlowPanel) {
-      const panel = scriptFlowPanel;
-      scriptFlowPanel = undefined;
-      scriptFlowPanelReady = false;
-      panel.dispose();
-    }
 
     if (scriptFlowPanel) {
       scriptFlowPanel.reveal(vscode.ViewColumn.One);
@@ -1023,9 +1014,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         return;
       }
       if (message.type === "scriptFlow:refresh") {
-        await openScriptFlowPanel(pendingScriptFlowRequest, {
-          forceReload: true,
-        });
+        await postScriptFlowInit(pendingScriptFlowRequest);
         return;
       }
       if (message.type === "scriptFlow:drawerClick") {
