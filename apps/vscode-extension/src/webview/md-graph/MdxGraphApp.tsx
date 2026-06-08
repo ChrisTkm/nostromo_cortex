@@ -14,6 +14,8 @@ import {
 } from "@xyflow/react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
+import { isPersistedState, isSnapshot, reconcileHiddenNodeIds, reconcileSelectedNodeId } from "./state";
+import type { PersistedMdxGraphState } from "./state";
 import type { MdxGraphEdge, MdxGraphHostMessage, MdxGraphIssueKind, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
 
 declare global {
@@ -67,16 +69,28 @@ const ISSUE_LABEL: Record<MdxGraphIssueKind, string> = {
 const ISSUE_ORDER: MdxGraphIssueKind[] = ["truncated", "cycle", "broken-ref", "self-reference", "orphan"];
 
 export function MdxGraphApp() {
-  const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(() => {
+  const persisted = useMemo<PersistedMdxGraphState | null>(() => {
     const state = vscode.getState();
-    return isSnapshot(state) ? state : null;
-  });
+    if (isPersistedState(state)) return state;
+    if (isSnapshot(state)) return { snapshot: state };
+    return null;
+  }, []);
+
+  const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(persisted?.snapshot ?? null);
+  const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>(
+    persisted?.hiddenNodeIds && persisted.snapshot
+      ? reconcileHiddenNodeIds(persisted.hiddenNodeIds, persisted.snapshot)
+      : []
+  );
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    persisted?.selectedNodeId != null && persisted.snapshot
+      ? reconcileSelectedNodeId(persisted.selectedNodeId, persisted.snapshot)
+      : null
+  );
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc"]);
   const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>([]);
-  const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
@@ -86,12 +100,8 @@ export function MdxGraphApp() {
       if (message?.type === "mdxGraph:snapshot") {
         setSnapshot(message.snapshot);
         setError(null);
-        setHiddenNodeIds((current) => {
-          const knownIds = new Set(message.snapshot.nodes.map((node) => node.id));
-          return current.filter((id) => knownIds.has(id));
-        });
-        setSelectedNodeId(null);
-        vscode.setState(message.snapshot);
+        setHiddenNodeIds((current) => reconcileHiddenNodeIds(current, message.snapshot));
+        setSelectedNodeId((current) => reconcileSelectedNodeId(current, message.snapshot));
         return;
       }
       if (message?.type === "mdxGraph:error") {
@@ -103,6 +113,15 @@ export function MdxGraphApp() {
     vscode.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    vscode.setState({
+      snapshot,
+      hiddenNodeIds,
+      selectedNodeId
+    } satisfies PersistedMdxGraphState);
+  }, [snapshot, hiddenNodeIds, selectedNodeId]);
 
   const flow = useMemo(
     () => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, visibleEdges, hiddenNodeIds, selectedNodeId, layoutMode) : { nodes: [], edges: [] }),
@@ -830,10 +849,3 @@ function colorForEdge(edge: MdxGraphEdge) {
   }
 }
 
-function isSnapshot(value: unknown): value is MdxGraphSnapshot {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<MdxGraphSnapshot>;
-  return typeof candidate.rootPath === "string" && Array.isArray(candidate.nodes) && Array.isArray(candidate.edges);
-}
