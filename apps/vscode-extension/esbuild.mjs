@@ -1,4 +1,5 @@
 import { copyFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -98,6 +99,12 @@ async function copyStaticAssets() {
       await copyFile(asset.source, asset.target);
     })
   );
+
+  const missing = staticAssets.filter((asset) => !existsSync(asset.target));
+  if (missing.length > 0) {
+    const list = missing.map((asset) => path.relative(process.cwd(), asset.target)).join(", ");
+    throw new Error(`esbuild copyStaticAssets: missing after copy: ${list}. Build aborted — .vsix would ship broken Python analyzer.`);
+  }
 }
 
 if (watch) {

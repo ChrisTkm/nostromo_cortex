@@ -92,8 +92,14 @@ node apps/mcp-server/dist/index.js
    - `Cortex: Open PERT graph`
    - `Cortex: Refresh tasks`
    - `Cortex: Set search query`
-   - `Cortex: Set tag filter`
-   - `Cortex: List dependency cycles`
+    - `Cortex: Set tag filter`
+    - `Cortex: List dependency cycles`
+
+### Assets runtime (wasm)
+
+El analyzer de Python carga `web-tree-sitter.wasm` y `tree-sitter-python.wasm` en runtime desde `apps/vscode-extension/media/`. El build los copia desde `node_modules` vía `copyStaticAssets()` en `esbuild.mjs` y verifica su presencia al final — si faltan, el build falla con un error explícito.
+
+El `files` de `package.json` los empaqueta vía el glob `"media/**"`. NO restringir ese glob a subsets como `"media/*.{js,css}"`: el `.vsix` quedaría sin wasm y el panel Script Flow para Python rompería en runtime con 'could not find tree-sitter-python.wasm'.
 
 ## Inspección y debugging
 
