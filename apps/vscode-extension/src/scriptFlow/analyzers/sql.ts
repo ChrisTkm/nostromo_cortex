@@ -42,26 +42,24 @@ type SearchCursorKey = "cte" | "join";
 export function analyzeSqlDocument(input: ScriptFlowAnalyzerInput): ScriptFlowSnapshot {
   const parser = new Parser();
   const parsed = parseSqlDocument(parser, input.documentPath, input.source);
-  const analyzer = new SqlFlowAnalyzer(input.documentPath, input.source, parsed.ast, parsed.dialect);
+  const analyzer = new SqlFlowAnalyzer(input.documentPath, input.source, parsed.asts, parsed.dialect);
   return analyzer.analyze();
 }
 
 function parseSqlDocument(parser: Parser, documentPath: string, source: string) {
-  const parseAttempts: Array<{ dialect: SqlDialect; error?: unknown; ast?: AST | AST[] }> = [];
+  const parseAttempts: Array<{ dialect: SqlDialect; error?: unknown; asts?: AST[] }> = [];
 
   for (const dialect of ["postgresql", "mysql"] as const) {
     try {
-      const ast = parser.astify(source, {
+      const raw = parser.astify(source, {
         database: dialect,
         parseOptions: {
           includeLocations: true
         }
       });
-      parseAttempts.push({ dialect, ast });
-      return {
-        ast: unwrapSelectAst(ast, documentPath),
-        dialect
-      };
+      const asts = Array.isArray(raw) ? raw : [raw];
+      parseAttempts.push({ dialect, asts });
+      return { asts, dialect };
     } catch (error) {
       parseAttempts.push({ dialect, error });
     }
@@ -92,7 +90,7 @@ function unwrapSelectAst(ast: AST | AST[], documentPath: string) {
 class SqlFlowAnalyzer {
   private readonly documentPath: string;
   private readonly source: string;
-  private readonly statement: Select;
+  private readonly statements: AST[];
   private readonly dialect: SqlDialect;
   private readonly nodes: ScriptFlowNode[] = [];
   private readonly edges: ScriptFlowEdge[] = [];
@@ -106,26 +104,17 @@ class SqlFlowAnalyzer {
     join: 0
   };
 
-  constructor(documentPath: string, source: string, statement: Select, dialect: SqlDialect) {
+  constructor(documentPath: string, source: string, statements: AST[], dialect: SqlDialect) {
     this.documentPath = documentPath;
     this.source = source;
-    this.statement = statement;
+    this.statements = statements;
     this.dialect = dialect;
   }
 
   analyze(): ScriptFlowSnapshot {
-    this.createCteNodes();
-
-    const selectId = this.createNode(
-      "select",
-      "SELECT result",
-      "final-select",
-      this.createSelectRange(),
-      { dialect: this.dialect }
-    );
-    this.entryPoints.push(selectId);
-
-    this.processSelectBody(selectId, this.statement, "final SELECT");
+    for (let index = 0; index < this.statements.length; index += 1) {
+      this.processStatement(this.statements[index], index);
+    }
 
     return {
       metadata: {
@@ -140,15 +129,88 @@ class SqlFlowAnalyzer {
     };
   }
 
+  private processStatement(ast: AST, index: number) {
+    if (isSelectAst(ast)) {
+      this.processSelectStatement(ast, index);
+      return;
+    }
+    this.processNonSelectStatement(ast, index);
+  }
+
+  private processSelectStatement(select: Select, index: number) {
+    this.createCteNodes(select);
+
+    const selectId = this.createNode(
+      "select",
+      this.statements.length > 1 ? `SELECT result #${index + 1}` : "SELECT result",
+      `final-select-${index}`,
+      this.createSelectRange(),
+      { dialect: this.dialect }
+    );
+    this.entryPoints.push(selectId);
+
+    this.processSelectBody(selectId, select, "final SELECT");
+  }
+
+  private processNonSelectStatement(ast: AST, index: number) {
+    const label = this.describeStatement(ast, index);
+    const id = this.createNode("call", label, label, undefined, {
+      dialect: this.dialect,
+      sqlType: (ast as { type: string }).type
+    });
+    this.entryPoints.push(id);
+  }
+
+  private describeStatement(ast: AST, index: number): string {
+    const prefix = this.statements.length > 1 ? `Stmt ${index + 1}: ` : "";
+    const a = ast as { type: string; keyword?: string; table?: any; name?: any; db?: string };
+    const verb = (a.type ?? "statement").toUpperCase();
+
+    if (a.type === "create" || a.type === "drop") {
+      const kw = (a.keyword ?? "").toUpperCase();
+      const target = this.extractTargetName(a.table ?? a.name);
+      return `${prefix}${verb}${kw ? " " + kw : ""}${target ? " " + target : ""}`.trim();
+    }
+    if (a.type === "use") {
+      return `${prefix}USE ${a.db ?? ""}`.trim();
+    }
+    const target = this.extractTargetName(a.table);
+    return `${prefix}${verb}${target ? " " + target : ""}`.trim();
+  }
+
+  private extractTargetName(value: unknown): string {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      const first = value[0];
+      if (first && typeof first === "object") {
+        const rec = first as Record<string, unknown>;
+        if (typeof rec.table === "string") return rec.table;
+        if (typeof rec.value === "string") return rec.value;
+      }
+      return "";
+    }
+    if (typeof value === "object") {
+      const rec = value as Record<string, unknown>;
+      if (typeof rec.table === "string") return rec.table;
+    }
+    return "";
+  }
+
   private buildAnalysis(): ScriptFlowAnalysis {
     const fileName = path.basename(this.documentPath);
+    const selectCount = this.statements.filter(isSelectAst).length;
+    const otherCount = this.statements.length - selectCount;
     const cteCount = this.nodes.filter((node) => node.kind === "cte").length;
     const joinCount = this.nodes.filter((node) => node.kind === "join").length;
     const subqueryCount = this.nodes.filter((node) => node.kind === "subquery").length;
+
+    const stmtLine = this.statements.length === 1
+      ? `${fileName} parsed as ${this.dialect} SQL.`
+      : `${fileName} parsed as ${this.dialect} SQL with ${this.statements.length} statements (${selectCount} SELECT, ${otherCount} other).`;
     const summaryLines = [
-      `${fileName} parsed as ${this.dialect} SQL with ${cteCount} CTE${cteCount === 1 ? "" : "s"}, ${joinCount} JOIN${
-        joinCount === 1 ? "" : "s"
-      }, and ${subqueryCount} subquer${subqueryCount === 1 ? "y" : "ies"}.`,
+      stmtLine,
+      `${cteCount} CTE${cteCount === 1 ? "" : "s"}, ${joinCount} JOIN${joinCount === 1 ? "" : "s"}, ${subqueryCount} subquer${subqueryCount === 1 ? "y" : "ies"}.`,
       `${this.observations.size} observation${this.observations.size === 1 ? "" : "s"} flagged while building the pipeline.`
     ];
 
@@ -161,8 +223,8 @@ class SqlFlowAnalyzer {
     };
   }
 
-  private createCteNodes() {
-    const ctes = this.statement.with ?? [];
+  private createCteNodes(select: Select) {
+    const ctes = select.with ?? [];
     for (const cte of ctes) {
       const cteName = this.readIdentifier(cte.name);
       const cteId = this.createNode("cte", `CTE ${cteName}`, cteName, this.createNamedRange(cteName, "cte"), {
