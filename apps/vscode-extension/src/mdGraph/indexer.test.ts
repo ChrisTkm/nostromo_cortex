@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { filesRef, sourcesRef } = vi.hoisted(() => ({
+const { filesRef, sourcesRef, starlightDirRef } = vi.hoisted(() => ({
   filesRef: { current: [] as Array<{ fsPath: string }> },
-  sourcesRef: { current: new Map<string, string>() }
+  sourcesRef: { current: new Map<string, string>() },
+  starlightDirRef: { current: false }
 }));
 
 vi.mock("vscode", () => ({
@@ -12,20 +13,31 @@ vi.mock("vscode", () => ({
       public readonly pattern: string
     ) {}
   },
+  FileType: { Directory: 2, File: 1 },
+  Uri: {
+    joinPath: (base: { fsPath: string }, ...segments: string[]) => ({
+      fsPath: [base.fsPath.replace(/\\/g, "/"), ...segments].join("/").replace(/\//g, "\\")
+    })
+  },
   workspace: {
     findFiles: vi.fn(async () => filesRef.current),
     fs: {
-      readFile: vi.fn(async (uri: { fsPath: string }) => Buffer.from(sourcesRef.current.get(uri.fsPath) ?? "", "utf8"))
+      readFile: vi.fn(async (uri: { fsPath: string }) => Buffer.from(sourcesRef.current.get(uri.fsPath) ?? "", "utf8")),
+      stat: vi.fn(async (uri: { fsPath: string }) => {
+        if (starlightDirRef.current && uri.fsPath.includes("src\\content\\docs")) return { type: 2 };
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      })
     }
   }
 }));
 
-import { buildMdxGraphSnapshot, parseFrontmatter } from "./indexer.js";
+import { buildMdxGraphSnapshot, LEGACY_ACCOUNT_PATTERN, parseFrontmatter } from "./indexer.js";
 
 describe("buildMdxGraphSnapshot", () => {
   beforeEach(() => {
     filesRef.current = [];
     sourcesRef.current = new Map<string, string>();
+    starlightDirRef.current = true;
   });
 
   it("resolves Starlight absolute href routes when scanning the project root", async () => {
@@ -320,6 +332,7 @@ describe("buildMdxGraphSnapshot", () => {
     filesRef.current = [{ fsPath: page1 }, { fsPath: page2 }];
     sourcesRef.current.set(page1, ["---", "title: Page 1", "---", "", "# Page 1"].join("\n"));
     sourcesRef.current.set(page2, ["---", "title: Page 2", "---", "", "# Page 2"].join("\n"));
+    starlightDirRef.current = false;
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
@@ -334,6 +347,7 @@ describe("buildMdxGraphSnapshot", () => {
     filesRef.current = [{ fsPath: aPath }, { fsPath: bPath }];
     sourcesRef.current.set(aPath, ["---", "title: A", "---", "", "# A"].join("\n"));
     sourcesRef.current.set(bPath, ["---", "title: B", "---", "", "See [A](./a.mdx)"].join("\n"));
+    starlightDirRef.current = false;
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
@@ -399,6 +413,96 @@ describe("buildMdxGraphSnapshot", () => {
 
     expect(snapshot.edges.every((e) => !e.to.includes("example.com") && !e.to.includes("httpbin"))).toBe(true);
     expect(snapshot.issues.filter((i) => i.kind === "broken-ref")).toHaveLength(0);
+  });
+
+  it("passing accountPattern extracts accounts from body text", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const docPath = "C:\\project\\docs\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, [
+      "---",
+      "title: Page",
+      "---",
+      "",
+      "Account reference at /manual-cuentas/x/1201500/.",
+    ].join("\n"));
+    starlightDirRef.current = false;
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
+
+    expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(true);
+  });
+
+  it("default null accountPattern skips body account extraction", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const docPath = "C:\\project\\docs\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, [
+      "---",
+      "title: Page",
+      "---",
+      "",
+      "Account reference at /manual-cuentas/x/1201500/.",
+    ].join("\n"));
+    starlightDirRef.current = false;
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(false);
+  });
+
+  it("synthesizeTree: on forces tree edges in flat workspace", async () => {
+    const rootUri = { fsPath: "C:\\flat-project" } as any;
+    const parentPath = "C:\\flat-project\\src\\content\\docs\\section\\index.mdx";
+    const childPath = "C:\\flat-project\\src\\content\\docs\\section\\child\\index.mdx";
+    filesRef.current = [{ fsPath: parentPath }, { fsPath: childPath }];
+    sourcesRef.current.set(parentPath, ["---", "title: Section", "---", "", "# Section"].join("\n"));
+    sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
+    starlightDirRef.current = false;
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "on" });
+
+    expect(snapshot.stats.workspaceMode).toBe("starlight");
+    expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(true);
+  });
+
+  it("synthesizeTree: off suppresses tree edges in Starlight workspace", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const parentPath = "C:\\site\\src\\content\\docs\\parent.mdx";
+    const childPath = "C:\\site\\src\\content\\docs\\parent\\child.mdx";
+    filesRef.current = [{ fsPath: parentPath }, { fsPath: childPath }];
+    sourcesRef.current.set(parentPath, ["---", "title: Parent", "---", "", "# Parent"].join("\n"));
+    sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "off" });
+
+    expect(snapshot.stats.workspaceMode).toBe("flat");
+    expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(false);
+    expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(false);
+  });
+
+  it("workspaceMode is starlight when tree synthesis runs", async () => {
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
+    const docPath = "C:\\site\\src\\content\\docs\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.stats.workspaceMode).toBe("starlight");
+  });
+
+  it("workspaceMode is flat when tree synthesis does not run", async () => {
+    const rootUri = { fsPath: "C:\\not-starlight" } as any;
+    const docPath = "C:\\not-starlight\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+    starlightDirRef.current = false;
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.stats.workspaceMode).toBe("flat");
   });
 });
 
@@ -566,7 +670,7 @@ describe("stripCodeBlocks", () => {
       "```",
     ].join("\n")));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
     expect(snapshot.nodes.some((n) => n.id === "account:1100")).toBe(false);
   });
 
@@ -612,7 +716,7 @@ describe("stripCodeBlocks", () => {
       "See [this](/section/actual/) and the account at /manual-cuentas/x/1201500/.",
     ].join("\n")));
     sourcesRef.current.set(targetPath, doc(""));
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
     expect(snapshot.edges.some((e) => e.to.includes("actual"))).toBe(true);
     expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(true);
   });

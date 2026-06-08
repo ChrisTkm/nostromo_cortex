@@ -382,10 +382,20 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     try {
-      const maxFiles = vscode.workspace
-        .getConfiguration("cortex")
-        .get<number>("mdxGraphMaxFiles", 800);
-      const snapshot = await buildMdxGraphSnapshot(rootUri, maxFiles);
+      const config = vscode.workspace.getConfiguration("cortex");
+      const maxFiles = config.get<number>("mdxGraphMaxFiles", 800);
+      const accountPatternRaw = config.get<string>("mdxGraphAccountPattern", "");
+      const workspaceMode = config.get<string>("mdxGraphWorkspaceMode", "auto");
+      let accountPattern: RegExp | null = null;
+      if (accountPatternRaw) {
+        try {
+          accountPattern = new RegExp(accountPatternRaw, "g");
+        } catch {
+          /* invalid regex — fall back to no pattern */
+        }
+      }
+      const synthesizeTree = workspaceMode === "auto" ? "auto" : workspaceMode === "starlight" ? "on" : "off";
+      const snapshot = await buildMdxGraphSnapshot(rootUri, { maxFiles, accountPattern, synthesizeTree });
       if (mdxGraphPanel !== panel) {
         return;
       }
@@ -653,6 +663,14 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (e.affectsConfiguration("cortex.logsChangeStreams")) {
         await setupLogsChangeStream();
         postLogsList();
+      }
+      if (
+        e.affectsConfiguration("cortex.mdxGraphAccountPattern") ||
+        e.affectsConfiguration("cortex.mdxGraphWorkspaceMode")
+      ) {
+        if (mdxGraphPanel && currentMdxGraphRoot) {
+          postMdxGraphSnapshot(currentMdxGraphRoot);
+        }
       }
     });
 

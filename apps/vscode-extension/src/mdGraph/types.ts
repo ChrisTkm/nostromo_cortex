@@ -47,6 +47,7 @@ export type MdxGraphSnapshot = {
     orphanCount: number;
     unresolvedCount: number;
     elapsedMs: number;
+    workspaceMode: "starlight" | "flat";
   };
 };
 

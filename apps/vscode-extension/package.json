@@ -376,6 +376,17 @@
           "default": "",
           "description": "Default local folder scanned by Cortex Brain. Leave empty to choose a folder when opening the panel."
         },
+        "cortex.brainAccountPattern": {
+          "type": "string",
+          "default": "",
+          "description": "Regex (sin delimitadores, capture group con el account id) usado por el panel Brain para extraer 'accounts' desde el body de los .md/.mdx. Empty desactiva la extracción. Ejemplo legacy de jean_d_arc: /manual-cuentas/[^)\\s\"']+/(\\d{4,})/?"
+        },
+        "cortex.brainTreeSynthesis": {
+          "type": "string",
+          "enum": ["auto", "off"],
+          "default": "auto",
+          "description": "Cómo sintetizar upstream/downstream en el grafo Brain. 'auto' detecta Astro Starlight (presencia de <root>/src/content/docs/ o astro.config.*) y solo sintetiza si lo encuentra. 'off' nunca sintetiza (workspace flat)."
+        },
         "cortex.telemetryBackend": {
           "type": "string",
           "enum": [

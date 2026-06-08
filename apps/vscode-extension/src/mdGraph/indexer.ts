@@ -28,8 +28,25 @@ type LinkRef = {
 const MARKDOWN_LINK_RE = /\[[^\]]+\]\(([^)]+)\)/g;
 const HREF_RE = /\bhref\s*=\s*["']([^"']+)["']/g;
 const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
-const ACCOUNT_ROUTE_RE = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
-export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800): Promise<MdxGraphSnapshot> {
+
+export const LEGACY_ACCOUNT_PATTERN = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
+
+export type BuildMdxGraphOptions = {
+  maxFiles?: number;
+  accountPattern?: RegExp | null;
+  synthesizeTree?: "auto" | "on" | "off";
+};
+
+export async function buildMdxGraphSnapshot(
+  rootUri: vscode.Uri,
+  options: BuildMdxGraphOptions | number = {}
+): Promise<MdxGraphSnapshot> {
+  if (typeof options === "number") {
+    options = { maxFiles: options };
+  }
+  const maxFiles = options.maxFiles ?? 800;
+  const accountPattern = options.accountPattern ?? null;
+  const synthesizeMode = options.synthesizeTree ?? "auto";
   const startedAt = Date.now();
   const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
   const rawFiles = await vscode.workspace.findFiles(pattern, "**/{node_modules,.git,dist,build,.astro,.next}/**", maxFiles + 1);
@@ -38,13 +55,16 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     left.fsPath.localeCompare(right.fsPath)
   );
 
+  const isStarlight = synthesizeMode === "on" ? true : synthesizeMode === "auto" ? await detectStarlight(rootUri) : false;
+  const workspaceMode: "starlight" | "flat" = isStarlight ? "starlight" : "flat";
+
   const docs: ParsedDoc[] = [];
   const routeToDocId = new Map<string, string>();
   const stemToDocIds = new Map<string, string[]>();
 
   for (const uri of files) {
     const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
-    const doc = parseDocument(rootUri, uri, source);
+    const doc = parseDocument(rootUri, uri, source, accountPattern);
     docs.push(doc);
     for (const route of routeAliasesForFile(rootUri, uri)) {
       addRouteAlias(routeToDocId, route, doc.id);
@@ -124,7 +144,9 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
     }
   }
 
-  synthesizeTreeEdges(docs, edges);
+  if (isStarlight) {
+    synthesizeTreeEdges(docs, edges);
+  }
 
   // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
   // decir páginas que no cuelgan del b-tree por ningún lado.
@@ -172,12 +194,18 @@ export async function buildMdxGraphSnapshot(rootUri: vscode.Uri, maxFiles = 800)
       accountCount: [...nodes.values()].filter((node) => node.kind === "account").length,
       orphanCount,
       unresolvedCount: unresolved.size,
-      elapsedMs: Date.now() - startedAt
+      elapsedMs: Date.now() - startedAt,
+      workspaceMode
     }
   };
 }
 
-function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): ParsedDoc {
+function parseDocument(
+  rootUri: vscode.Uri,
+  uri: vscode.Uri,
+  source: string,
+  accountPattern: RegExp | null
+): ParsedDoc {
   const relativePath = normalizePath(path.relative(rootUri.fsPath, uri.fsPath));
   const route = starlightRouteFromFsPath(uri.fsPath) ?? routeFromRelativePath(relativePath);
   const frontmatter = parseFrontmatter(source);
@@ -199,7 +227,7 @@ function parseDocument(rootUri: vscode.Uri, uri: vscode.Uri, source: string): Pa
     ...(frontmatter.badge ? { badge: frontmatter.badge } : {}),
     tags,
     links: uniqueLinks([...frontmatter.related, ...extractLinks(bodyForLinks).map((href) => ({ href, relation: "link" as const }))]),
-    accounts: unique([...frontmatter.accounts, ...extractAccounts(bodyForLinks)])
+    accounts: unique([...frontmatter.accounts, ...extractAccounts(bodyForLinks, accountPattern)])
   };
 }
 
@@ -313,8 +341,25 @@ function extractLinks(source: string) {
   ]).filter((link) => !isIgnoredLink(link));
 }
 
-function extractAccounts(source: string) {
-  return unique(extractRegexGroup(source, ACCOUNT_ROUTE_RE));
+function extractAccounts(source: string, pattern: RegExp | null) {
+  if (!pattern) return [];
+  return unique(extractRegexGroup(source, pattern));
+}
+
+async function detectStarlight(rootUri: vscode.Uri): Promise<boolean> {
+  const contentDocs = vscode.Uri.joinPath(rootUri, "src", "content", "docs");
+  try {
+    const stat = await vscode.workspace.fs.stat(contentDocs);
+    if (stat.type === vscode.FileType.Directory) return true;
+  } catch { /* not present */ }
+  for (const name of ["astro.config.mjs", "astro.config.ts", "astro.config.js", "astro.config.cjs"]) {
+    const candidate = vscode.Uri.joinPath(rootUri, name);
+    try {
+      await vscode.workspace.fs.stat(candidate);
+      return true;
+    } catch { /* not present */ }
+  }
+  return false;
 }
 
 function extractRegexGroup(source: string, regex: RegExp, group = 1) {

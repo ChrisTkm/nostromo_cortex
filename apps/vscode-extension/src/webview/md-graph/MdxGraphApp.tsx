@@ -242,6 +242,7 @@ export function MdxGraphApp() {
             ))}
           </div>
           <div className="md-graph-stats">
+            <span className={`md-graph-chip__mode ${snapshot.stats.workspaceMode}`}>{snapshot.stats.workspaceMode}</span>
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
             {snapshot.issues.some((issue) => issue.kind === "truncated") ? (
