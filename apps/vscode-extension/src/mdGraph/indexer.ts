@@ -65,8 +65,7 @@ export async function buildMdxGraphSnapshot(
     left.fsPath.localeCompare(right.fsPath)
   );
 
-  const isStarlight = synthesizeMode === "on" ? true : synthesizeMode === "auto" ? await detectStarlight(rootUri) : false;
-  const workspaceMode: "starlight" | "flat" = isStarlight ? "starlight" : "flat";
+  const synthesizeTree = synthesizeMode !== "off";
 
   const cache = options.cache;
   const docs: ParsedDoc[] = [];
@@ -176,8 +175,8 @@ export async function buildMdxGraphSnapshot(
     }
   }
 
-  if (isStarlight) {
-    synthesizeTreeEdges(docs, edges);
+  if (synthesizeTree) {
+    synthesizeTreeEdges(docs, edges, rootUri);
   }
 
   // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
@@ -233,8 +232,7 @@ export async function buildMdxGraphSnapshot(
       accountCount: [...nodes.values()].filter((node) => node.kind === "account").length,
       orphanCount,
       unresolvedCount: unresolved.size,
-      elapsedMs: Date.now() - startedAt,
-      workspaceMode
+      elapsedMs: Date.now() - startedAt
     }
   };
 }
@@ -385,22 +383,6 @@ function extractAccounts(source: string, pattern: RegExp | null) {
   return unique(extractRegexGroup(source, pattern));
 }
 
-async function detectStarlight(rootUri: vscode.Uri): Promise<boolean> {
-  const contentDocs = vscode.Uri.joinPath(rootUri, "src", "content", "docs");
-  try {
-    const stat = await vscode.workspace.fs.stat(contentDocs);
-    if (stat.type === vscode.FileType.Directory) return true;
-  } catch { /* not present */ }
-  for (const name of ["astro.config.mjs", "astro.config.ts", "astro.config.js", "astro.config.cjs"]) {
-    const candidate = vscode.Uri.joinPath(rootUri, name);
-    try {
-      await vscode.workspace.fs.stat(candidate);
-      return true;
-    } catch { /* not present */ }
-  }
-  return false;
-}
-
 function extractRegexGroup(source: string, regex: RegExp, group = 1) {
   regex.lastIndex = 0;
   const values: string[] = [];
@@ -466,12 +448,16 @@ function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]):
   return relation === "upstream" ? [to, from] : [from, to];
 }
 
-// Sintetiza aristas upstream/downstream desde la estructura de carpetas,
-// replicando la regla de jean_d_arc/scripts/normalize-related.mjs: para cada
-// doc, el padre es el index.{md,mdx} más cercano hacia arriba dentro de la
-// misma "zona" (primer segmento bajo content/docs/). Es acíclico por
-// construcción y se ejecuta después del loop de links del frontmatter.
-function synthesizeTreeEdges(docs: ParsedDoc[], edges: Map<string, MdxGraphEdge>) {
+// Sintetiza aristas upstream/downstream desde la estructura de carpetas:
+// para cada doc, el padre es el index.{md,mdx} más cercano hacia arriba
+// dentro de la misma "zona" (primer segmento bajo el rootPath elegido por
+// el usuario). Es acíclico por construcción y se ejecuta después del loop
+// de links del frontmatter.
+function synthesizeTreeEdges(
+  docs: ParsedDoc[],
+  edges: Map<string, MdxGraphEdge>,
+  rootUri: vscode.Uri
+) {
   type Location = {
     doc: ParsedDoc;
     absPath: string;
@@ -481,19 +467,20 @@ function synthesizeTreeEdges(docs: ParsedDoc[], edges: Map<string, MdxGraphEdge>
     zone: string | null;
   };
 
+  const rootPath = normalizePath(rootUri.fsPath);
+
   function locate(doc: ParsedDoc): Location {
     const absPath = normalizePath(doc.uri.fsPath);
     const isIndex = /\/index\.(md|mdx)$/i.test(absPath);
     const lastSlash = absPath.lastIndexOf("/");
     const dir = lastSlash >= 0 ? absPath.slice(0, lastSlash) : absPath;
-    const match = absPath.match(/^(.*?\/(?:src\/)?content\/docs)\/(.+)$/i);
-    if (!match) {
+    if (!absPath.startsWith(`${rootPath}/`)) {
       return { doc, absPath, dir, isIndex, docsRoot: null, zone: null };
     }
-    const docsRoot = match[1];
-    const firstSeg = match[2].split("/")[0] ?? "";
-    const zone = /^index\.(md|mdx)$/i.test(firstSeg) || !firstSeg ? null : firstSeg;
-    return { doc, absPath, dir, isIndex, docsRoot, zone };
+    const relative = absPath.slice(rootPath.length + 1);
+    const firstSeg = relative.split("/")[0] ?? "";
+    const zone = !firstSeg || firstSeg.includes(".") ? null : firstSeg;
+    return { doc, absPath, dir, isIndex, docsRoot: rootPath, zone };
   }
 
   const locations = docs.map(locate);
@@ -503,9 +490,13 @@ function synthesizeTreeEdges(docs: ParsedDoc[], edges: Map<string, MdxGraphEdge>
       indexByDir.set(loc.dir, loc);
     }
   }
+  const rootIndex = indexByDir.get(rootPath) ?? null;
 
   function parentIndex(loc: Location): Location | null {
-    if (!loc.zone || !loc.docsRoot) return null;
+    if (!loc.docsRoot) return null;
+    if (!loc.zone) {
+      return loc.isIndex ? null : rootIndex;
+    }
     const zoneRoot = `${loc.docsRoot}/${loc.zone}`;
     let dir = loc.dir;
     if (loc.isIndex) {

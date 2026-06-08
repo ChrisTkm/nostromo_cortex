@@ -15,7 +15,7 @@ function snapshot(nodes: string[]): MdxGraphSnapshot {
     nodes: nodes.map((id) => ({ id, kind: "doc", label: id, route: id }) as any),
     edges: [],
     issues: [],
-    stats: { fileCount: 0, tagCount: 0, accountCount: 0, orphanCount: 0, unresolvedCount: 0, elapsedMs: 0, workspaceMode: "flat" },
+    stats: { fileCount: 0, tagCount: 0, accountCount: 0, orphanCount: 0, unresolvedCount: 0, elapsedMs: 0 },
   };
 }
 

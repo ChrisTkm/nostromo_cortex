@@ -141,7 +141,7 @@ describe("buildMdxGraphSnapshot", () => {
   });
 
   it("derives upstream/downstream from folder structure and keeps references/standards/accounts from frontmatter", async () => {
-    const rootUri = { fsPath: "C:\\site\\src\\content\\docs\\accounting" } as any;
+    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
     const accountingPath = "C:\\site\\src\\content\\docs\\accounting\\index.mdx";
     const fixedAssetsPath = "C:\\site\\src\\content\\docs\\accounting\\activos-fijos\\index.mdx";
     const standardPath = "C:\\site\\src\\content\\docs\\accounting\\ifrs\\nic-16.mdx";
@@ -193,31 +193,31 @@ describe("buildMdxGraphSnapshot", () => {
     expect(snapshot.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          from: "doc:index.mdx",
-          to: "doc:activos-fijos/index.mdx",
+          from: "doc:accounting/index.mdx",
+          to: "doc:accounting/activos-fijos/index.mdx",
           kind: "link",
           label: "upstream"
         }),
         expect.objectContaining({
-          from: "doc:index.mdx",
-          to: "doc:activos-fijos/index.mdx",
+          from: "doc:accounting/index.mdx",
+          to: "doc:accounting/activos-fijos/index.mdx",
           kind: "link",
           label: "downstream"
         }),
         expect.objectContaining({
-          from: "doc:activos-fijos/index.mdx",
-          to: "doc:ifrs/nic-16.mdx",
+          from: "doc:accounting/activos-fijos/index.mdx",
+          to: "doc:accounting/ifrs/nic-16.mdx",
           kind: "link",
           label: "references"
         }),
         expect.objectContaining({
-          from: "doc:activos-fijos/index.mdx",
-          to: "doc:ifrs/nic-16.mdx",
+          from: "doc:accounting/activos-fijos/index.mdx",
+          to: "doc:accounting/ifrs/nic-16.mdx",
           kind: "link",
           label: "standards"
         }),
         expect.objectContaining({
-          from: "doc:activos-fijos/index.mdx",
+          from: "doc:accounting/activos-fijos/index.mdx",
           to: "account:1201500",
           kind: "account",
           label: "account"
@@ -461,8 +461,8 @@ describe("buildMdxGraphSnapshot", () => {
 
   it("synthesizeTree: on forces tree edges in flat workspace", async () => {
     const rootUri = { fsPath: "C:\\flat-project" } as any;
-    const parentPath = "C:\\flat-project\\src\\content\\docs\\section\\index.mdx";
-    const childPath = "C:\\flat-project\\src\\content\\docs\\section\\child\\index.mdx";
+    const parentPath = "C:\\flat-project\\section\\index.mdx";
+    const childPath = "C:\\flat-project\\section\\child\\index.mdx";
     filesRef.current = [{ fsPath: parentPath }, { fsPath: childPath }];
     sourcesRef.current.set(parentPath, ["---", "title: Section", "---", "", "# Section"].join("\n"));
     sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
@@ -470,48 +470,72 @@ describe("buildMdxGraphSnapshot", () => {
 
     const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "on" });
 
-    expect(snapshot.stats.workspaceMode).toBe("starlight");
     expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(true);
   });
 
   it("synthesizeTree: off suppresses tree edges in Starlight workspace", async () => {
-    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
-    const parentPath = "C:\\site\\src\\content\\docs\\parent.mdx";
-    const childPath = "C:\\site\\src\\content\\docs\\parent\\child.mdx";
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const parentPath = "C:\\site\\docs\\parent.mdx";
+    const childPath = "C:\\site\\docs\\parent\\child.mdx";
     filesRef.current = [{ fsPath: parentPath }, { fsPath: childPath }];
     sourcesRef.current.set(parentPath, ["---", "title: Parent", "---", "", "# Parent"].join("\n"));
     sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
 
     const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "off" });
 
-    expect(snapshot.stats.workspaceMode).toBe("flat");
     expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(false);
     expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(false);
   });
 
-  it("workspaceMode is starlight when tree synthesis runs", async () => {
-    const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
-    const docPath = "C:\\site\\src\\content\\docs\\page.mdx";
-    filesRef.current = [{ fsPath: docPath }];
-    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+  it("root with custom zone: index + page within zone", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const indexPath = "C:\\project\\accounting\\index.mdx";
+    const pagePath = "C:\\project\\accounting\\page.mdx";
+    filesRef.current = [{ fsPath: indexPath }, { fsPath: pagePath }];
+    sourcesRef.current.set(indexPath, ["---", "title: Accounting", "---", "", "# Accounting"].join("\n"));
+    sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
-    expect(snapshot.stats.workspaceMode).toBe("starlight");
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:accounting/index.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:accounting/index.mdx")).toBe(true);
   });
 
-  it("workspaceMode is flat when tree synthesis does not run", async () => {
-    const rootUri = { fsPath: "C:\\not-starlight" } as any;
-    const docPath = "C:\\not-starlight\\page.mdx";
-    filesRef.current = [{ fsPath: docPath }];
-    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
-    starlightDirRef.current = false;
+  it("root with multiple zones produces isolated trees per zone", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const acctIndex = "C:\\project\\accounting\\index.mdx";
+    const devIndex = "C:\\project\\dev\\index.mdx";
+    const acctPage = "C:\\project\\accounting\\p1.mdx";
+    const devPage = "C:\\project\\dev\\p1.mdx";
+    filesRef.current = [{ fsPath: acctIndex }, { fsPath: devIndex }, { fsPath: acctPage }, { fsPath: devPage }];
+    sourcesRef.current.set(acctIndex, ["---", "title: Accounting", "---", "", "# Accounting"].join("\n"));
+    sourcesRef.current.set(devIndex, ["---", "title: Dev", "---", "", "# Dev"].join("\n"));
+    sourcesRef.current.set(acctPage, ["---", "title: Acct Page", "---", "", "# Acct Page"].join("\n"));
+    sourcesRef.current.set(devPage, ["---", "title: Dev Page", "---", "", "# Dev Page"].join("\n"));
 
     const snapshot = await buildMdxGraphSnapshot(rootUri);
 
-    expect(snapshot.stats.workspaceMode).toBe("flat");
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:accounting/index.mdx" && e.to === "doc:accounting/p1.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:dev/index.mdx" && e.to === "doc:dev/p1.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.from === "doc:accounting/p1.mdx" && e.to === "doc:dev/index.mdx")).toBe(false);
   });
+
+  it("root with direct index.md produces upstream for page", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const indexPath = "C:\\project\\index.mdx";
+    const pagePath = "C:\\project\\page.mdx";
+    filesRef.current = [{ fsPath: indexPath }, { fsPath: pagePath }];
+    sourcesRef.current.set(indexPath, ["---", "title: Root", "---", "", "# Root"].join("\n"));
+    sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:index.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:index.mdx")).toBe(true);
+  });
+
+
 });
 
 describe("cache", () => {
