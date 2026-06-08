@@ -14,6 +14,8 @@ export function resolveScriptFlowLanguage(documentPath: string): ScriptFlowLangu
   switch (path.extname(documentPath).toLowerCase()) {
     case ".ts":
     case ".tsx":
+    case ".js":
+    case ".jsx":
       return "typescript";
     case ".py":
       return "python";

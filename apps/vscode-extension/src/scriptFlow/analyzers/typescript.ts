@@ -50,8 +50,21 @@ class TypeScriptFlowAnalyzer {
       source,
       ts.ScriptTarget.Latest,
       true,
-      documentPath.toLowerCase().endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+      this.resolveScriptKind(documentPath)
     );
+  }
+
+  private resolveScriptKind(documentPath: string): ts.ScriptKind {
+    switch (path.extname(documentPath).toLowerCase()) {
+      case ".tsx":
+        return ts.ScriptKind.TSX;
+      case ".js":
+        return ts.ScriptKind.JS;
+      case ".jsx":
+        return ts.ScriptKind.JSX;
+      default:
+        return ts.ScriptKind.TS;
+    }
   }
 
   analyze(): ScriptFlowSnapshot {

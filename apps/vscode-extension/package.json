@@ -286,12 +286,12 @@
       "editor/context": [
         {
           "command": "cortex.openScriptFlow",
-          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .js || resourceExtname == .jsx || resourceExtname == .py || resourceExtname == .sql)",
           "group": "navigation@10"
         },
         {
           "command": "cortex.openScriptFlowForSelection",
-          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .js || resourceExtname == .jsx || resourceExtname == .py || resourceExtname == .sql)",
           "group": "navigation@11"
         }
       ]
