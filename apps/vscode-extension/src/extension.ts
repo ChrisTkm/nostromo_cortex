@@ -19,6 +19,7 @@ import { ExtensionTaskService } from "./service.js";
 import { clampAutoRefreshSeconds, clampLogsLimit } from "./logsAutoRefresh.js";
 import {
   analyzeScriptFlowDocument,
+  clearScriptFlowCache,
   resolveScriptFlowLanguage,
 } from "./scriptFlow/analyzers/index.js";
 import {
@@ -2236,6 +2237,7 @@ export async function deactivate() {
   disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
+  clearScriptFlowCache();
 }
 
 function buildSnapshotFilter(
