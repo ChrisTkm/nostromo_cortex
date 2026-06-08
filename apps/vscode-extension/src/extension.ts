@@ -12,6 +12,7 @@ import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { buildMdxGraphSnapshot } from "./mdGraph/indexer.js";
+import { createDebouncedRefresh } from "./mdGraphWatcher.js";
 import type { MdxGraphSnapshot } from "./mdGraph/types.js";
 import { ExtensionTaskService } from "./service.js";
 import { clampAutoRefreshSeconds, clampLogsLimit } from "./logsAutoRefresh.js";
@@ -150,6 +151,12 @@ export async function activate(context: vscode.ExtensionContext) {
   let mdxGraphPanelReady = false;
   let currentMdxGraphRoot: vscode.Uri | undefined;
   let currentMdxGraphSnapshot: MdxGraphSnapshot | undefined;
+  let mdxGraphWatcher: vscode.FileSystemWatcher | undefined;
+  const mdxGraphRefresh = createDebouncedRefresh(() => {
+    if (mdxGraphPanel && currentMdxGraphRoot) {
+      void postMdxGraphSnapshot(currentMdxGraphRoot);
+    }
+  }, 500);
   let archivePanel: vscode.WebviewPanel | undefined;
   let archivePanelReady = false;
   let notesPanel: vscode.WebviewPanel | undefined;
@@ -180,7 +187,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
-  context.subscriptions.push(cortexOutput);
+  context.subscriptions.push(cortexOutput, { dispose: disposeMdxGraphWatcher });
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -410,6 +417,24 @@ export async function activate(context: vscode.ExtensionContext) {
         type: "mdxGraph:error",
         error: String(error),
       });
+    }
+  }
+
+  function setupMdxGraphWatcher(rootUri: vscode.Uri) {
+    disposeMdxGraphWatcher();
+    const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    watcher.onDidCreate(() => mdxGraphRefresh.schedule());
+    watcher.onDidChange(() => mdxGraphRefresh.schedule());
+    watcher.onDidDelete(() => mdxGraphRefresh.schedule());
+    mdxGraphWatcher = watcher;
+  }
+
+  function disposeMdxGraphWatcher() {
+    mdxGraphRefresh.cancel();
+    if (mdxGraphWatcher) {
+      mdxGraphWatcher.dispose();
+      mdxGraphWatcher = undefined;
     }
   }
 
@@ -849,6 +874,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
     if (mdxGraphPanel) {
       mdxGraphPanel.reveal(vscode.ViewColumn.One);
+      if (selectedRoot.fsPath !== currentMdxGraphRoot?.fsPath) {
+        setupMdxGraphWatcher(selectedRoot);
+      }
       if (mdxGraphPanelReady) {
         await postMdxGraphSnapshot(selectedRoot);
       } else {
@@ -858,6 +886,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     }
 
     currentMdxGraphRoot = selectedRoot;
+    setupMdxGraphWatcher(selectedRoot);
     mdxGraphPanelReady = false;
     mdxGraphPanel = vscode.window.createWebviewPanel(
       "cortex.brain",
@@ -875,6 +904,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       nonce(),
     );
     mdxGraphPanel.onDidDispose(() => {
+      disposeMdxGraphWatcher();
       mdxGraphPanel = undefined;
       mdxGraphPanelReady = false;
       currentMdxGraphSnapshot = undefined;
@@ -896,6 +926,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "mdxGraph:pickFolder") {
         const picked = await pickMdxGraphRoot();
         if (picked) {
+          currentMdxGraphRoot = picked;
+          setupMdxGraphWatcher(picked);
           await postMdxGraphSnapshot(picked);
         }
         return;
