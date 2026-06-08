@@ -341,7 +341,10 @@
         },
         "cortex.logsSource": {
           "type": "string",
-          "enum": ["mongo", "file"],
+          "enum": [
+            "mongo",
+            "file"
+          ],
           "default": "mongo",
           "description": "Where the Cortex Logs panel reads from. 'mongo' queries the MongoDB logs collection (default). 'file' tails a JSONL file written by your app following docs/log-contract.md."
         },
@@ -383,7 +386,10 @@
         },
         "cortex.brainTreeSynthesis": {
           "type": "string",
-          "enum": ["auto", "off"],
+          "enum": [
+            "auto",
+            "off"
+          ],
           "default": "auto",
           "description": "Cómo sintetizar upstream/downstream en el grafo Brain. 'auto' detecta Astro Starlight (presencia de <root>/src/content/docs/ o astro.config.*) y solo sintetiza si lo encuentra. 'off' nunca sintetiza (workspace flat)."
         },

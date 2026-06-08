@@ -31,10 +31,20 @@ const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
 
 export const LEGACY_ACCOUNT_PATTERN = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
 
+export type MdxGraphCacheEntry = { mtime: number; doc: ParsedDoc };
+export type MdxGraphCache = Map<string, MdxGraphCacheEntry>;
+
+export function createMdxGraphCache(): MdxGraphCache {
+  return new Map();
+}
+
+const SCAN_BATCH_SIZE = 50;
+
 export type BuildMdxGraphOptions = {
   maxFiles?: number;
   accountPattern?: RegExp | null;
   synthesizeTree?: "auto" | "on" | "off";
+  cache?: MdxGraphCache;
 };
 
 export async function buildMdxGraphSnapshot(
@@ -58,21 +68,43 @@ export async function buildMdxGraphSnapshot(
   const isStarlight = synthesizeMode === "on" ? true : synthesizeMode === "auto" ? await detectStarlight(rootUri) : false;
   const workspaceMode: "starlight" | "flat" = isStarlight ? "starlight" : "flat";
 
+  const cache = options.cache;
   const docs: ParsedDoc[] = [];
   const routeToDocId = new Map<string, string>();
   const stemToDocIds = new Map<string, string[]>();
 
-  for (const uri of files) {
-    const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
-    const doc = parseDocument(rootUri, uri, source, accountPattern);
-    docs.push(doc);
-    for (const route of routeAliasesForFile(rootUri, uri)) {
-      addRouteAlias(routeToDocId, route, doc.id);
+  const parseOrCached = async (uri: vscode.Uri): Promise<ParsedDoc> => {
+    const key = uri.fsPath;
+    if (cache) {
+      const stat = await vscode.workspace.fs.stat(uri);
+      const cached = cache.get(key);
+      if (cached && cached.mtime === stat.mtime) {
+        return cached.doc;
+      }
+      const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+      const doc = parseDocument(rootUri, uri, source, accountPattern);
+      cache.set(key, { mtime: stat.mtime, doc });
+      return doc;
     }
-    const stem = path.basename(uri.fsPath).replace(/\.(mdx?|MDX?)$/, "").toLowerCase();
-    const bucket = stemToDocIds.get(stem) ?? [];
-    bucket.push(doc.id);
-    stemToDocIds.set(stem, bucket);
+    const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    return parseDocument(rootUri, uri, source, accountPattern);
+  };
+
+  for (let offset = 0; offset < files.length; offset += SCAN_BATCH_SIZE) {
+    const batch = files.slice(offset, offset + SCAN_BATCH_SIZE);
+    const parsed = await Promise.all(batch.map(parseOrCached));
+    for (let index = 0; index < batch.length; index += 1) {
+      const uri = batch[index]!;
+      const doc = parsed[index]!;
+      docs.push(doc);
+      for (const route of routeAliasesForFile(rootUri, uri)) {
+        addRouteAlias(routeToDocId, route, doc.id);
+      }
+      const stem = path.basename(uri.fsPath).replace(/\.(mdx?|MDX?)$/, "").toLowerCase();
+      const bucket = stemToDocIds.get(stem) ?? [];
+      bucket.push(doc.id);
+      stemToDocIds.set(stem, bucket);
+    }
   }
 
   const nodes = new Map<string, MdxGraphNode>();
@@ -180,6 +212,13 @@ export async function buildMdxGraphSnapshot(
       nodeId: "__workspace__",
       detail: `Scanned ${files.length} of more .md/.mdx files. Increase cortex.mdxGraphMaxFiles to scan more.`
     });
+  }
+
+  if (cache) {
+    const currentKeys = new Set(files.map((u) => u.fsPath));
+    for (const key of cache.keys()) {
+      if (!currentKeys.has(key)) cache.delete(key);
+    }
   }
 
   return {

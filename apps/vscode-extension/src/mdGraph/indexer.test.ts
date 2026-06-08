@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { filesRef, sourcesRef, starlightDirRef } = vi.hoisted(() => ({
+const { filesRef, sourcesRef, starlightDirRef, mtimeRef, readFileCallCountRef } = vi.hoisted(() => ({
   filesRef: { current: [] as Array<{ fsPath: string }> },
   sourcesRef: { current: new Map<string, string>() },
-  starlightDirRef: { current: false }
+  starlightDirRef: { current: false },
+  mtimeRef: { current: new Map<string, number>() },
+  readFileCallCountRef: { current: 0 }
 }));
 
 vi.mock("vscode", () => ({
@@ -22,16 +24,22 @@ vi.mock("vscode", () => ({
   workspace: {
     findFiles: vi.fn(async () => filesRef.current),
     fs: {
-      readFile: vi.fn(async (uri: { fsPath: string }) => Buffer.from(sourcesRef.current.get(uri.fsPath) ?? "", "utf8")),
+      readFile: vi.fn(async (uri: { fsPath: string }) => {
+        readFileCallCountRef.current++;
+        return Buffer.from(sourcesRef.current.get(uri.fsPath) ?? "", "utf8");
+      }),
       stat: vi.fn(async (uri: { fsPath: string }) => {
-        if (starlightDirRef.current && uri.fsPath.includes("src\\content\\docs")) return { type: 2 };
+        if (starlightDirRef.current && uri.fsPath.includes("src\\content\\docs")) return { type: 2, mtime: 0, ctime: 0, size: 0 };
+        const mtime = mtimeRef.current.get(uri.fsPath);
+        if (mtime !== undefined) return { type: 1, mtime, ctime: mtime, size: 100 };
+        if (sourcesRef.current.has(uri.fsPath)) return { type: 1, mtime: 0, ctime: 0, size: 100 };
         throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
       })
     }
   }
 }));
 
-import { buildMdxGraphSnapshot, LEGACY_ACCOUNT_PATTERN, parseFrontmatter } from "./indexer.js";
+import { buildMdxGraphSnapshot, createMdxGraphCache, LEGACY_ACCOUNT_PATTERN, parseFrontmatter } from "./indexer.js";
 
 describe("buildMdxGraphSnapshot", () => {
   beforeEach(() => {
@@ -506,6 +514,96 @@ describe("buildMdxGraphSnapshot", () => {
   });
 });
 
+describe("cache", () => {
+  beforeEach(() => {
+    filesRef.current = [];
+    sourcesRef.current = new Map<string, string>();
+    mtimeRef.current = new Map<string, number>();
+    readFileCallCountRef.current = 0;
+  });
+
+  it("behaves as before when no cache is passed", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+
+    expect(snapshot.stats.fileCount).toBe(1);
+    expect(snapshot.nodes.some((n) => n.id === "doc:docs/page.mdx")).toBe(true);
+  });
+
+  it("populates cache entries on first scan", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const doc1 = "C:\\site\\docs\\a.mdx";
+    const doc2 = "C:\\site\\docs\\b.mdx";
+    filesRef.current = [{ fsPath: doc1 }, { fsPath: doc2 }];
+    sourcesRef.current.set(doc1, ["---", "title: A", "---", "", "# A"].join("\n"));
+    sourcesRef.current.set(doc2, ["---", "title: B", "---", "", "# B"].join("\n"));
+    const cache = createMdxGraphCache();
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+
+    expect(snapshot.stats.fileCount).toBe(2);
+    expect(cache.size).toBe(2);
+  });
+
+  it("reuses cached doc when mtime is unchanged (zero readFile calls)", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docPath = "C:\\site\\docs\\page.mdx";
+    filesRef.current = [{ fsPath: docPath }];
+    sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+    const cache = createMdxGraphCache();
+    await buildMdxGraphSnapshot(rootUri, { cache });
+    const readFileCallsAfterFirst = readFileCallCountRef.current;
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+
+    expect(snapshot.stats.fileCount).toBe(1);
+    expect(readFileCallCountRef.current - readFileCallsAfterFirst).toBe(0);
+  });
+
+  it("re-reads only files whose mtime changed", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docA = "C:\\site\\docs\\a.mdx";
+    const docB = "C:\\site\\docs\\b.mdx";
+    filesRef.current = [{ fsPath: docA }, { fsPath: docB }];
+    sourcesRef.current.set(docA, ["---", "title: A", "---", "", "# A"].join("\n"));
+    sourcesRef.current.set(docB, ["---", "title: B", "---", "", "# B"].join("\n"));
+    const cache = createMdxGraphCache();
+    await buildMdxGraphSnapshot(rootUri, { cache });
+    const readFileCallsAfterFirst = readFileCallCountRef.current;
+    mtimeRef.current.set(docB, 42);
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+
+    expect(snapshot.stats.fileCount).toBe(2);
+    expect(readFileCallCountRef.current - readFileCallsAfterFirst).toBe(1);
+  });
+
+  it("prunes cache entries for deleted files", async () => {
+    const rootUri = { fsPath: "C:\\site" } as any;
+    const docA = "C:\\site\\docs\\a.mdx";
+    const docB = "C:\\site\\docs\\b.mdx";
+    filesRef.current = [{ fsPath: docA }, { fsPath: docB }];
+    sourcesRef.current.set(docA, ["---", "title: A", "---", "", "# A"].join("\n"));
+    sourcesRef.current.set(docB, ["---", "title: B", "---", "", "# B"].join("\n"));
+    const cache = createMdxGraphCache();
+    await buildMdxGraphSnapshot(rootUri, { cache });
+    expect(cache.size).toBe(2);
+
+    filesRef.current = [{ fsPath: docA }];
+    sourcesRef.current.delete(docB);
+
+    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+
+    expect(snapshot.stats.fileCount).toBe(1);
+    expect(cache.size).toBe(1);
+    expect(Array.from(cache.keys()).some((k) => k.includes("b.mdx"))).toBe(false);
+  });
+});
+
 describe("parseFrontmatter", () => {
   const fm = (body: string) => `---\n${body}\n---\n`;
 
@@ -739,12 +837,56 @@ function makeFiles(count: number, dir: string) {
   return Array.from({ length: count }, (_, i) => ({ fsPath: `${dir}\\file${i}.mdx` }));
 }
 
+describe("batched scan", () => {
+  const rootUri = { fsPath: "C:\\site" } as any;
+
+  beforeEach(() => {
+    filesRef.current = [];
+    sourcesRef.current = new Map<string, string>();
+    starlightDirRef.current = true;
+  });
+
+  it("scans fewer files than batch size", async () => {
+    filesRef.current = makeFiles(5, rootUri.fsPath);
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.stats.fileCount).toBe(5);
+    expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(5);
+  });
+
+  it("scans exactly one batch", async () => {
+    filesRef.current = makeFiles(50, rootUri.fsPath);
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.stats.fileCount).toBe(50);
+    expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(50);
+  });
+
+  it("scans more files than batch size producing three batches", async () => {
+    filesRef.current = makeFiles(120, rootUri.fsPath);
+    for (const f of filesRef.current) {
+      sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
+    }
+    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    expect(snapshot.stats.fileCount).toBe(120);
+    expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(120);
+    const docs = snapshot.nodes.filter((n) => n.kind === "doc");
+    const ids = docs.map((d) => d.id);
+    expect(new Set(ids).size).toBe(120);
+  });
+});
+
 describe("truncation", () => {
   const rootUri = { fsPath: "C:\\site" } as any;
 
   beforeEach(() => {
     filesRef.current = [];
     sourcesRef.current = new Map<string, string>();
+    starlightDirRef.current = true;
   });
 
   it("does not add truncated issue when files < maxFiles", async () => {

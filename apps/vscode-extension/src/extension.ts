@@ -11,7 +11,8 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
-import { buildMdxGraphSnapshot } from "./mdGraph/indexer.js";
+import { buildMdxGraphSnapshot, createMdxGraphCache } from "./mdGraph/indexer.js";
+import type { MdxGraphCache } from "./mdGraph/indexer.js";
 import { createDebouncedRefresh } from "./mdGraphWatcher.js";
 import type { MdxGraphSnapshot } from "./mdGraph/types.js";
 import { ExtensionTaskService } from "./service.js";
@@ -151,6 +152,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let mdxGraphPanelReady = false;
   let currentMdxGraphRoot: vscode.Uri | undefined;
   let currentMdxGraphSnapshot: MdxGraphSnapshot | undefined;
+  let mdxGraphCache: MdxGraphCache | undefined;
   let mdxGraphWatcher: vscode.FileSystemWatcher | undefined;
   const mdxGraphRefresh = createDebouncedRefresh(() => {
     if (mdxGraphPanel && currentMdxGraphRoot) {
@@ -402,7 +404,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
       const synthesizeTree = workspaceMode === "auto" ? "auto" : workspaceMode === "starlight" ? "on" : "off";
-      const snapshot = await buildMdxGraphSnapshot(rootUri, { maxFiles, accountPattern, synthesizeTree });
+      const snapshot = await buildMdxGraphSnapshot(rootUri, { maxFiles, accountPattern, synthesizeTree, cache: mdxGraphCache });
       if (mdxGraphPanel !== panel) {
         return;
       }
@@ -436,6 +438,10 @@ export async function activate(context: vscode.ExtensionContext) {
       mdxGraphWatcher.dispose();
       mdxGraphWatcher = undefined;
     }
+  }
+
+  function clearMdxGraphCache() {
+    mdxGraphCache?.clear();
   }
 
   async function postNotesMode(mode: NotesPanelMode) {
@@ -689,6 +695,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         await setupLogsChangeStream();
         postLogsList();
       }
+      if (e.affectsConfiguration("cortex.mdxGraphAccountPattern")) {
+        clearMdxGraphCache();
+      }
       if (
         e.affectsConfiguration("cortex.mdxGraphAccountPattern") ||
         e.affectsConfiguration("cortex.mdxGraphWorkspaceMode")
@@ -875,6 +884,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     if (mdxGraphPanel) {
       mdxGraphPanel.reveal(vscode.ViewColumn.One);
       if (selectedRoot.fsPath !== currentMdxGraphRoot?.fsPath) {
+        clearMdxGraphCache();
         setupMdxGraphWatcher(selectedRoot);
       }
       if (mdxGraphPanelReady) {
@@ -886,6 +896,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     }
 
     currentMdxGraphRoot = selectedRoot;
+    if (!mdxGraphCache) mdxGraphCache = createMdxGraphCache();
     setupMdxGraphWatcher(selectedRoot);
     mdxGraphPanelReady = false;
     mdxGraphPanel = vscode.window.createWebviewPanel(
@@ -905,6 +916,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     );
     mdxGraphPanel.onDidDispose(() => {
       disposeMdxGraphWatcher();
+      mdxGraphCache?.clear();
+      mdxGraphCache = undefined;
       mdxGraphPanel = undefined;
       mdxGraphPanelReady = false;
       currentMdxGraphSnapshot = undefined;
@@ -926,6 +939,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "mdxGraph:pickFolder") {
         const picked = await pickMdxGraphRoot();
         if (picked) {
+          clearMdxGraphCache();
           currentMdxGraphRoot = picked;
           setupMdxGraphWatcher(picked);
           await postMdxGraphSnapshot(picked);
