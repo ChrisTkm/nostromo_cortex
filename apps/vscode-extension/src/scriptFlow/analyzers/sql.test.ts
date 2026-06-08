@@ -44,8 +44,13 @@ describe("analyzeSqlDocument", () => {
     expect(snap.nodes[0]?.label).toMatch(/users/i);
   });
 
-  it("throws on invalid SQL (no regression on parser errors)", () => {
-    expect(() => run("SELECT FROM WHERE;")).toThrow(/could not parse/);
+  it("renders fallback snapshot on invalid SQL (no throw)", () => {
+    const snap = run("SELECT FROM WHERE;");
+    expect(snap.nodes).toHaveLength(1);
+    expect(snap.nodes[0]?.kind).toBe("entry");
+    expect(snap.nodes[0]?.label).toBe("Unsupported SQL syntax");
+    expect(snap.analysis.observations.length).toBeGreaterThan(0);
+    expect(snap.analysis.observations.some((o) => /postgresql/i.test(o))).toBe(true);
   });
 
   it("preserves CTE + JOIN handling when SELECT is part of a multi-statement", () => {
@@ -56,5 +61,36 @@ describe("analyzeSqlDocument", () => {
     const snap = run(sql);
     expect(snap.nodes.some((n) => n.kind === "cte")).toBe(true);
     expect(snap.nodes.some((n) => n.kind === "join")).toBe(true);
+  });
+
+  it("renders fallback for PL/pgSQL function body", () => {
+    const sql = `
+      CREATE OR REPLACE FUNCTION foo(p_id uuid)
+      RETURNS TABLE(ids uuid[])
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RETURN QUERY SELECT ARRAY[p_id];
+      END $$;
+    `;
+    const snap = run(sql);
+    expect(snap.nodes).toHaveLength(1);
+    expect(snap.nodes[0]?.kind).toBe("entry");
+    expect(snap.metadata.language).toBe("sql");
+    expect(snap.analysis.entryPoints).toEqual(["unsupported"]);
+    expect(snap.analysis.summary).toMatch(/no soporta/i);
+  });
+
+  it("renders fallback for array type declaration", () => {
+    const sql = "CREATE TABLE foo (tags text[]);";
+    const snap = run(sql);
+    expect(() => run(sql)).not.toThrow();
+    expect(snap.nodes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("preserves parser error detail in observations", () => {
+    const snap = run("this is not sql at all");
+    expect(snap.analysis.observations.length).toBeGreaterThan(0);
+    const allObs = snap.analysis.observations.join(" ");
+    expect(allObs).toMatch(/(SyntaxError|Expected|parse)/i);
   });
 });

@@ -41,9 +41,13 @@ type SearchCursorKey = "cte" | "join";
 
 export function analyzeSqlDocument(input: ScriptFlowAnalyzerInput): ScriptFlowSnapshot {
   const parser = new Parser();
-  const parsed = parseSqlDocument(parser, input.documentPath, input.source);
-  const analyzer = new SqlFlowAnalyzer(input.documentPath, input.source, parsed.asts, parsed.dialect);
-  return analyzer.analyze();
+  try {
+    const parsed = parseSqlDocument(parser, input.documentPath, input.source);
+    const analyzer = new SqlFlowAnalyzer(input.documentPath, input.source, parsed.asts, parsed.dialect);
+    return analyzer.analyze();
+  } catch (error) {
+    return buildUnsupportedSqlSnapshot(input.documentPath, input.source, error);
+  }
 }
 
 function parseSqlDocument(parser: Parser, documentPath: string, source: string) {
@@ -563,4 +567,49 @@ function findTopLevelSelectOffset(source: string) {
 
 function isWordBoundary(value: string | undefined) {
   return value === undefined || /[^a-z0-9_]/i.test(value);
+}
+
+function buildUnsupportedSqlSnapshot(documentPath: string, source: string, error: unknown): ScriptFlowSnapshot {
+  const fileName = path.basename(documentPath);
+  const message = error instanceof Error ? error.message : String(error);
+  const observations = extractParserObservations(message);
+
+  return {
+    metadata: {
+      path: documentPath.replace(/\\/g, "/"),
+      language: "sql",
+      hash: createHash("sha1").update(source).digest("hex"),
+      parsedAt: new Date().toISOString()
+    },
+    nodes: [
+      {
+        id: "unsupported",
+        kind: "entry",
+        label: "Unsupported SQL syntax",
+        meta: { reason: "parser-failed" }
+      }
+    ],
+    edges: [],
+    analysis: {
+      entryPoints: ["unsupported"],
+      summary: [
+        `${fileName}: SQL contiene sintaxis que node-sql-parser no soporta.`,
+        "Casos típicos: PL/pgSQL function bodies (AS $$...$$), array types (uuid[], text[]), RETURNS TABLE, DO blocks, COPY, psql meta-commands.",
+        "El archivo se abrió igual pero el grafo no pudo construirse."
+      ].join("\n"),
+      decisions: [],
+      loops: [],
+      observations
+    }
+  };
+}
+
+function extractParserObservations(errorMessage: string): string[] {
+  const observations: string[] = [];
+  const pgMatch = errorMessage.match(/postgresql:\s*([^|]+?)(?:\s*\||$)/i);
+  const mysqlMatch = errorMessage.match(/mysql:\s*([^|]+?)(?:\s*\||$)/i);
+  if (pgMatch) observations.push(`PostgreSQL parser: ${pgMatch[1].trim()}`);
+  if (mysqlMatch) observations.push(`MySQL parser: ${mysqlMatch[1].trim()}`);
+  if (observations.length === 0) observations.push(errorMessage);
+  return observations;
 }
