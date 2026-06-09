@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeTypeScriptDocument } from "./typescript.js";
+import { loadFixture } from "./__fixtures__/helpers.js";
 
 const run = (source: string) =>
   analyzeTypeScriptDocument({ documentPath: "fixture.ts", source });
@@ -58,5 +59,30 @@ describe("analyzeTypeScriptDocument", () => {
     const snap = run("class S { async load() { return 1; } }");
     const fn = snap.nodes.find((n) => n.kind === "function" && /load/.test(n.label));
     expect(fn?.meta?.async).toBe(true);
+  });
+
+  describe("fixture-based", () => {
+    it("produces switch → branch nodes from switch-case.ts", () => {
+      const snap = run(loadFixture("switch-case.ts"));
+      const branches = snap.nodes.filter((n) => n.kind === "branch");
+      expect(branches.length).toBeGreaterThanOrEqual(1);
+      expect(branches[0]?.meta?.branches).toBe(4);
+    });
+
+    it("analyzes for-of, while, and do-while from loops.ts", () => {
+      const snap = run(loadFixture("loops.ts"));
+      expect(snap.analysis.loops.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("emits observations for async I/O and heavy loops", () => {
+      const snap = run(loadFixture("observations.ts"));
+      expect(snap.analysis.observations.length).toBeGreaterThan(0);
+    });
+
+    it("parses class-methods.tsx as TypeScript (via resolveScriptKind)", () => {
+      const snap = run(loadFixture("class-methods.tsx"));
+      const nodes = snap.nodes;
+      expect(nodes.some((n) => n.kind === "function")).toBe(true);
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeSqlDocument } from "./sql.js";
+import { loadFixture } from "./__fixtures__/helpers.js";
 
 const run = (source: string) =>
   analyzeSqlDocument({ documentPath: "fixture.sql", source });
@@ -92,5 +93,30 @@ describe("analyzeSqlDocument", () => {
     expect(snap.analysis.observations.length).toBeGreaterThan(0);
     const allObs = snap.analysis.observations.join(" ");
     expect(allObs).toMatch(/(SyntaxError|Expected|parse)/i);
+  });
+
+  describe("fixture-based", () => {
+    it("analyzes multi-statement CREATE + INSERT + CTE SELECT from fixture", () => {
+      const snap = run(loadFixture("multi-statement.sql"));
+      expect(snap.analysis.entryPoints.length).toBeGreaterThanOrEqual(3);
+      expect(snap.nodes.some((n) => n.kind === "cte")).toBe(true);
+    });
+
+    it("analyzes chained CTE from cte-chain.sql", () => {
+      const snap = run(loadFixture("cte-chain.sql"));
+      const ctes = snap.nodes.filter((n) => n.kind === "cte");
+      expect(ctes.length).toBeGreaterThanOrEqual(2);
+      expect(snap.nodes.some((n) => n.kind === "join")).toBe(true);
+    });
+
+    it("produces correct language metadata from fixture", () => {
+      const snap = run(loadFixture("cte-chain.sql"));
+      expect(snap.metadata.language).toBe("sql");
+    });
+
+    it("emits observations on large / complex SQL", () => {
+      const snap = run(loadFixture("cte-chain.sql"));
+      expect(snap.analysis.summary).toMatch(/CTE|SELECT|from/i);
+    });
   });
 });
