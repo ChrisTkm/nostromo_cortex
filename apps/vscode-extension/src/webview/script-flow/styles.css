@@ -365,6 +365,59 @@
   background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
 }
 
+.script-flow-button--icon {
+  font-size: 16px;
+  line-height: 1;
+  min-width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.script-flow-search {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 40%, transparent);
+  background: var(--vscode-editor-background);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  min-width: 320px;
+}
+
+.script-flow-search__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--vscode-editor-foreground);
+  font-size: 13px;
+  outline: none;
+}
+
+.script-flow-search__input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.script-flow-search__count {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  min-width: 28px;
+  text-align: center;
+}
+
+.script-flow-node-card--search-hit {
+  outline: 3px solid var(--vscode-textLink-foreground);
+  outline-offset: 2px;
+}
+
 .script-flow-canvas {
   position: relative;
   flex: 1;
