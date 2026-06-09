@@ -22,6 +22,7 @@ import {
   clearScriptFlowCache,
   resolveScriptFlowLanguage,
 } from "./scriptFlow/analyzers/index.js";
+import { clearCrossFileCache, expandCrossFileImports } from "./scriptFlow/crossFileResolver.js";
 import { SCRIPT_FLOW_GLOSSARY_MD } from "./scriptFlow/glossary.js";
 import {
   isScriptFlowWebviewMessage,
@@ -2236,6 +2237,7 @@ export async function deactivate() {
   await activeService?.dispose();
   activeService = undefined;
   clearScriptFlowCache();
+  clearCrossFileCache();
 }
 
 function buildSnapshotFilter(
@@ -2684,7 +2686,7 @@ async function buildScriptFlowDelivery(
         ? document.getText(request.selection)
         : document.getText();
     const startedAt = Date.now();
-    const snapshot = await analyzeScriptFlowDocument({
+    let snapshot = await analyzeScriptFlowDocument({
       documentPath,
       source,
     });
@@ -2693,6 +2695,16 @@ async function buildScriptFlowDelivery(
         type: "unsupported",
         language,
       };
+    }
+    const maxDepth = vscode.workspace.getConfiguration("cortex").get<number>("scriptFlowMaxDepth", 0);
+    if (maxDepth > 0 && language === "typescript" && request.scope !== "selection") {
+      try {
+        snapshot = await expandCrossFileImports(snapshot, document.uri, {
+          maxDepth: Math.min(maxDepth, 5)
+        });
+      } catch {
+        // fall through to base snapshot
+      }
     }
     return {
       type: "snapshot",

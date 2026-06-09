@@ -332,6 +332,13 @@
           "maximum": 5000,
           "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
         },
+        "cortex.scriptFlowMaxDepth": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum depth for cross-file expansion in Script Flow (0 disables, 5 is the hard cap). Solo TypeScript/JavaScript. Requiere reabrir el panel para tomar efecto."
+        },
         "cortex.logsAutoRefreshSeconds": {
           "type": "number",
           "default": 0,

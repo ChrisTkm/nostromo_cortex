@@ -497,6 +497,8 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
       ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
       ...(node.meta?.async === true ? { async: true } : {}),
       ...(typeof node.meta?.subKind === "string" ? { subKind: node.meta.subKind } : {}),
+      ...(node.meta?.crossFile === true ? { crossFile: true } : {}),
+      ...(typeof node.meta?.sourceFile === "string" ? { sourceFile: node.meta.sourceFile } : {}),
       searchHit: searchHitIds.has(node.id)
     }
   }));
