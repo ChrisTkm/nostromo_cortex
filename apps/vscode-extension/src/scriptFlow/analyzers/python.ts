@@ -236,6 +236,9 @@ class PythonFlowAnalyzer {
     if (isEntryPoint) {
       this.entryPoints.push(functionId);
     }
+    if (node.text.trimStart().startsWith("async")) {
+      this.setNodeMeta(functionId, { async: true });
+    }
 
     const body = this.findBlock(node);
     if (body && !this.hasExplicitReturn(body)) {
@@ -361,61 +364,70 @@ class PythonFlowAnalyzer {
   }
 
   private parseTryStatement(node: Node): FlowSegment {
-    const tryId = this.createNode("tryCatch", "try / except", node, "try-except");
+    const tryId = this.createNode("tryCatch", "try", node, "try");
+    this.setNodeMeta(tryId, { subKind: "try" });
     const tryBlock = this.findBlock(node);
     const trySegment = tryBlock ? this.parseStatementList(tryBlock.namedChildren) : EMPTY_SEGMENT;
+    if (trySegment.entries.length > 0) {
+      this.connect([{ id: tryId }], trySegment.entries);
+    }
+
     const exceptClauses = node.namedChildren.filter((child) => child.type === "except_clause");
     const elseClause = node.namedChildren.find((child) => child.type === "else_clause") ?? null;
     const finallyClause = node.namedChildren.find((child) => child.type === "finally_clause") ?? null;
 
-    if (trySegment.entries.length > 0) {
-      this.connect([{ id: tryId, label: "try" }], trySegment.entries);
-    }
-
-    const exceptExits: FlowEndpoint[] = [];
+    const exceptInfos: Array<{ id: string; exits: FlowEndpoint[] }> = [];
     for (const clause of exceptClauses) {
       const clauseBlock = this.findBlock(clause);
       if (clauseBlock && clauseBlock.namedChildren.length === 0) {
         this.observations.add(`Empty except block near line ${clause.startPosition.row + 1}.`);
       }
-      const label = clause.namedChildren[0] ? `except ${this.formatExpression(clause.namedChildren[0])}` : "except";
+      const exceptionTypeNode = clause.namedChildren[0];
+      const exceptionType = exceptionTypeNode && exceptionTypeNode.type !== "block" ? this.formatExpression(exceptionTypeNode) : "";
+      const label = exceptionType ? `except ${exceptionType}` : "except";
+      const exceptId = this.createNode("tryCatch", label, clause, label);
+      this.setNodeMeta(exceptId, exceptionType ? { subKind: "except", exceptionType } : { subKind: "except" });
+      this.connect([{ id: tryId, label: "throws" }], [exceptId]);
       const clauseSegment = clauseBlock ? this.parseStatementList(clauseBlock.namedChildren) : EMPTY_SEGMENT;
       if (clauseSegment.entries.length > 0) {
-        this.connect([{ id: tryId, label }], clauseSegment.entries);
+        this.connect([{ id: exceptId }], clauseSegment.entries);
       }
-      if (clauseSegment.exits.length > 0) {
-        exceptExits.push(...clauseSegment.exits);
-      } else {
-        exceptExits.push({ id: tryId, label });
-      }
+      exceptInfos.push({ id: exceptId, exits: clauseSegment.exits.length > 0 ? [...clauseSegment.exits] : [{ id: exceptId }] });
     }
 
-    let trySideExits = trySegment.exits.length > 0 ? [...trySegment.exits] : [{ id: tryId, label: "try" }];
+    let elseId: string | undefined;
+    let elseExits: FlowEndpoint[] = trySegment.exits.length > 0 ? [...trySegment.exits] : [{ id: tryId }];
     if (elseClause) {
+      elseId = this.createNode("tryCatch", "else", elseClause, "else");
+      this.setNodeMeta(elseId, { subKind: "else" });
+      this.connect(elseExits, [elseId], "no exception");
       const elseBlock = this.findBlock(elseClause);
       const elseSegment = elseBlock ? this.parseStatementList(elseBlock.namedChildren) : EMPTY_SEGMENT;
       if (elseSegment.entries.length > 0) {
-        this.connect(trySideExits, elseSegment.entries, "else");
+        this.connect([{ id: elseId }], elseSegment.entries);
       }
-      trySideExits = elseSegment.exits.length > 0 ? [...elseSegment.exits] : [{ id: tryId, label: "else" }];
+      elseExits = elseSegment.exits.length > 0 ? [...elseSegment.exits] : [{ id: elseId }];
     }
 
     if (finallyClause) {
+      const finallyId = this.createNode("tryCatch", "finally", finallyClause, "finally");
+      this.setNodeMeta(finallyId, { subKind: "finally" });
       const finallyBlock = this.findBlock(finallyClause);
       const finallySegment = finallyBlock ? this.parseStatementList(finallyBlock.namedChildren) : EMPTY_SEGMENT;
-      const incoming = [...trySideExits, ...exceptExits];
       if (finallySegment.entries.length > 0) {
-        this.connect(incoming, finallySegment.entries, "finally");
+        this.connect([{ id: finallyId }], finallySegment.entries);
       }
+      const incoming: FlowEndpoint[] = [...elseExits, ...exceptInfos.flatMap((info) => info.exits)];
+      this.connect(incoming, [finallyId], "after");
       return {
         entries: [tryId],
-        exits: finallySegment.exits.length > 0 ? finallySegment.exits : [{ id: tryId, label: "finally" }]
+        exits: finallySegment.exits.length > 0 ? finallySegment.exits : [{ id: finallyId }]
       };
     }
 
     return {
       entries: [tryId],
-      exits: [...trySideExits, ...exceptExits]
+      exits: [...elseExits, ...exceptInfos.flatMap((info) => info.exits)]
     };
   }
 

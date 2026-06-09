@@ -336,7 +336,9 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
       kind: node.kind,
       kindLabel: KIND_LABELS[node.kind],
       label: node.label,
-      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {})
+      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
+      ...(node.meta?.async === true ? { async: true } : {}),
+      ...(typeof node.meta?.subKind === "string" ? { subKind: node.meta.subKind } : {})
     }
   }));
 
