@@ -74,7 +74,7 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Componentes
 
-- `apps/vscode-extension` — extensión de VS Code con navegación textual, PERT/DAG, Notes, Logs, Archive, Cortex Brain y Script Flow.
+- `apps/vscode-extension` — extensión de VS Code con navegación textual, PERT/DAG, Notes, Logs, Archive, Cortex Brain y Script Flow (ver [glosario de nodos y aristas](docs/script-flow-kinds.md)).
 - `apps/mcp-server` — servidor MCP local con tools, resources y prompts sobre tareas y telemetría.
 - `packages/core` — dominio compartido: tipos, normalización Zod, grafo, Mongo y seeds.
 - `packages/telemetry` — capa reusable de telemetría, pricing versionado, logging y persistencia local.
@@ -210,3 +210,4 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 - [Arquitectura](./README.architecture.md)
 - [Desarrollo local](./README.development.md)
 - [Contrato de logs](./docs/log-contract.md)
+- [Glosario de Script Flow](./docs/script-flow-kinds.md)

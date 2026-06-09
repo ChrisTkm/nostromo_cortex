@@ -22,6 +22,7 @@ import {
   clearScriptFlowCache,
   resolveScriptFlowLanguage,
 } from "./scriptFlow/analyzers/index.js";
+import { SCRIPT_FLOW_GLOSSARY_MD } from "./scriptFlow/glossary.js";
 import {
   isScriptFlowWebviewMessage,
   sendError,
@@ -1015,6 +1016,14 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       }
       if (message.type === "scriptFlow:refresh") {
         await postScriptFlowInit(pendingScriptFlowRequest);
+        return;
+      }
+      if (message.type === "scriptFlow:openGlossary") {
+        const doc = await vscode.workspace.openTextDocument({
+          content: SCRIPT_FLOW_GLOSSARY_MD,
+          language: "markdown",
+        });
+        await vscode.window.showTextDocument(doc, { preview: false });
         return;
       }
       if (message.type === "scriptFlow:drawerClick") {

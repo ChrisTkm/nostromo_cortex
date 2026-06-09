@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   isScriptFlowHostMessage,
   sendDrawerClick,
+  sendOpenGlossary,
   sendReady,
   sendRefresh,
   sendSelectNode,
@@ -101,14 +102,6 @@ export function ScriptFlowApp() {
   const [isNarrowLayout, setIsNarrowLayout] = useState(() => window.innerWidth < 800);
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(() => window.innerWidth < 800);
 
-  const flow = useMemo(() => {
-    if (state.status !== "snapshot") {
-      return EMPTY_FLOW;
-    }
-
-    return buildFlowModel(state.snapshot, selectedNodeId, orientation, searchMatches);
-  }, [selectedNodeId, state, orientation, searchMatches]);
-
   const nodeLabels = useMemo(() => {
     if (state.status !== "snapshot") {
       return new Map<string, string>();
@@ -140,6 +133,14 @@ export function ScriptFlowApp() {
     setSearchQuery("");
     setActiveMatchIndex(0);
   }, [state]);
+
+  const flow = useMemo(() => {
+    if (state.status !== "snapshot") {
+      return EMPTY_FLOW;
+    }
+
+    return buildFlowModel(state.snapshot, selectedNodeId, orientation, searchMatches);
+  }, [selectedNodeId, state, orientation, searchMatches]);
 
   const selectedNode =
     state.status === "snapshot"
@@ -265,6 +266,14 @@ export function ScriptFlowApp() {
               </button>
             </>
           ) : null}
+          <button
+            className="script-flow-button"
+            onClick={() => sendOpenGlossary(vscode)}
+            title="Open glossary"
+            type="button"
+          >
+            ?
+          </button>
           <button className="script-flow-button" onClick={() => sendRefresh(vscode)} type="button">
             Refresh
           </button>

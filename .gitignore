@@ -9,6 +9,7 @@ coverage
 apps/vscode-extension/.vscode-test
 data/
 docs/*
+!docs/script-flow-kinds.md
 !docs/modules
 !docs/modules/**
 *.db
