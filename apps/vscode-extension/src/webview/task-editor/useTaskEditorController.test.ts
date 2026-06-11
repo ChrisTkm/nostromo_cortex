@@ -242,3 +242,30 @@ describe("areDraftsEqual", () => {
     expect(areDraftsEqual(draft, { ...draft, prompt: "new prompt" })).toBe(false);
   });
 });
+
+// ─── createDraftFromTask carga campos avanzados ──────────────────────────────
+
+describe("createDraftFromTask", () => {
+  it("pre-fills prompt, acceptance, outOfScope, and sourceRef when present on task", () => {
+    const enrichedTask: TaskRecord = {
+      ...sampleTask,
+      prompt: "Do the thing step by step",
+      acceptance: "Tests pass, build green",
+      outOfScope: "No UI changes",
+      sourceRef: "https://github.com/example/issues/42"
+    };
+    const draft = createDraftFromTask(enrichedTask);
+    expect(draft.prompt).toBe("Do the thing step by step");
+    expect(draft.acceptance).toBe("Tests pass, build green");
+    expect(draft.outOfScope).toBe("No UI changes");
+    expect(draft.sourceRef).toBe("https://github.com/example/issues/42");
+  });
+
+  it("defaults prompt, acceptance, outOfScope, and sourceRef to empty string when absent on task", () => {
+    const draft = createDraftFromTask(sampleTask);
+    expect(draft.prompt).toBe("");
+    expect(draft.acceptance).toBe("");
+    expect(draft.outOfScope).toBe("");
+    expect(draft.sourceRef).toBe("");
+  });
+});

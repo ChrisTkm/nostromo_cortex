@@ -1,9 +1,80 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TaskRecord } from "@cortex/core";
 
-import { TASK_SEVERITIES_LOCAL, TASK_STATUSES_LOCAL } from "../types";
-import type { TaskEditorDraft } from "../types";
+import { TASK_STATUSES_LOCAL, TASK_SEVERITIES_LOCAL } from "../types";
+import type { CatalogAgent, TaskEditorDraft } from "../types";
+
+function AgentIcon({ agent }: { agent: CatalogAgent }) {
+  if (agent.iconUri) {
+    return <img alt="" className="as__icon-img" src={agent.iconUri} />;
+  }
+  const hue = [...agent.slug].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  const initial = agent.displayName.charAt(0).toUpperCase();
+  return (
+    <span className="as__icon-letter" style={{ background: `hsl(${hue}, 55%, 50%)` }}>
+      {initial}
+    </span>
+  );
+}
+
+function AgentSelect(props: {
+  agents: CatalogAgent[];
+  value: string;
+  onChange(value: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selected = props.agents.find((a) => a.slug === props.value);
+  const displayName = selected?.displayName ?? props.value;
+
+  const handleSelect = useCallback(
+    (slug: string) => {
+      props.onChange(slug);
+      setOpen(false);
+    },
+    [props.onChange],
+  );
+
+  return (
+    <div className="as" ref={ref}>
+      <button className="as__trigger" onClick={() => setOpen((o) => !o)} type="button">
+        {selected ? <AgentIcon agent={selected} /> : null}
+        <span className="as__trigger-label">{displayName}</span>
+        <span className={`as__arrow${open ? " as__arrow--open" : ""}`}>&#9662;</span>
+      </button>
+      {open ? (
+        <ul className="as__menu">
+          {props.agents.map((a) => (
+            <li
+              className={`as__option${a.slug === props.value ? " as__option--selected" : ""}`}
+              key={a.slug}
+              onClick={() => handleSelect(a.slug)}
+              role="option"
+            >
+              <AgentIcon agent={a} />
+              <span>{a.displayName}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 export function TaskEditorForm(props: {
+  agents: CatalogAgent[];
   catalog: string[];
   draft: TaskEditorDraft;
   error: string | null;
@@ -14,6 +85,8 @@ export function TaskEditorForm(props: {
   onCancel(): void;
   onReset(): void;
 }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const statusLabel = props.isDirty ? "Unsaved changes" : "Saved";
   const statusTone = props.isDirty ? "task-editor__status--dirty" : "task-editor__status--saved";
 
@@ -114,12 +187,10 @@ export function TaskEditorForm(props: {
             <span className="task-editor__label">
               Agent <span className="task-editor__required">*</span>
             </span>
-            <input
-              className="te-input"
-              onChange={(e) => props.onChange({ agent: e.target.value })}
-              placeholder="codex, cursor, human..."
-              type="text"
+            <AgentSelect
+              agents={props.agents}
               value={props.draft.agent}
+              onChange={(v) => props.onChange({ agent: v })}
             />
           </label>
         </section>
@@ -163,16 +234,6 @@ export function TaskEditorForm(props: {
                 value={props.draft.durationEstimate}
               />
             </label>
-            <label className="task-editor__field">
-              <span className="task-editor__label">Source ref</span>
-              <input
-                className="te-input"
-                onChange={(e) => props.onChange({ sourceRef: e.target.value })}
-                placeholder="PR, ticket, or URL (empty → null)"
-                type="text"
-                value={props.draft.sourceRef}
-              />
-            </label>
           </div>
           <label className="task-editor__field">
             <span className="task-editor__label">Tags</span>
@@ -206,37 +267,56 @@ export function TaskEditorForm(props: {
           </label>
         </section>
 
-        <section className="task-editor__group">
-          <div className="task-editor__group-header">
-            <div className="task-editor__group-title">Details</div>
-          </div>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Prompt</span>
-            <textarea
-              className="te-textarea te-textarea--tall"
-              onChange={(e) => props.onChange({ prompt: e.target.value })}
-              placeholder="LLM prompt for this task... (empty → null)"
-              value={props.draft.prompt}
-            />
-          </label>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Acceptance criteria</span>
-            <textarea
-              className="te-textarea te-textarea--tall"
-              onChange={(e) => props.onChange({ acceptance: e.target.value })}
-              placeholder="How to verify this task is done... (empty → null)"
-              value={props.draft.acceptance}
-            />
-          </label>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Out of scope</span>
-            <textarea
-              className="te-textarea"
-              onChange={(e) => props.onChange({ outOfScope: e.target.value })}
-              placeholder="Explicitly excluded from this task... (empty → null)"
-              value={props.draft.outOfScope}
-            />
-          </label>
+        <section className="task-editor__group task-editor__group--collapsible">
+          <button
+            className="task-editor__collapse-toggle"
+            onClick={() => setAdvancedOpen((o) => !o)}
+            type="button"
+          >
+            <span className={`task-editor__collapse-arrow${advancedOpen ? " task-editor__collapse-arrow--open" : ""}`}>&#9662;</span>
+            <span className="task-editor__group-title">Avanzado</span>
+          </button>
+          {advancedOpen ? (
+            <div className="task-editor__collapse-body">
+              <label className="task-editor__field">
+                <span className="task-editor__label">Source ref</span>
+                <input
+                  className="te-input"
+                  onChange={(e) => props.onChange({ sourceRef: e.target.value })}
+                  placeholder="PR, ticket, or URL (empty → null)"
+                  type="text"
+                  value={props.draft.sourceRef}
+                />
+              </label>
+              <label className="task-editor__field">
+                <span className="task-editor__label">Prompt</span>
+                <textarea
+                  className="te-textarea te-textarea--tall"
+                  onChange={(e) => props.onChange({ prompt: e.target.value })}
+                  placeholder="LLM prompt for this task... (empty → null)"
+                  value={props.draft.prompt}
+                />
+              </label>
+              <label className="task-editor__field">
+                <span className="task-editor__label">Acceptance criteria</span>
+                <textarea
+                  className="te-textarea te-textarea--tall"
+                  onChange={(e) => props.onChange({ acceptance: e.target.value })}
+                  placeholder="How to verify this task is done... (empty → null)"
+                  value={props.draft.acceptance}
+                />
+              </label>
+              <label className="task-editor__field">
+                <span className="task-editor__label">Out of scope</span>
+                <textarea
+                  className="te-textarea"
+                  onChange={(e) => props.onChange({ outOfScope: e.target.value })}
+                  placeholder="Explicitly excluded from this task... (empty → null)"
+                  value={props.draft.outOfScope}
+                />
+              </label>
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

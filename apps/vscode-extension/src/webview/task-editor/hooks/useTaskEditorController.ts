@@ -2,7 +2,7 @@ import type { TaskRecord } from "@cortex/core";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { areDraftsEqual, buildSavePayload, createDraftFromTask, handleCancelLogic } from "../lib/drafts";
-import type { TaskEditorDraft, TaskEditorMessage } from "../types";
+import type { CatalogAgent, TaskEditorDraft, TaskEditorMessage } from "../types";
 
 declare global {
   interface Window {
@@ -19,6 +19,7 @@ const vscode = window.acquireVsCodeApi();
 export function useTaskEditorController() {
   const [task, setTask] = useState<TaskRecord | null>(null);
   const [catalog, setCatalog] = useState<string[]>([]);
+  const [agents, setAgents] = useState<CatalogAgent[]>([]);
   const [draft, setDraft] = useState<TaskEditorDraft | null>(null);
   const [baseline, setBaseline] = useState<TaskEditorDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +33,7 @@ export function useTaskEditorController() {
     if (message.type === "taskEditor:load") {
       setTask(message.task);
       setCatalog(message.catalog.taskCodes);
+      setAgents(message.catalog.agents);
       const d = createDraftFromTask(message.task);
       setDraft(d);
       setBaseline(d);
@@ -89,6 +91,7 @@ export function useTaskEditorController() {
   return {
     task,
     catalog,
+    agents,
     draft,
     isDirty,
     error,

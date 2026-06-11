@@ -3,8 +3,15 @@ import type { TaskDocumentInput, TaskRecord } from "@cortex/core";
 export const TASK_STATUSES_LOCAL = ["PENDING", "IN_PROGRESS", "BLOCKED", "DONE", "FAILED"] as const;
 export const TASK_SEVERITIES_LOCAL = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
+export type CatalogAgent = {
+  slug: string;
+  displayName: string;
+  iconUri: string;
+};
+
 export type TaskEditorCatalog = {
   taskCodes: string[];
+  agents: CatalogAgent[];
 };
 
 export type TaskEditorMessage =

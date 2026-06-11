@@ -14,6 +14,7 @@ export function TaskEditorApp() {
 
   return (
     <TaskEditorForm
+      agents={controller.agents}
       catalog={controller.catalog}
       draft={controller.draft}
       error={controller.error}
