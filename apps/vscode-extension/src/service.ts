@@ -17,6 +17,7 @@ import {
   SharedMongoClient,
   sampleTasks,
   stableStringify,
+  type ActionPlanDocument,
   type ActionPlanRecord,
   type AgentRunQuery,
   type AgentRunRecord,
@@ -278,6 +279,23 @@ export class ExtensionTaskService {
     return this.withPlanStore(this.getConnectionSettings(), (store) =>
       store.getPlan(code),
     );
+  }
+
+  async updatePlan(code: string, patch: Partial<ActionPlanDocument>): Promise<ActionPlanRecord | null> {
+    return this.withPlanStore(this.getConnectionSettings(), (store) =>
+      store.updatePlan(code, patch),
+    );
+  }
+
+  async appendPlanNote(code: string, text: string): Promise<ActionPlanRecord | null> {
+    const plan = await this.getPlan(code);
+    if (!plan) return null;
+    const now = new Date().toISOString();
+    const existing = plan.notes ?? "";
+    const appended = existing
+      ? `${existing}\n[${now}] ${text}`
+      : `[${now}] ${text}`;
+    return this.updatePlan(code, { notes: appended, updated_at: now });
   }
 
   isJsonPathInArchive(rawJsonPath: string): boolean {

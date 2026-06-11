@@ -894,6 +894,126 @@ describe("shared mongo client support", () => {
   });
 });
 
+describe("action plan store updatePlan", () => {
+  it("updates a plan with $set and returns normalized record", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "PLAN-SET",
+        title: "Original",
+        description: "desc",
+        goal: "goal",
+        context: "",
+        status: "PLANNING",
+        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      },
+    ]) as unknown as SharedMongoClient;
+    const findOneAfterUpdate = sharedClient.collectionApi.findOne;
+    findOneAfterUpdate.mockResolvedValueOnce({
+      code: "PLAN-SET",
+      title: "Updated",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "IN_PROGRESS",
+      progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      notes: "[2026-06-10T00:00:00.000Z] first note",
+      updated_at: "2026-06-10T12:00:00.000Z",
+      created_at: "2026-06-01T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.updatePlan("PLAN-SET", {
+      title: "Updated",
+      status: "IN_PROGRESS",
+      notes: "[2026-06-10T00:00:00.000Z] first note",
+    });
+
+    expect(sharedClient.collectionApi.updateOne).toHaveBeenCalledWith(
+      { code: "PLAN-SET" },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          title: "Updated",
+          status: "IN_PROGRESS",
+          notes: "[2026-06-10T00:00:00.000Z] first note",
+          updated_at: expect.any(String),
+        }),
+      }),
+    );
+    expect(result).toMatchObject({ code: "PLAN-SET", title: "Updated", status: "IN_PROGRESS" });
+  });
+
+  it("applies $unset for null fields and returns updated record", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "PLAN-UNSET",
+        title: "With notes",
+        description: "desc",
+        goal: "goal",
+        context: "",
+        status: "PLANNING",
+        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+        notes: "some notes",
+      },
+    ]) as unknown as SharedMongoClient;
+    const findOneAfterUpdate = sharedClient.collectionApi.findOne;
+    findOneAfterUpdate.mockResolvedValueOnce({
+      code: "PLAN-UNSET",
+      title: "With notes",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      updated_at: "2026-06-10T12:00:00.000Z",
+      created_at: "2026-06-01T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    await store.updatePlan("PLAN-UNSET", { notes: null });
+
+    expect(sharedClient.collectionApi.updateOne).toHaveBeenCalledWith(
+      { code: "PLAN-UNSET" },
+      expect.objectContaining({
+        $set: expect.objectContaining({ updated_at: expect.any(String) }),
+        $unset: { notes: 1 },
+      }),
+    );
+  });
+
+  it("returns null when plan code does not exist", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.updateOne.mockResolvedValue({
+      matchedCount: 0,
+      modifiedCount: 0,
+      acknowledged: true,
+      upsertedCount: 0,
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.updatePlan("NONEXISTENT", { title: "Nope" });
+
+    expect(result).toBeNull();
+  });
+});
+
 describe("ai agents catalog", () => {
   it("seeds align con SELF_HOSTED_AGENTS y son subconjunto de TASK_AGENTS", () => {
     const seedSlugs = AI_AGENT_SEEDS.map((seed) => seed.slug).sort();

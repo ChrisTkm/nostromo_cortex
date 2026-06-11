@@ -32,7 +32,8 @@
     "onCommand:cortex.setMongoUrl",
     "onCommand:cortex.clearMongoUrl",
     "onCommand:cortex.openLedger",
-    "onCommand:cortex.openPlans"
+    "onCommand:cortex.openPlans",
+    "onCommand:cortex.openPlanEditor"
   ],
   "contributes": {
     "commands": [
@@ -197,6 +198,10 @@
       {
         "command": "cortex.openPlans",
         "title": "Cortex: Open Plans"
+      },
+      {
+        "command": "cortex.openPlanEditor",
+        "title": "Cortex: Open Plan Editor"
       }
     ],
     "viewsContainers": {

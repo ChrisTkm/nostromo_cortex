@@ -52,7 +52,8 @@ import { getBrainHtml } from "./webview/brain/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 import { getTaskEditorHtml } from "./webview/task-editor/getHtml.js";
-import type { CatalogAgent } from "./webview/task-editor/types.js";
+import { getPlanEditorHtml } from "./webview/plan-editor/getHtml.js";
+import type { CatalogAgent } from "./webview/components/AgentSelect.js";
 import { getLedgerHtml } from "./webview/ledger/getHtml.js";
 import { getPlansHtml } from "./webview/plans/getHtml.js";
 
@@ -202,6 +203,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let pendingTaskEditorLoad:
     | { task: TaskRecord; catalogCodes: string[]; agents: CatalogAgent[] }
     | undefined;
+  let planEditorPanel: vscode.WebviewPanel | undefined;
+  let planEditorPanelReady = false;
   const cortexOutput = vscode.window.createOutputChannel("Cortex");
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
@@ -1105,8 +1108,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
       if (message?.type === "plans:open") {
         const code: string = message.code;
-        cortexOutput.appendLine(`[Plans] Open plan requested: ${code}`);
-        void vscode.window.showInformationMessage(`Plan editor PE-03 pendiente para ${code}.`);
+        cortexOutput.appendLine(`[Plans] Open plan: ${code}`);
+        await openPlanEditorPanel(code);
       }
     });
   }
@@ -1129,6 +1132,125 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (plansPanel !== panel) return;
       await panel.webview.postMessage({
         type: "plans:error",
+        message: String(err),
+      });
+    }
+  }
+
+  async function openPlanEditorPanel(planCode: string) {
+    const plan = await service.getPlan(planCode);
+    if (!plan) {
+      void vscode.window.showWarningMessage(`Plan ${planCode} not found.`);
+      return;
+    }
+
+    if (planEditorPanel) {
+      planEditorPanel.reveal(vscode.ViewColumn.Beside);
+      if (planEditorPanelReady) {
+        await postPlanEditorSnapshot(planCode);
+      }
+      return;
+    }
+
+    planEditorPanelReady = false;
+    planEditorPanel = vscode.window.createWebviewPanel(
+      "cortex.planEditor",
+      `Plan: ${plan.code}`,
+      vscode.ViewColumn.Beside,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    setWebviewPanelIcon(context, planEditorPanel, "plans.svg");
+    planEditorPanel.webview.html = getPlanEditorHtml(
+      planEditorPanel.webview,
+      context.extensionUri,
+      nonce(),
+    );
+
+    planEditorPanel.onDidDispose(() => {
+      planEditorPanel = undefined;
+      planEditorPanelReady = false;
+    });
+
+    planEditorPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        planEditorPanelReady = true;
+        await postPlanEditorSnapshot(planCode);
+        return;
+      }
+
+      if (message?.type === "planEditor:save") {
+        const patch = message.patch as Record<string, unknown>;
+        const patchWithTimestamps = { ...patch, updated_at: new Date().toISOString() };
+        const updated = await service.updatePlan(planCode, patchWithTimestamps);
+        if (!updated) {
+          void vscode.window.showWarningMessage(`Plan ${planCode} save failed.`);
+          return;
+        }
+        const rawAgents = await service.listAiAgents();
+        const agents = mapAgentsForWebview(rawAgents, planEditorPanel?.webview, context);
+        await planEditorPanel?.webview.postMessage({
+          type: "planEditor:saved",
+          plan: updated,
+          agents,
+        });
+        void vscode.window.showInformationMessage(`Plan ${planCode} updated.`);
+        return;
+      }
+
+      if (message?.type === "planEditor:appendNote") {
+        const text = message.text as string;
+        if (!text) return;
+        const updated = await service.appendPlanNote(planCode, text);
+        if (!updated) {
+          void vscode.window.showWarningMessage(`Plan ${planCode} append note failed.`);
+          return;
+        }
+        const rawAgents = await service.listAiAgents();
+        const agents = mapAgentsForWebview(rawAgents, planEditorPanel?.webview, context);
+        await planEditorPanel?.webview.postMessage({
+          type: "planEditor:appended",
+          plan: updated,
+          agents,
+        });
+        void vscode.window.showInformationMessage(`Note appended to ${planCode}.`);
+        return;
+      }
+
+      if (message?.type === "planEditor:viewGraph") {
+        const pCode = message.planCode as string;
+        cortexOutput.appendLine(`[PlanEditor] View graph for plan: ${pCode}`);
+        void vscode.window.showInformationMessage(`Open PERT graph for plan ${pCode} — not yet implemented.`);
+        return;
+      }
+    });
+  }
+
+  async function postPlanEditorSnapshot(planCode: string) {
+    const panel = planEditorPanel;
+    if (!panel) return;
+    try {
+      const [plan, rawAgents] = await Promise.all([
+        service.getPlan(planCode),
+        service.listAiAgents(),
+      ]);
+      if (planEditorPanel !== panel) return;
+      if (!plan) {
+        await panel.webview.postMessage({
+          type: "planEditor:error",
+          message: `Plan ${planCode} not found.`,
+        });
+        return;
+      }
+      const agents = mapAgentsForWebview(rawAgents, panel.webview, context);
+      await panel.webview.postMessage({
+        type: "planEditor:load",
+        plan,
+        agents,
+      });
+    } catch (err) {
+      if (planEditorPanel !== panel) return;
+      await panel.webview.postMessage({
+        type: "planEditor:error",
         message: String(err),
       });
     }
@@ -2208,6 +2330,14 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     vscode.commands.registerCommand("cortex.openPlans", async () => {
       await openPlansPanel();
     }),
+    vscode.commands.registerCommand("cortex.openPlanEditor", async (args?: { code?: string }) => {
+      const code = args?.code;
+      if (!code) {
+        void vscode.window.showInformationMessage("Plan code required.");
+        return;
+      }
+      await openPlanEditorPanel(code);
+    }),
   );
 
   treeView.onDidChangeSelection(async (event) => {
@@ -3119,6 +3249,34 @@ function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
     typeof candidate.title === "string" &&
     candidate.title.trim().length > 0
   );
+}
+
+function mapAgentsForWebview(
+  rawAgents: Array<{ slug: string; displayName?: string; iconPath?: string | null }>,
+  webview: vscode.Webview | undefined,
+  context: vscode.ExtensionContext,
+): CatalogAgent[] {
+  const agents: CatalogAgent[] = rawAgents.map((a) => ({
+    slug: a.slug,
+    displayName: a.displayName ?? a.slug,
+    iconUri:
+      a.iconPath && webview
+        ? webview
+            .asWebviewUri(
+              vscode.Uri.joinPath(context.extensionUri, a.iconPath),
+            )
+            .toString()
+        : "",
+  }));
+
+  const knownSlugs = new Set(agents.map((a) => a.slug));
+  const synthetic: CatalogAgent[] = [
+    { slug: "any", displayName: "Any", iconUri: "" },
+    { slug: "human", displayName: "Human", iconUri: "" },
+  ].filter((s) => !knownSlugs.has(s.slug));
+  agents.push(...synthetic);
+
+  return agents;
 }
 
 function isTaskDocumentInput(value: unknown): value is TaskDocumentInput {

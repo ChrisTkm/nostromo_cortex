@@ -224,6 +224,35 @@ export class MongoActionPlanStore {
     return null;
   }
 
+  async updatePlan(code: string, patch: Partial<ActionPlanDocument>): Promise<ActionPlanRecord | null> {
+    const collection = await this.collection();
+    const now = new Date().toISOString();
+    const toSet: Record<string, unknown> = {};
+    const toUnset: Record<string, 1> = {};
+
+    for (const [key, value] of Object.entries(patch)) {
+      if (key === "_id") continue;
+      if (value === null) {
+        toUnset[key] = 1;
+      } else if (value !== undefined) {
+        toSet[key] = value;
+      }
+    }
+
+    toSet.updated_at ??= now;
+
+    const update: Record<string, unknown> = Object.keys(toUnset).length > 0
+      ? { $set: toSet, $unset: toUnset }
+      : { $set: toSet };
+
+    const result = await collection.updateOne({ code }, update as never);
+
+    if (result.matchedCount === 0) return null;
+
+    const updated = await collection.findOne({ code });
+    return updated ? normalizeActionPlan(updated as ActionPlanDocument) : null;
+  }
+
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
     await collection.createIndexes([
