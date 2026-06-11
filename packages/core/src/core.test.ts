@@ -894,6 +894,86 @@ describe("shared mongo client support", () => {
   });
 });
 
+describe("action plan store insertPlan", () => {
+  it("inserts a plan with defaults and returns normalized record", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValueOnce({
+      _id: "plan-new",
+      code: "PLAN-NEW",
+      title: "New Plan",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: { total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assigned_agent: "big-pickle",
+      created_at: "2026-06-10T00:00:00.000Z",
+      updated_at: "2026-06-10T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.insertPlan({
+      code: "PLAN-NEW",
+      title: "New Plan",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: { total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assigned_agent: "big-pickle",
+    });
+
+    expect(sharedClient.collectionApi.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "PLAN-NEW",
+        title: "New Plan",
+        status: "PLANNING",
+        created_at: expect.any(String),
+        updated_at: expect.any(String),
+      }),
+    );
+    expect(result).toMatchObject({
+      code: "PLAN-NEW",
+      title: "New Plan",
+      status: "PLANNING",
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assignedAgent: "big-pickle",
+    });
+  });
+
+  it("throws when insertOne fails", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValueOnce(null);
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    await expect(
+      store.insertPlan({
+        code: "PLAN-FAIL",
+        title: "Fail",
+        description: "",
+        goal: "",
+        context: "",
+        status: "PLANNING",
+        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      }),
+    ).rejects.toThrow(/Plan insert failed for code PLAN-FAIL/);
+  });
+});
+
 describe("action plan store updatePlan", () => {
   it("updates a plan with $set and returns normalized record", async () => {
     const sharedClient = createSharedClient([
@@ -1089,6 +1169,7 @@ function createSharedClient(items: unknown[]) {
     toArray,
   }));
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
+  const insertOne = vi.fn().mockResolvedValue({ acknowledged: true, insertedId: "mock-id" });
   const updateOne = vi.fn().mockResolvedValue({
     acknowledged: true,
     matchedCount: 1,
@@ -1110,6 +1191,7 @@ function createSharedClient(items: unknown[]) {
     dropIndex,
     find,
     findOne,
+    insertOne,
     updateOne,
   }));
   const db = vi.fn(() => ({
@@ -1127,6 +1209,7 @@ function createSharedClient(items: unknown[]) {
       dropIndex,
       find,
       findOne,
+      insertOne,
       sort,
       toArray,
       updateOne,

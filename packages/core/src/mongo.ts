@@ -224,6 +224,23 @@ export class MongoActionPlanStore {
     return null;
   }
 
+  async insertPlan(input: ActionPlanDocument): Promise<ActionPlanRecord> {
+    const collection = await this.collection();
+    const now = new Date().toISOString();
+    const doc: ActionPlanDocument = {
+      ...input,
+      _id: undefined,
+      created_at: input.created_at ?? now,
+      updated_at: input.updated_at ?? now,
+    };
+    await collection.insertOne(doc as never);
+    const stored = await collection.findOne({ code: doc.code });
+    if (!stored) {
+      throw new Error(`Plan insert failed for code ${doc.code}`);
+    }
+    return normalizeActionPlan(stored as ActionPlanDocument);
+  }
+
   async updatePlan(code: string, patch: Partial<ActionPlanDocument>): Promise<ActionPlanRecord | null> {
     const collection = await this.collection();
     const now = new Date().toISOString();

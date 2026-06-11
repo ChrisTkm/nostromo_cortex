@@ -287,6 +287,60 @@ export class ExtensionTaskService {
     );
   }
 
+  async createPlanWithTasks(
+    plan: ActionPlanDocument,
+    tasks: TaskDocumentInput[],
+  ): Promise<{ plan: ActionPlanRecord; taskCount: number }> {
+    const planCode = plan.code.trim();
+    if (!planCode) throw new Error("Plan code is required.");
+    if (!plan.title?.trim()) throw new Error("Plan title is required.");
+
+    const taskCodes = tasks.map((t) => t.code).filter(Boolean) as string[];
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+
+    const planStore = createMongoActionPlanStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoPlansCollection,
+      sharedClient,
+    });
+
+    const taskStore = createMongoTaskStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: settings.mongoTasksCollection,
+      sharedClient,
+    });
+
+    try {
+      const existingPlan = await planStore.getPlan(planCode);
+      if (existingPlan) {
+        throw new Error(`Plan code '${planCode}' already exists.`);
+      }
+
+      const conflictCodes: string[] = [];
+      for (const code of taskCodes) {
+        const existing = await taskStore.getTask(code);
+        if (existing) conflictCodes.push(code);
+      }
+      if (conflictCodes.length > 0) {
+        throw new Error(
+          `Task codes already exist: ${conflictCodes.join(", ")}. No changes were made.`,
+        );
+      }
+
+      const inserted = await planStore.insertPlan(plan);
+      const taskCount = tasks.length > 0 ? await taskStore.upsertTasks(tasks) : 0;
+
+      return { plan: inserted, taskCount };
+    } finally {
+      await planStore.close();
+      await taskStore.close();
+    }
+  }
+
   async appendPlanNote(code: string, text: string): Promise<ActionPlanRecord | null> {
     const plan = await this.getPlan(code);
     if (!plan) return null;

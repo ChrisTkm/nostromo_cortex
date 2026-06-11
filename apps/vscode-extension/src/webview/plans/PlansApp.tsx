@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AiAgentAvatar } from "../components/AiAgentAvatar";
+import { type CatalogAgent } from "../components/AgentSelect";
+import { PlanWizard } from "./PlanWizard";
 
 type PlanRecord = {
   id?: string;
@@ -27,7 +29,8 @@ type PlanAgent = {
 };
 
 type PlansHostMessage =
-  | { type: "plans:snapshot"; plans: PlanRecord[]; agents: PlanAgent[] }
+  | { type: "plans:snapshot"; plans: PlanRecord[]; agents: PlanAgent[]; catalogAgents?: CatalogAgent[] }
+  | { type: "plans:created"; plan: PlanRecord; taskCount: number }
   | { type: "plans:error"; message: string };
 
 declare global {
@@ -76,10 +79,12 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
 export function PlansApp() {
   const [plans, setPlans] = useState<PlanRecord[]>([]);
   const [agents, setAgents] = useState<PlanAgent[]>([]);
+  const [catalogAgents, setCatalogAgents] = useState<CatalogAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [authorFilter, setAuthorFilter] = useState<string>("all");
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
     function onMessage(event: MessageEvent<PlansHostMessage>) {
@@ -87,8 +92,11 @@ export function PlansApp() {
       if (msg?.type === "plans:snapshot") {
         setPlans(msg.plans);
         setAgents(msg.agents);
+        setCatalogAgents(msg.catalogAgents ?? []);
         setLoading(false);
         setError(null);
+      } else if (msg?.type === "plans:created") {
+        setWizardOpen(false);
       } else if (msg?.type === "plans:error") {
         setError(msg.message);
         setLoading(false);
@@ -132,6 +140,13 @@ export function PlansApp() {
   const handleRowClick = useCallback((code: string) => {
     vscode.postMessage({ type: "plans:open", code });
   }, []);
+
+  const handleCreate = useCallback(
+    (plan: { code: string; title: string; description: string; goal: string; author: string; assignedAgent: string; tags: string[] }, tasks: Array<{ code: string; short_task: string; lane: string; severity: string; duration_estimate: number; agent: string }>) => {
+      vscode.postMessage({ type: "plans:create", plan, tasks });
+    },
+    [],
+  );
 
   if (loading && plans.length === 0) {
     return (
@@ -177,6 +192,9 @@ export function PlansApp() {
               <option key={a} value={a}>{a}</option>
             ))}
           </select>
+          <button className="btn" onClick={() => setWizardOpen(true)} title="Nuevo plan">
+            + Nuevo
+          </button>
           <button className="btn" onClick={handleRefresh} title="Refrescar">
             &#x21bb;
           </button>
@@ -243,6 +261,10 @@ export function PlansApp() {
           </tbody>
         </table>
       </div>
+
+      {wizardOpen ? (
+        <PlanWizard agents={catalogAgents} onClose={() => setWizardOpen(false)} onCreate={handleCreate} />
+      ) : null}
     </div>
   );
 }
