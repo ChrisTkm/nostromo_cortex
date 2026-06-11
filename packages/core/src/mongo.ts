@@ -1,9 +1,15 @@
 import { MongoClient, ObjectId, type Collection } from "mongodb";
 
-import { normalizeActionPlan, normalizeNote, normalizeTaskDocument } from "./schema.js";
+import { normalizeActionPlan, normalizeAiAgentDocument, normalizeAgentRunDocument, normalizeNote, normalizeTaskDocument } from "./schema.js";
 import type {
   ActionPlanDocument,
   ActionPlanRecord,
+  AgentRunDocument,
+  AgentRunRecord,
+  AgentStatsRecord,
+  AiAgentDocument,
+  AiAgentRecord,
+  AiAgentStore,
   NoteDocumentInput,
   NoteRecord,
   NoteStore,
@@ -329,6 +335,79 @@ export function createMongoNoteStore(options: MongoNoteStoreOptions): MongoNoteS
   return new MongoNoteStore(options);
 }
 
+export interface MongoAiAgentStoreOptions {
+  mongoUrl: string;
+  dbName: string;
+  collectionName: string;
+  sharedClient?: SharedMongoClient;
+}
+
+export class MongoAiAgentStore implements AiAgentStore {
+  private readonly client: MongoClientLike;
+
+  constructor(private readonly options: MongoAiAgentStoreOptions) {
+    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
+  }
+
+  private async collection() {
+    await this.client.connect();
+    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+  }
+
+  async listAgents(): Promise<AiAgentRecord[]> {
+    const collection = await this.collection();
+    const items = await collection.find({}).toArray();
+    return items.map((item) => normalizeAiAgentDocument(item as AiAgentDocument));
+  }
+
+  async findAgent(slug: string): Promise<AiAgentRecord | null> {
+    const collection = await this.collection();
+    const item = await collection.findOne({ slug });
+    return item ? normalizeAiAgentDocument(item as AiAgentDocument) : null;
+  }
+
+  async ensureIndexes(): Promise<void> {
+    const collection = await this.collection();
+    await collection.createIndexes([
+      { key: { slug: 1 }, name: "slug_unique", unique: true }
+    ]);
+  }
+
+  async ensureSeeds(): Promise<void> {
+    const { AI_AGENT_SEEDS } = await import("./ai-agents-seed.js");
+    const collection = await this.collection();
+    const count = await collection.countDocuments({});
+    if (count > 0) return;
+
+    const now = new Date().toISOString();
+    await collection.insertMany(
+      AI_AGENT_SEEDS.map((seed) => ({
+        ...seed,
+        created_at: now,
+        updated_at: now
+      })) as any[]
+    );
+  }
+
+  async updateIcon(slug: string, iconPath: string): Promise<void> {
+    const collection = await this.collection();
+    await collection.updateOne(
+      { slug },
+      { $set: { icon_path: iconPath, updated_at: new Date().toISOString() } }
+    );
+  }
+
+  async close(): Promise<void> {
+    if (!this.options.sharedClient) {
+      await this.client.close();
+    }
+  }
+}
+
+export function createMongoAiAgentStore(options: MongoAiAgentStoreOptions): MongoAiAgentStore {
+  return new MongoAiAgentStore(options);
+}
+
 async function dropLegacyIndexes(collection: Collection, names: readonly string[]): Promise<void> {
   for (const name of names) {
     try {
@@ -415,4 +494,129 @@ function collectValidNotes(items: unknown[]): NoteRecord[] {
     }
   }
   return validNotes;
+}
+
+export interface AgentRunQuery {
+  agentSlug?: string;
+  status?: "running" | "completed" | "failed";
+  limit?: number;
+  beforeTimestamp?: string;
+}
+
+export async function ensureAiAgentRuns(
+  db: import("mongodb").Db,
+  collectionName?: string
+): Promise<void> {
+  const collection = db.collection(collectionName ?? "agent_runs");
+  await collection.createIndexes([
+    { key: { agent_slug: 1, started_at: -1 }, name: "agent_slug_started_at_desc" }
+  ]);
+}
+
+export async function insertRun(
+  db: import("mongodb").Db,
+  doc: AgentRunDocument,
+  collectionName?: string
+): Promise<void> {
+  const collection = db.collection(collectionName ?? "agent_runs");
+  const now = new Date().toISOString();
+  await collection.insertOne({
+    ...doc,
+    created_at: doc.created_at ?? now,
+    updated_at: doc.updated_at ?? now
+  } as any);
+}
+
+export async function updateRun(
+  db: import("mongodb").Db,
+  id: string,
+  patch: Partial<AgentRunDocument>,
+  collectionName?: string
+): Promise<void> {
+  const collection = db.collection(collectionName ?? "agent_runs");
+  await collection.updateOne(
+    { id },
+    { $set: { ...patch, updated_at: new Date().toISOString() } }
+  );
+}
+
+export async function queryRuns(
+  db: import("mongodb").Db,
+  query: AgentRunQuery,
+  collectionName?: string
+): Promise<AgentRunRecord[]> {
+  const collection = db.collection(collectionName ?? "agent_runs");
+  const filter: Record<string, unknown> = {};
+  if (query.agentSlug) filter.agent_slug = query.agentSlug;
+  if (query.status) filter.status = query.status;
+  if (query.beforeTimestamp) filter.started_at = { $lt: query.beforeTimestamp };
+
+  const items = await collection
+    .find(filter)
+    .sort({ started_at: -1 })
+    .limit(query.limit ?? 50)
+    .toArray();
+
+  return items.map((item) => normalizeAgentRunDocument(item as AgentRunDocument));
+}
+
+export interface AgentStatsQuery {
+  /** Filtra stats para un agente específico. */
+  agentSlug?: string;
+  /** Solo runs desde esta fecha (ISO). */
+  from?: string;
+  /** Solo runs hasta esta fecha (ISO). */
+  to?: string;
+}
+
+export async function queryAgentStats(
+  db: import("mongodb").Db,
+  query?: AgentStatsQuery,
+  collectionName?: string
+): Promise<AgentStatsRecord[]> {
+  const collection = db.collection(collectionName ?? "agent_runs");
+  const match: Record<string, unknown> = {};
+  if (query?.agentSlug) match.agent_slug = query.agentSlug;
+  if (query?.from || query?.to) {
+    const startedAt: Record<string, string> = {};
+    if (query?.from) startedAt.$gte = query.from;
+    if (query?.to) startedAt.$lte = query.to;
+    match.started_at = startedAt;
+  }
+
+  const pipeline: import("mongodb").Document[] = [
+    ...(Object.keys(match).length > 0 ? [{ $match: match }] : []),
+    {
+      $group: {
+        _id: "$agent_slug",
+        totalRuns: { $sum: 1 },
+        completedRuns: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+        failedRuns: { $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] } },
+        runningRuns: { $sum: { $cond: [{ $eq: ["$status", "running"] }, 1, 0] } },
+        totalTokensIn: { $sum: { $ifNull: ["$tokens_in", 0] } },
+        totalTokensOut: { $sum: { $ifNull: ["$tokens_out", 0] } },
+        totalCostUsd: { $sum: { $ifNull: ["$cost_usd", 0] } },
+        firstRunAt: { $min: "$started_at" },
+        lastRunAt: { $max: "$started_at" }
+      }
+    },
+    { $sort: { totalRuns: -1 } },
+    {
+      $project: {
+        _id: 0,
+        agentSlug: "$_id",
+        totalRuns: 1,
+        completedRuns: 1,
+        failedRuns: 1,
+        runningRuns: 1,
+        totalTokensIn: 1,
+        totalTokensOut: 1,
+        totalCostUsd: 1,
+        firstRunAt: 1,
+        lastRunAt: 1
+      }
+    }
+  ];
+
+  return collection.aggregate(pipeline).toArray() as Promise<AgentStatsRecord[]>;
 }
