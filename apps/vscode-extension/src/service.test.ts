@@ -218,7 +218,7 @@ describe("ExtensionTaskService.initialize", () => {
     expect(taskEnsureIndexes).toHaveBeenCalledTimes(1);
     expect(planEnsureIndexes).toHaveBeenCalledTimes(1);
     expect(noteEnsureIndexes).toHaveBeenCalledTimes(1);
-    expect(logsCreateIndexes).toHaveBeenCalledTimes(1);
+    expect(logsCreateIndexes).toHaveBeenCalledTimes(2);
 
     const [taskOptions] = createMongoTaskStoreMock.mock.calls[0] ?? [];
     const [planOptions] = createMongoActionPlanStoreMock.mock.calls[0] ?? [];

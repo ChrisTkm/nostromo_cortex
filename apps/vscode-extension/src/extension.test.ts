@@ -417,7 +417,9 @@ vi.mock("./service.js", () => ({
     bootstrapSampleDatabase: vi.fn().mockResolvedValue(undefined),
     loadPlans: loadPlansMock,
     isJsonPathInArchive: vi.fn(() => true),
-    getArchivePath: vi.fn(() => "C:\\temp\\cortex-archive")
+    getArchivePath: vi.fn(() => "C:\\temp\\cortex-archive"),
+    listAiAgents: vi.fn().mockResolvedValue([]),
+    queryAgentRuns: vi.fn().mockResolvedValue([])
   }))
 }));
 

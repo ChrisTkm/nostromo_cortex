@@ -77,8 +77,8 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...browserBundle,
-    entryPoints: ["src/webview/md-graph/index.tsx"],
-    outfile: "media/md-graph.js"
+    entryPoints: ["src/webview/brain/index.tsx"],
+    outfile: "media/brain.js"
   }),
   esbuild.context({
     ...browserBundle,
@@ -89,6 +89,16 @@ const contexts = await Promise.all([
     ...browserBundle,
     entryPoints: ["src/webview/task-editor/index.tsx"],
     outfile: "media/task-editor.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/ledger/index.tsx"],
+    outfile: "media/ledger.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/plans/index.tsx"],
+    outfile: "media/plans.js"
   })
 ]);
 

@@ -4,17 +4,22 @@ import path from "node:path";
 
 import {
   createMongoActionPlanStore,
+  createMongoAiAgentStore,
   createMongoNoteStore,
   buildGraphSnapshot,
   createMongoTaskStore,
+  ensureAiAgentRuns,
   loadConfig,
   type MongoNoteStore,
   type NoteDocumentInput,
   type NoteRecord,
+  queryRuns,
   SharedMongoClient,
   sampleTasks,
   stableStringify,
   type ActionPlanRecord,
+  type AgentRunQuery,
+  type AgentRunRecord,
   type TaskDocumentInput,
   type TaskRecord,
 } from "@cortex/core";
@@ -26,12 +31,12 @@ import {
 import type { ClientSession, Collection, Document } from "mongodb";
 import * as vscode from "vscode";
 
-import { type LogRecord } from "./logs.js";
-import { clampLogsLimit } from "./logsAutoRefresh.js";
-import { resolveLogsFilePath } from "./logsFilePath.js";
-import { LOGS_INDEX_DEFINITIONS, type LogsSource } from "./logsSource.js";
-import { MongoLogsSource } from "./mongoLogsSource.js";
-import { FileLogsSource } from "./fileLogsSource.js";
+import { type LogRecord } from "./logs/normalize.js";
+import { clampLogsLimit } from "./logs/autoRefresh.js";
+import { resolveLogsFilePath } from "./logs/filePath.js";
+import { LOGS_INDEX_DEFINITIONS, type LogsSource } from "./logs/source.js";
+import { MongoLogsSource } from "./logs/mongoSource.js";
+import { FileLogsSource } from "./logs/fileSource.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
 const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
@@ -1218,12 +1223,15 @@ export class ExtensionTaskService {
     });
     const notesStore = this.getNotesStore(settings);
 
+    const db = sharedClient?.db(settings.mongoDbName);
+
     try {
       await Promise.all([
         taskStore.ensureIndexes(),
         planStore.ensureIndexes(),
         notesStore.ensureIndexes(),
         this.getLogsSource().ensureIndexes(),
+        ...(db ? [ensureAiAgentRuns(db)] : []),
       ]);
     } finally {
       await Promise.all([
@@ -1246,7 +1254,10 @@ export class ExtensionTaskService {
   private getLogsSource(): LogsSource {
     const kind = this.config.get<string>("logsSource", "mongo");
     const rawPath = this.config.get<string>("logsFilePath", "");
-    const changeStreamsEnabled = this.config.get<boolean>("logsChangeStreams", false);
+    const changeStreamsEnabled = this.config.get<boolean>(
+      "logsChangeStreams",
+      false,
+    );
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const resolvedPath = resolveLogsFilePath({
       configured: rawPath,
@@ -1279,6 +1290,31 @@ export class ExtensionTaskService {
     }
     this.logsSourceCache = { source, key };
     return source;
+  }
+
+  async queryAgentRuns(query?: AgentRunQuery): Promise<AgentRunRecord[]> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    return queryRuns(db, query ?? {});
+  }
+
+  async listAiAgents(): Promise<
+    Array<{ slug: string; displayName: string; iconPath?: string | null }>
+  > {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const store = createMongoAiAgentStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: "ai_agents",
+      ...(sharedClient ? { sharedClient } : {}),
+    });
+    try {
+      return await store.listAgents();
+    } finally {
+      await store.close();
+    }
   }
 
   private async requireSharedClient(settings: ConnectionSettings) {

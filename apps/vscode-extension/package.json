@@ -6,6 +6,7 @@
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
+  "icon": "media/marketplace-icon.png",
   "files": [
     "dist/**",
     "media/**",
@@ -21,7 +22,6 @@
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openArchive",
     "onCommand:cortex.openBrain",
-    "onCommand:cortex.openMdxGraph",
     "onCommand:cortex.openScriptFlow",
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
@@ -30,7 +30,9 @@
     "onCommand:cortex.exportArchive",
     "onCommand:cortex.importArchive",
     "onCommand:cortex.setMongoUrl",
-    "onCommand:cortex.clearMongoUrl"
+    "onCommand:cortex.clearMongoUrl",
+    "onCommand:cortex.openLedger",
+    "onCommand:cortex.openPlans"
   ],
   "contributes": {
     "commands": [
@@ -74,10 +76,6 @@
       {
         "command": "cortex.openBrain",
         "title": "Cortex: Open Brain"
-      },
-      {
-        "command": "cortex.openMdxGraph",
-        "title": "Cortex: Open MD/MDX Graph"
       },
       {
         "command": "cortex.openScriptFlow",
@@ -187,6 +185,18 @@
       {
         "command": "cortex.markBlocked",
         "title": "Mark blocked"
+      },
+      {
+        "command": "cortex.setAiAgentIcon",
+        "title": "Cortex: Set AI Agent icon"
+      },
+      {
+        "command": "cortex.openLedger",
+        "title": "Cortex: Open Ledger"
+      },
+      {
+        "command": "cortex.openPlans",
+        "title": "Cortex: Open Plans"
       }
     ],
     "viewsContainers": {
@@ -375,7 +385,7 @@
           "default": "",
           "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
         },
-        "cortex.mdxGraphMaxFiles": {
+        "cortex.brainMaxFiles": {
           "type": "number",
           "default": 800,
           "minimum": 1,

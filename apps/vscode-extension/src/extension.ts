@@ -1,6 +1,7 @@
 import {
   buildTaskGraph,
   criticalPathEstimate,
+  createMongoAiAgentStore,
   type NoteDocumentInput,
   type TaskDocumentInput,
   type TaskFilter,
@@ -11,18 +12,24 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
-import { buildMdxGraphSnapshot, createMdxGraphCache } from "./mdGraph/indexer.js";
-import type { MdxGraphCache } from "./mdGraph/indexer.js";
-import { createDebouncedRefresh } from "./mdGraphWatcher.js";
-import type { MdxGraphSnapshot } from "./mdGraph/types.js";
+import {
+  buildBrainSnapshot,
+  createBrainCache,
+} from "./brain/indexer.js";
+import type { BrainCache } from "./brain/indexer.js";
+import { createDebouncedRefresh } from "./brain/watcher.js";
+import type { BrainSnapshot } from "./brain/types.js";
 import { ExtensionTaskService } from "./service.js";
-import { clampAutoRefreshSeconds, clampLogsLimit } from "./logsAutoRefresh.js";
+import { clampAutoRefreshSeconds, clampLogsLimit } from "./logs/autoRefresh.js";
 import {
   analyzeScriptFlowDocument,
   clearScriptFlowCache,
   resolveScriptFlowLanguage,
 } from "./scriptFlow/analyzers/index.js";
-import { clearCrossFileCache, expandCrossFileImports } from "./scriptFlow/crossFileResolver.js";
+import {
+  clearCrossFileCache,
+  expandCrossFileImports,
+} from "./scriptFlow/crossFileResolver.js";
 import { SCRIPT_FLOW_GLOSSARY_MD } from "./scriptFlow/glossary.js";
 import {
   isScriptFlowWebviewMessage,
@@ -41,10 +48,13 @@ import {
 import { getArchiveHtml } from "./webview/archive/getHtml.js";
 import { getGraphHtml } from "./webview/html.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
-import { getMdxGraphHtml } from "./webview/md-graph/getHtml.js";
+import { getBrainHtml } from "./webview/brain/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 import { getTaskEditorHtml } from "./webview/task-editor/getHtml.js";
+import type { CatalogAgent } from "./webview/task-editor/types.js";
+import { getLedgerHtml } from "./webview/ledger/getHtml.js";
+import { getPlansHtml } from "./webview/plans/getHtml.js";
 
 type ConnectionSettings = ReturnType<
   ExtensionTaskService["getConnectionSettings"]
@@ -151,15 +161,15 @@ export async function activate(context: vscode.ExtensionContext) {
   let logsPanelReady = false;
   let lastLogsHasMore = false;
   let logsChangeStreamCleanup: (() => Promise<void>) | null = null;
-  let mdxGraphPanel: vscode.WebviewPanel | undefined;
-  let mdxGraphPanelReady = false;
-  let currentMdxGraphRoot: vscode.Uri | undefined;
-  let currentMdxGraphSnapshot: MdxGraphSnapshot | undefined;
-  let mdxGraphCache: MdxGraphCache | undefined;
-  let mdxGraphWatcher: vscode.FileSystemWatcher | undefined;
-  const mdxGraphRefresh = createDebouncedRefresh(() => {
-    if (mdxGraphPanel && currentMdxGraphRoot) {
-      void postMdxGraphSnapshot(currentMdxGraphRoot);
+  let brainPanel: vscode.WebviewPanel | undefined;
+  let brainPanelReady = false;
+  let currentBrainRoot: vscode.Uri | undefined;
+  let currentBrainSnapshot: BrainSnapshot | undefined;
+  let brainCache: BrainCache | undefined;
+  let brainWatcher: vscode.FileSystemWatcher | undefined;
+  const brainRefresh = createDebouncedRefresh(() => {
+    if (brainPanel && currentBrainRoot) {
+      void postBrainSnapshot(currentBrainRoot);
     }
   }, 500);
   let archivePanel: vscode.WebviewPanel | undefined;
@@ -170,6 +180,10 @@ export async function activate(context: vscode.ExtensionContext) {
   let scriptFlowPanelReady = false;
   let taskEditorPanel: vscode.WebviewPanel | undefined;
   let taskEditorPanelReady = false;
+  let ledgerPanel: vscode.WebviewPanel | undefined;
+  let ledgerPanelReady = false;
+  let plansPanel: vscode.WebviewPanel | undefined;
+  let plansPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
   let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
@@ -186,13 +200,13 @@ export async function activate(context: vscode.ExtensionContext) {
     return true;
   }
   let pendingTaskEditorLoad:
-    | { task: TaskRecord; catalogCodes: string[] }
+    | { task: TaskRecord; catalogCodes: string[]; agents: CatalogAgent[] }
     | undefined;
   const cortexOutput = vscode.window.createOutputChannel("Cortex");
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
-  context.subscriptions.push(cortexOutput, { dispose: disposeMdxGraphWatcher });
+  context.subscriptions.push(cortexOutput, { dispose: disposeBrainWatcher });
 
   async function postSnapshot(selectedTaskCode?: string) {
     if (!graphPanel) {
@@ -387,15 +401,15 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  async function postMdxGraphSnapshot(rootUri: vscode.Uri) {
-    const panel = mdxGraphPanel;
+  async function postBrainSnapshot(rootUri: vscode.Uri) {
+    const panel = brainPanel;
     if (!panel) {
       return;
     }
 
     try {
       const config = vscode.workspace.getConfiguration("cortex");
-      const maxFiles = config.get<number>("mdxGraphMaxFiles", 800);
+      const maxFiles = config.get<number>("brainMaxFiles", 800);
       const accountPatternRaw = config.get<string>("brainAccountPattern", "");
       let accountPattern: RegExp | null = null;
       if (accountPatternRaw) {
@@ -405,44 +419,48 @@ export async function activate(context: vscode.ExtensionContext) {
           /* invalid regex — fall back to no pattern */
         }
       }
-      const snapshot = await buildMdxGraphSnapshot(rootUri, { maxFiles, accountPattern, cache: mdxGraphCache });
-      if (mdxGraphPanel !== panel) {
+      const snapshot = await buildBrainSnapshot(rootUri, {
+        maxFiles,
+        accountPattern,
+        cache: brainCache,
+      });
+      if (brainPanel !== panel) {
         return;
       }
-      currentMdxGraphRoot = rootUri;
-      currentMdxGraphSnapshot = snapshot;
+      currentBrainRoot = rootUri;
+      currentBrainSnapshot = snapshot;
       await panel.webview.postMessage({
-        type: "mdxGraph:snapshot",
+        type: "brain:snapshot",
         snapshot,
       });
     } catch (error) {
       await panel.webview.postMessage({
-        type: "mdxGraph:error",
+        type: "brain:error",
         error: String(error),
       });
     }
   }
 
-  function setupMdxGraphWatcher(rootUri: vscode.Uri) {
-    disposeMdxGraphWatcher();
+  function setupBrainWatcher(rootUri: vscode.Uri) {
+    disposeBrainWatcher();
     const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    watcher.onDidCreate(() => mdxGraphRefresh.schedule());
-    watcher.onDidChange(() => mdxGraphRefresh.schedule());
-    watcher.onDidDelete(() => mdxGraphRefresh.schedule());
-    mdxGraphWatcher = watcher;
+    watcher.onDidCreate(() => brainRefresh.schedule());
+    watcher.onDidChange(() => brainRefresh.schedule());
+    watcher.onDidDelete(() => brainRefresh.schedule());
+    brainWatcher = watcher;
   }
 
-  function disposeMdxGraphWatcher() {
-    mdxGraphRefresh.cancel();
-    if (mdxGraphWatcher) {
-      mdxGraphWatcher.dispose();
-      mdxGraphWatcher = undefined;
+  function disposeBrainWatcher() {
+    brainRefresh.cancel();
+    if (brainWatcher) {
+      brainWatcher.dispose();
+      brainWatcher = undefined;
     }
   }
 
-  function clearMdxGraphCache() {
-    mdxGraphCache?.clear();
+  function clearBrainCache() {
+    brainCache?.clear();
   }
 
   async function postNotesMode(mode: NotesPanelMode) {
@@ -664,7 +682,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (source.subscribe) {
         const cleanup = await source.subscribe((appendedLogs) => {
           if (logsPanel) {
-            logsPanel.webview.postMessage({ type: "logs:append", logs: appendedLogs, hasMore: lastLogsHasMore });
+            logsPanel.webview.postMessage({
+              type: "logs:append",
+              logs: appendedLogs,
+              hasMore: lastLogsHasMore,
+            });
           }
         });
         if (cleanup) {
@@ -678,31 +700,33 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
     setupLogsChangeStream();
 
-    const configWatcher = vscode.workspace.onDidChangeConfiguration(async (e) => {
-      if (e.affectsConfiguration("cortex.logsAutoRefreshSeconds")) {
-        if (logsChangeStreamCleanup) {
-          return;
+    const configWatcher = vscode.workspace.onDidChangeConfiguration(
+      async (e) => {
+        if (e.affectsConfiguration("cortex.logsAutoRefreshSeconds")) {
+          if (logsChangeStreamCleanup) {
+            return;
+          }
+          refreshLogsPollFromConfig();
         }
-        refreshLogsPollFromConfig();
-      }
-      if (
-        e.affectsConfiguration("cortex.logsSource") ||
-        e.affectsConfiguration("cortex.logsFilePath") ||
-        e.affectsConfiguration("cortex.logsLimit")
-      ) {
-        postLogsList();
-      }
-      if (e.affectsConfiguration("cortex.logsChangeStreams")) {
-        await setupLogsChangeStream();
-        postLogsList();
-      }
-      if (e.affectsConfiguration("cortex.mdxGraphAccountPattern")) {
-        clearMdxGraphCache();
-        if (mdxGraphPanel && currentMdxGraphRoot) {
-          postMdxGraphSnapshot(currentMdxGraphRoot);
+        if (
+          e.affectsConfiguration("cortex.logsSource") ||
+          e.affectsConfiguration("cortex.logsFilePath") ||
+          e.affectsConfiguration("cortex.logsLimit")
+        ) {
+          postLogsList();
         }
-      }
-    });
+        if (e.affectsConfiguration("cortex.logsChangeStreams")) {
+          await setupLogsChangeStream();
+          postLogsList();
+        }
+        if (e.affectsConfiguration("cortex.brainAccountPattern")) {
+          clearBrainCache();
+          if (brainPanel && currentBrainRoot) {
+            postBrainSnapshot(currentBrainRoot);
+          }
+        }
+      },
+    );
 
     const viewStateWatcher = logsPanel.onDidChangeViewState((e) => {
       if (e.webviewPanel.visible) {
@@ -862,40 +886,40 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     });
   }
 
-  async function openMdxGraphPanel(
+  async function openBrainPanel(
     rootUri?: vscode.Uri,
     options?: { promptWhenMissing?: boolean },
   ) {
     const selectedRoot =
       rootUri ??
-      currentMdxGraphRoot ??
+      currentBrainRoot ??
       (await resolveConfiguredBrainRoot()) ??
       (options?.promptWhenMissing === false
         ? undefined
-        : await pickMdxGraphRoot());
+        : await pickBrainRoot());
     if (!selectedRoot) {
       return;
     }
 
-    if (mdxGraphPanel) {
-      mdxGraphPanel.reveal(vscode.ViewColumn.One);
-      if (selectedRoot.fsPath !== currentMdxGraphRoot?.fsPath) {
-        clearMdxGraphCache();
-        setupMdxGraphWatcher(selectedRoot);
+    if (brainPanel) {
+      brainPanel.reveal(vscode.ViewColumn.One);
+      if (selectedRoot.fsPath !== currentBrainRoot?.fsPath) {
+        clearBrainCache();
+        setupBrainWatcher(selectedRoot);
       }
-      if (mdxGraphPanelReady) {
-        await postMdxGraphSnapshot(selectedRoot);
+      if (brainPanelReady) {
+        await postBrainSnapshot(selectedRoot);
       } else {
-        currentMdxGraphRoot = selectedRoot;
+        currentBrainRoot = selectedRoot;
       }
       return;
     }
 
-    currentMdxGraphRoot = selectedRoot;
-    if (!mdxGraphCache) mdxGraphCache = createMdxGraphCache();
-    setupMdxGraphWatcher(selectedRoot);
-    mdxGraphPanelReady = false;
-    mdxGraphPanel = vscode.window.createWebviewPanel(
+    currentBrainRoot = selectedRoot;
+    if (!brainCache) brainCache = createBrainCache();
+    setupBrainWatcher(selectedRoot);
+    brainPanelReady = false;
+    brainPanel = vscode.window.createWebviewPanel(
       "cortex.brain",
       "Cortex Brain",
       vscode.ViewColumn.One,
@@ -904,59 +928,59 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         retainContextWhenHidden: true,
       },
     );
-    setWebviewPanelIcon(context, mdxGraphPanel, "cortex-pert.svg");
-    mdxGraphPanel.webview.html = getMdxGraphHtml(
-      mdxGraphPanel.webview,
+    setWebviewPanelIcon(context, brainPanel, "cortex-pert.svg");
+    brainPanel.webview.html = getBrainHtml(
+      brainPanel.webview,
       context.extensionUri,
       nonce(),
     );
-    mdxGraphPanel.onDidDispose(() => {
-      disposeMdxGraphWatcher();
-      mdxGraphCache?.clear();
-      mdxGraphCache = undefined;
-      mdxGraphPanel = undefined;
-      mdxGraphPanelReady = false;
-      currentMdxGraphSnapshot = undefined;
+    brainPanel.onDidDispose(() => {
+      disposeBrainWatcher();
+      brainCache?.clear();
+      brainCache = undefined;
+      brainPanel = undefined;
+      brainPanelReady = false;
+      currentBrainSnapshot = undefined;
     });
-    mdxGraphPanel.webview.onDidReceiveMessage(async (message) => {
+    brainPanel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "ready") {
-        mdxGraphPanelReady = true;
-        if (currentMdxGraphRoot) {
-          await postMdxGraphSnapshot(currentMdxGraphRoot);
+        brainPanelReady = true;
+        if (currentBrainRoot) {
+          await postBrainSnapshot(currentBrainRoot);
         }
         return;
       }
-      if (message?.type === "mdxGraph:refresh") {
-        if (currentMdxGraphRoot) {
-          await postMdxGraphSnapshot(currentMdxGraphRoot);
+      if (message?.type === "brain:refresh") {
+        if (currentBrainRoot) {
+          await postBrainSnapshot(currentBrainRoot);
         }
         return;
       }
-      if (message?.type === "mdxGraph:pickFolder") {
-        const picked = await pickMdxGraphRoot();
+      if (message?.type === "brain:pickFolder") {
+        const picked = await pickBrainRoot();
         if (picked) {
-          clearMdxGraphCache();
-          currentMdxGraphRoot = picked;
-          setupMdxGraphWatcher(picked);
-          await postMdxGraphSnapshot(picked);
+          clearBrainCache();
+          currentBrainRoot = picked;
+          setupBrainWatcher(picked);
+          await postBrainSnapshot(picked);
         }
         return;
       }
       if (
-        message?.type === "mdxGraph:openNode" &&
+        message?.type === "brain:openNode" &&
         typeof message.nodeId === "string"
       ) {
-        const node = currentMdxGraphSnapshot?.nodes.find(
+        const node = currentBrainSnapshot?.nodes.find(
           (candidate) => candidate.id === message.nodeId,
         );
         if (node?.kind === "doc" && node.path) {
-          if (!isPathWithinRoot(node.path, currentMdxGraphRoot)) {
+          if (!isPathWithinRoot(node.path, currentBrainRoot)) {
             service.logger.warn(
-              "mdxGraph:openNode rejected: path outside current MDX root",
+              "brain:openNode rejected: path outside current MDX root",
               {
                 nodeId: message.nodeId,
                 path: node.path,
-                root: currentMdxGraphRoot?.fsPath,
+                root: currentBrainRoot?.fsPath,
               },
             );
             return;
@@ -971,6 +995,143 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         }
       }
     });
+  }
+
+  async function openLedgerPanel() {
+    if (ledgerPanel) {
+      ledgerPanel.reveal(vscode.ViewColumn.One);
+      if (ledgerPanelReady) {
+        await postLedgerSnapshot();
+      }
+      return;
+    }
+
+    ledgerPanelReady = false;
+    ledgerPanel = vscode.window.createWebviewPanel(
+      "cortex.ledger",
+      "Cortex Ledger",
+      vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    setWebviewPanelIcon(context, ledgerPanel, "ledge.svg");
+    ledgerPanel.webview.html = getLedgerHtml(
+      ledgerPanel.webview,
+      context.extensionUri,
+      nonce(),
+    );
+
+    ledgerPanel.onDidDispose(() => {
+      ledgerPanel = undefined;
+      ledgerPanelReady = false;
+    });
+
+    ledgerPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready" || message?.type === "ledger:refresh") {
+        ledgerPanelReady = true;
+        await postLedgerSnapshot();
+        return;
+      }
+    });
+  }
+
+  async function postLedgerSnapshot() {
+    const panel = ledgerPanel;
+    if (!panel) return;
+    try {
+      const [runs, agents] = await Promise.all([
+        service.queryAgentRuns(),
+        service.listAiAgents(),
+      ]);
+      if (ledgerPanel !== panel) return;
+      const resolvedAgents = agents.map((a) => ({
+        slug: a.slug,
+        name: a.displayName ?? a.slug,
+        iconUri: a.iconPath
+          ? panel.webview
+              .asWebviewUri(
+                vscode.Uri.joinPath(context.extensionUri, a.iconPath),
+              )
+              .toString()
+          : "",
+      }));
+      await panel.webview.postMessage({
+        type: "ledger:snapshot",
+        runs,
+        agents: resolvedAgents,
+      });
+    } catch (err) {
+      if (ledgerPanel !== panel) return;
+      await panel.webview.postMessage({
+        type: "ledger:error",
+        message: String(err),
+      });
+    }
+  }
+
+  async function openPlansPanel() {
+    if (plansPanel) {
+      plansPanel.reveal(vscode.ViewColumn.One);
+      if (plansPanelReady) {
+        await postPlansSnapshot();
+      }
+      return;
+    }
+
+    plansPanelReady = false;
+    plansPanel = vscode.window.createWebviewPanel(
+      "cortex.plans",
+      "Cortex Planes",
+      vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    setWebviewPanelIcon(context, plansPanel, "plans.svg");
+    plansPanel.webview.html = getPlansHtml(
+      plansPanel.webview,
+      context.extensionUri,
+      nonce(),
+    );
+
+    plansPanel.onDidDispose(() => {
+      plansPanel = undefined;
+      plansPanelReady = false;
+    });
+
+    plansPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready" || message?.type === "plans:refresh") {
+        plansPanelReady = true;
+        await postPlansSnapshot();
+        return;
+      }
+
+      if (message?.type === "plans:open") {
+        const code: string = message.code;
+        cortexOutput.appendLine(`[Plans] Open plan requested: ${code}`);
+        void vscode.window.showInformationMessage(`Plan editor PE-03 pendiente para ${code}.`);
+      }
+    });
+  }
+
+  async function postPlansSnapshot() {
+    const panel = plansPanel;
+    if (!panel) return;
+    try {
+      const [plans, agents] = await Promise.all([
+        service.loadPlans(),
+        service.listAiAgents(),
+      ]);
+      if (plansPanel !== panel) return;
+      await panel.webview.postMessage({
+        type: "plans:snapshot",
+        plans,
+        agents,
+      });
+    } catch (err) {
+      if (plansPanel !== panel) return;
+      await panel.webview.postMessage({
+        type: "plans:error",
+        message: String(err),
+      });
+    }
   }
 
   async function openScriptFlowPanel(request: ScriptFlowRequest) {
@@ -1270,6 +1431,21 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         description: "Open the Script Flow panel",
         command: "cortex.openScriptFlow",
       },
+      {
+        label: "Ledger",
+        description: "Open the runs ledger panel",
+        command: "cortex.openLedger",
+      },
+      {
+        label: "Planes",
+        description: "Open the plans panel",
+        command: "cortex.openPlans",
+      },
+      {
+        label: "Planes",
+        description: "Open the plans panel",
+        command: "cortex.openPlans",
+      },
     ];
     const picked = await vscode.window.showQuickPick(items, {
       title: "Switch Cortex panel",
@@ -1345,6 +1521,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           label: "Script Flow",
           description: "Open the Script Flow panel",
           command: "cortex.openScriptFlow",
+        },
+        {
+          label: "Ledger",
+          description: "Open the runs ledger panel",
+          command: "cortex.openLedger",
         },
         {
           label: "Search query",
@@ -1423,9 +1604,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       await openArchivePanel();
     }),
     vscode.commands.registerCommand("cortex.openBrain", async () => {
-      await openMdxGraphPanel(undefined, { promptWhenMissing: true });
+      await openBrainPanel(undefined, { promptWhenMissing: true });
     }),
-    vscode.commands.registerCommand("cortex.openMdxGraph", async () => {
+    vscode.commands.registerCommand("cortex.openBrain", async () => {
       await vscode.commands.executeCommand("cortex.openBrain");
     }),
     vscode.commands.registerCommand("cortex.openScriptFlow", async () => {
@@ -1955,6 +2136,78 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         await markTaskStatus(arg, "BLOCKED");
       },
     ),
+    vscode.commands.registerCommand("cortex.setAiAgentIcon", async () => {
+      const settings = service.getConnectionSettings();
+      const store = createMongoAiAgentStore({
+        mongoUrl: settings.mongoUrl,
+        dbName: settings.mongoDbName,
+        collectionName: "ai_agents",
+      });
+
+      try {
+        const agents = await store.listAgents();
+        if (agents.length === 0) {
+          void vscode.window.showInformationMessage(
+            "No AI agents found in the database. Run seed first.",
+          );
+          return;
+        }
+
+        const pick = await vscode.window.showQuickPick(
+          agents.map((a) => ({
+            label: a.displayName,
+            description: a.slug,
+            detail: a.iconPath ? `Icon: ${a.iconPath}` : "No icon set",
+          })),
+          { placeHolder: "Select an AI agent to set its icon" },
+        );
+
+        if (!pick) return;
+
+        const agent = agents.find((a) => a.slug === pick.description);
+        if (!agent) return;
+
+        const uris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          filters: { "SVG files": ["svg"] },
+          title: `Select icon for ${agent.displayName}`,
+        });
+
+        if (!uris || uris.length === 0) return;
+
+        const srcPath = uris[0].fsPath;
+        const extPath = vscode.extensions.getExtension(
+          "cortex.vscode-extension",
+        )?.extensionPath;
+        if (!extPath) {
+          void vscode.window.showErrorMessage(
+            "Could not resolve extension path.",
+          );
+          return;
+        }
+
+        const iconDir = path.join(extPath, "media", "icons");
+        const iconName = `${agent.slug}.svg`;
+        const destPath = path.join(iconDir, iconName);
+
+        const fs = await import("node:fs/promises");
+        await fs.mkdir(iconDir, { recursive: true });
+        await fs.copyFile(srcPath, destPath);
+
+        await store.updateIcon(agent.slug, iconName);
+        void vscode.window.showInformationMessage(
+          `Icon for ${agent.displayName} updated to ${iconName}`,
+        );
+      } finally {
+        await store.close();
+      }
+    }),
+    vscode.commands.registerCommand("cortex.openLedger", async () => {
+      await openLedgerPanel();
+    }),
+    vscode.commands.registerCommand("cortex.openPlans", async () => {
+      await openPlansPanel();
+    }),
   );
 
   treeView.onDidChangeSelection(async (event) => {
@@ -2142,8 +2395,12 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     void vscode.window.showInformationMessage(`Task ${code} created.`);
   }
 
-  async function openTaskEditorPanel(task: TaskRecord, catalogCodes: string[]) {
-    pendingTaskEditorLoad = { task, catalogCodes };
+  async function openTaskEditorPanel(
+    task: TaskRecord,
+    catalogCodes: string[],
+    agents: CatalogAgent[],
+  ) {
+    pendingTaskEditorLoad = { task, catalogCodes, agents };
 
     if (taskEditorPanel) {
       taskEditorPanel.reveal(vscode.ViewColumn.Beside);
@@ -2151,7 +2408,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         await taskEditorPanel.webview.postMessage({
           type: "taskEditor:load",
           task,
-          catalog: { taskCodes: catalogCodes },
+          catalog: { taskCodes: catalogCodes, agents },
         });
         pendingTaskEditorLoad = undefined;
       }
@@ -2184,7 +2441,10 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           await taskEditorPanel?.webview.postMessage({
             type: "taskEditor:load",
             task: pendingTaskEditorLoad.task,
-            catalog: { taskCodes: pendingTaskEditorLoad.catalogCodes },
+            catalog: {
+              taskCodes: pendingTaskEditorLoad.catalogCodes,
+              agents: pendingTaskEditorLoad.agents,
+            },
           });
           pendingTaskEditorLoad = undefined;
         }
@@ -2228,7 +2488,30 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     const bundle = await service.loadBundle();
     const catalogCodes = bundle.tasks.map((t) => t.code);
 
-    await openTaskEditorPanel(task, catalogCodes);
+    const rawAgents = await service.listAiAgents();
+    const webview = taskEditorPanel?.webview;
+    const agents: CatalogAgent[] = rawAgents.map((a) => ({
+      slug: a.slug,
+      displayName: a.displayName ?? a.slug,
+      iconUri:
+        a.iconPath && webview
+          ? webview
+              .asWebviewUri(
+                vscode.Uri.joinPath(context.extensionUri, a.iconPath),
+              )
+              .toString()
+          : "",
+    }));
+
+    // Include "any" and "human" synthetic agents
+    const knownSlugs = new Set(agents.map((a) => a.slug));
+    const synthetic: CatalogAgent[] = [
+      { slug: "any", displayName: "Any", iconUri: "" },
+      { slug: "human", displayName: "Human", iconUri: "" },
+    ].filter((s) => !knownSlugs.has(s.slug));
+    agents.push(...synthetic);
+
+    await openTaskEditorPanel(task, catalogCodes, agents);
   }
 }
 
@@ -2495,7 +2778,7 @@ async function resolveArchivePlanCode(
   return picked?.planCode;
 }
 
-async function pickMdxGraphRoot() {
+async function pickBrainRoot() {
   const picked = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
@@ -2696,11 +2979,17 @@ async function buildScriptFlowDelivery(
         language,
       };
     }
-    const maxDepth = vscode.workspace.getConfiguration("cortex").get<number>("scriptFlowMaxDepth", 0);
-    if (maxDepth > 0 && language === "typescript" && request.scope !== "selection") {
+    const maxDepth = vscode.workspace
+      .getConfiguration("cortex")
+      .get<number>("scriptFlowMaxDepth", 0);
+    if (
+      maxDepth > 0 &&
+      language === "typescript" &&
+      request.scope !== "selection"
+    ) {
       try {
         snapshot = await expandCrossFileImports(snapshot, document.uri, {
-          maxDepth: Math.min(maxDepth, 5)
+          maxDepth: Math.min(maxDepth, 5),
         });
       } catch {
         // fall through to base snapshot
