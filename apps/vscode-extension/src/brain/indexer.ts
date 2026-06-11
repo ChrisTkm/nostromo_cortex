@@ -3,7 +3,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 import { parse as parseYaml } from "yaml";
 
-import type { MdxGraphEdge, MdxGraphIssue, MdxGraphNode, MdxGraphSnapshot } from "./types.js";
+import type { BrainEdge, BrainIssue, BrainNode, BrainSnapshot } from "./types.js";
 
 type ParsedDoc = {
   id: string;
@@ -31,26 +31,26 @@ const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
 
 export const LEGACY_ACCOUNT_PATTERN = /\/manual-cuentas\/[^)\s"']+\/(\d{4,})\/?/g;
 
-export type MdxGraphCacheEntry = { mtime: number; doc: ParsedDoc };
-export type MdxGraphCache = Map<string, MdxGraphCacheEntry>;
+export type BrainCacheEntry = { mtime: number; doc: ParsedDoc };
+export type BrainCache = Map<string, BrainCacheEntry>;
 
-export function createMdxGraphCache(): MdxGraphCache {
+export function createBrainCache(): BrainCache {
   return new Map();
 }
 
 const SCAN_BATCH_SIZE = 50;
 
-export type BuildMdxGraphOptions = {
+export type BuildBrainOptions = {
   maxFiles?: number;
   accountPattern?: RegExp | null;
   synthesizeTree?: "auto" | "on" | "off";
-  cache?: MdxGraphCache;
+  cache?: BrainCache;
 };
 
-export async function buildMdxGraphSnapshot(
+export async function buildBrainSnapshot(
   rootUri: vscode.Uri,
-  options: BuildMdxGraphOptions | number = {}
-): Promise<MdxGraphSnapshot> {
+  options: BuildBrainOptions | number = {}
+): Promise<BrainSnapshot> {
   if (typeof options === "number") {
     options = { maxFiles: options };
   }
@@ -106,10 +106,10 @@ export async function buildMdxGraphSnapshot(
     }
   }
 
-  const nodes = new Map<string, MdxGraphNode>();
-  const edges = new Map<string, MdxGraphEdge>();
+  const nodes = new Map<string, BrainNode>();
+  const edges = new Map<string, BrainEdge>();
   const unresolved = new Set<string>();
-  const issues: MdxGraphIssue[] = [];
+  const issues: BrainIssue[] = [];
 
   for (const doc of docs) {
     nodes.set(doc.id, {
@@ -209,7 +209,7 @@ export async function buildMdxGraphSnapshot(
     issues.push({
       kind: "truncated",
       nodeId: "__workspace__",
-      detail: `Scanned ${files.length} of more .md/.mdx files. Increase cortex.mdxGraphMaxFiles to scan more.`
+      detail: `Scanned ${files.length} of more .md/.mdx files. Increase cortex.brainMaxFiles to scan more.`
     });
   }
 
@@ -434,7 +434,7 @@ function resolveLink(
   return candidates?.length === 1 ? candidates[0] : undefined;
 }
 
-function addEdge(edges: Map<string, MdxGraphEdge>, from: string, to: string, kind: MdxGraphEdge["kind"], label: string) {
+function addEdge(edges: Map<string, BrainEdge>, from: string, to: string, kind: BrainEdge["kind"], label: string) {
   if (from === to) {
     return;
   }
@@ -455,7 +455,7 @@ function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]):
 // de links del frontmatter.
 function synthesizeTreeEdges(
   docs: ParsedDoc[],
-  edges: Map<string, MdxGraphEdge>,
+  edges: Map<string, BrainEdge>,
   rootUri: vscode.Uri
 ) {
   type Location = {
@@ -548,7 +548,7 @@ function synthesizeTreeEdges(
 }
 
 // Nodos que participan en un ciclo del subgrafo de árbol (upstream/downstream).
-function findCycleNodes(edges: Map<string, MdxGraphEdge>): Set<string> {
+function findCycleNodes(edges: Map<string, BrainEdge>): Set<string> {
   const adjacency = new Map<string, string[]>();
   for (const edge of edges.values()) {
     if (edge.label !== "upstream" && edge.label !== "downstream") {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDebouncedRefresh } from "./mdGraphWatcher.js";
+import { createDebouncedRefresh } from "./watcher.js";
 
 describe("createDebouncedRefresh", () => {
   it("collapses multiple schedules within delay into a single refresh call", () => {

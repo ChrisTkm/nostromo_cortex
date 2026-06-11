@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FileLogsSource, type FileLogsSourceLogger } from "./fileLogsSource.js";
+import { FileLogsSource, type FileLogsSourceLogger } from "./fileSource.js";
 
 vi.mock("node:fs", () => ({
   promises: {
@@ -10,7 +10,11 @@ vi.mock("node:fs", () => ({
   },
 }));
 
-const logEntries: Array<{ type: "warn" | "info"; message: string; meta?: Record<string, unknown> }> = [];
+const logEntries: Array<{
+  type: "warn" | "info";
+  message: string;
+  meta?: Record<string, unknown>;
+}> = [];
 const testLogger: FileLogsSourceLogger = (event) => {
   logEntries.push(event);
 };
@@ -62,7 +66,7 @@ describe("FileLogsSource", () => {
     vi.mocked(fs.readdir).mockResolvedValue(["cortex.jsonl"]);
     vi.mocked(fs.stat).mockResolvedValue({ size: 100, mtimeMs: 1000 } as any);
     vi.mocked(fs.readFile).mockResolvedValue(
-      "not json\n{\"timestamp\":\"2026-06-07T10:00:00.000Z\",\"level\":\"INFO\",\"source\":\"app\",\"folder\":\"test\",\"message\":\"ok\",\"summary\":\"ok (app)\"}\n",
+      'not json\n{"timestamp":"2026-06-07T10:00:00.000Z","level":"INFO","source":"app","folder":"test","message":"ok","summary":"ok (app)"}\n',
     );
     const source = makeSource("C:\\logs\\cortex.jsonl");
     const logs = await source.list({ limit: 10 });
@@ -80,15 +84,17 @@ describe("FileLogsSource", () => {
         folder: "test",
         message: "older",
         summary: "older (app)",
-      }) + "\n" +
-      JSON.stringify({
-        timestamp: "2026-06-07T12:00:00.000Z",
-        level: "ERROR",
-        source: "app",
-        folder: "test",
-        message: "newer",
-        summary: "newer (app)",
-      }) + "\n",
+      }) +
+        "\n" +
+        JSON.stringify({
+          timestamp: "2026-06-07T12:00:00.000Z",
+          level: "ERROR",
+          source: "app",
+          folder: "test",
+          message: "newer",
+          summary: "newer (app)",
+        }) +
+        "\n",
     );
     const source = makeSource("C:\\logs\\cortex.jsonl");
     const logs = await source.list({ limit: 10 });
@@ -128,18 +134,23 @@ describe("FileLogsSource", () => {
         folder: "test",
         message: "too old",
         summary: "too old (app)",
-      }) + "\n" +
-      JSON.stringify({
-        timestamp: "2026-06-07T12:00:00.000Z",
-        level: "INFO",
-        source: "app",
-        folder: "test",
-        message: "recent",
-        summary: "recent (app)",
-      }) + "\n",
+      }) +
+        "\n" +
+        JSON.stringify({
+          timestamp: "2026-06-07T12:00:00.000Z",
+          level: "INFO",
+          source: "app",
+          folder: "test",
+          message: "recent",
+          summary: "recent (app)",
+        }) +
+        "\n",
     );
     const source = makeSource("C:\\logs\\cortex.jsonl");
-    const logs = await source.list({ limit: 10, beforeTimestamp: "2026-06-07T11:00:00.000Z" });
+    const logs = await source.list({
+      limit: 10,
+      beforeTimestamp: "2026-06-07T11:00:00.000Z",
+    });
     expect(logs).toHaveLength(1);
     expect(logs[0].message).toBe("too old");
   });
@@ -187,18 +198,24 @@ describe("FileLogsSource", () => {
   });
 
   it("discovers rotated files (base.jsonl.1, base.jsonl.2)", async () => {
-    vi.mocked(fs.readdir).mockResolvedValue(["cortex.jsonl", "cortex.jsonl.1", "cortex.jsonl.2"]);
+    vi.mocked(fs.readdir).mockResolvedValue([
+      "cortex.jsonl",
+      "cortex.jsonl.1",
+      "cortex.jsonl.2",
+    ]);
     vi.mocked(fs.stat).mockResolvedValue({ size: 50, mtimeMs: 1000 } as any);
     vi.mocked(fs.readFile).mockImplementation(async (file: unknown) => {
       const name = (file as string).split("\\").pop();
-      return JSON.stringify({
-        timestamp: `2026-06-07T${name === "cortex.jsonl" ? "12" : name === "cortex.jsonl.1" ? "10" : "08"}:00:00.000Z`,
-        level: "INFO",
-        source: "app",
-        folder: "test",
-        message: `from ${name}`,
-        summary: `from ${name} (app)`,
-      }) + "\n";
+      return (
+        JSON.stringify({
+          timestamp: `2026-06-07T${name === "cortex.jsonl" ? "12" : name === "cortex.jsonl.1" ? "10" : "08"}:00:00.000Z`,
+          level: "INFO",
+          source: "app",
+          folder: "test",
+          message: `from ${name}`,
+          summary: `from ${name} (app)`,
+        }) + "\n"
+      );
     });
     const source = makeSource("C:\\logs\\cortex.jsonl");
     const logs = await source.list({ limit: 10 });

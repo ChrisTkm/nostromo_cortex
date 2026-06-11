@@ -1,9 +1,13 @@
 import { promises as fs, type Stats } from "node:fs";
 import * as path from "node:path";
-import { normalizeLogDocument, type LogRecord } from "./logs.js";
-import type { LogsQuery, LogsSource } from "./logsSource.js";
+import { normalizeLogDocument, type LogRecord } from "./normalize.js";
+import type { LogsQuery, LogsSource } from "./source.js";
 
-export type FileLogsSourceLogger = (event: { type: "warn" | "info"; message: string; meta?: Record<string, unknown> }) => void;
+export type FileLogsSourceLogger = (event: {
+  type: "warn" | "info";
+  message: string;
+  meta?: Record<string, unknown>;
+}) => void;
 
 export type FileLogsSourceOptions = {
   filePath: string;
@@ -76,9 +80,7 @@ export class FileLogsSource implements LogsSource {
         // skip
       }
     }
-    return stats
-      .map((stat) => `${stat.size}:${stat.mtimeMs}`)
-      .join("|");
+    return stats.map((stat) => `${stat.size}:${stat.mtimeMs}`).join("|");
   }
 
   private async readFileSafe(file: string): Promise<string | null> {
@@ -88,7 +90,10 @@ export class FileLogsSource implements LogsSource {
       this.options.log?.({
         type: "warn",
         message: "fileLogsSource.read_failed",
-        meta: { file, error: error instanceof Error ? error.message : String(error) },
+        meta: {
+          file,
+          error: error instanceof Error ? error.message : String(error),
+        },
       });
       return null;
     }

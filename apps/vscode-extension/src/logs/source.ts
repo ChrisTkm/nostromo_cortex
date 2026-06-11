@@ -1,5 +1,5 @@
 import type { Document } from "mongodb";
-import type { LogRecord } from "./logs.js";
+import type { LogRecord } from "./normalize.js";
 
 export type LogsQuery = { limit: number; beforeTimestamp?: string };
 
@@ -9,7 +9,9 @@ export interface LogsSource {
   list(query: LogsQuery): Promise<LogRecord[]>;
   ensureIndexes(): Promise<void>;
   dispose(): Promise<void>;
-  subscribe?(onAppend: LogsAppendCallback): Promise<(() => Promise<void>) | null>;
+  subscribe?(
+    onAppend: LogsAppendCallback,
+  ): Promise<(() => Promise<void>) | null>;
 }
 
 export const LOGS_INDEX_DEFINITIONS: ReadonlyArray<Document> = [

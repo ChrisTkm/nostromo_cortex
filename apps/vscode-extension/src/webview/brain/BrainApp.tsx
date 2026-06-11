@@ -15,8 +15,8 @@ import {
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { isPersistedState, isSnapshot, reconcileHiddenNodeIds, reconcileSelectedNodeId } from "./state";
-import type { PersistedMdxGraphState } from "./state";
-import type { MdxGraphEdge, MdxGraphHostMessage, MdxGraphIssueKind, MdxGraphNode, MdxGraphSnapshot } from "../../mdGraph/types";
+import type { PersistedBrainState } from "./state";
+import type { BrainEdge, BrainHostMessage, BrainIssueKind, BrainNode, BrainSnapshot } from "../../brain/types";
 
 declare global {
   interface Window {
@@ -29,13 +29,13 @@ declare global {
 }
 
 type GraphNodeData = {
-  kind: MdxGraphNode["kind"];
+  kind: BrainNode["kind"];
   label: string;
   subtitle?: string;
   badge?: string;
   layer?: string;
   count?: number;
-  issue?: MdxGraphIssueKind;
+  issue?: BrainIssueKind;
 };
 
 const vscode = window.acquireVsCodeApi();
@@ -47,36 +47,36 @@ const nodeTypes = { brain: BrainNode };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
 type LayoutMode = "flow" | "orbit";
 type RelatedLink = {
-  node: MdxGraphNode;
+  node: BrainNode;
   direction: "from" | "to";
   relation: EdgeFilter;
 };
 
-const ISSUE_SEVERITY: Record<MdxGraphIssueKind, number> = {
+const ISSUE_SEVERITY: Record<BrainIssueKind, number> = {
   truncated: 5,
   cycle: 4,
   "broken-ref": 3,
   "self-reference": 2,
   orphan: 1
 };
-const ISSUE_LABEL: Record<MdxGraphIssueKind, string> = {
+const ISSUE_LABEL: Record<BrainIssueKind, string> = {
   truncated: "Scan truncated",
   cycle: "Cycles",
   "broken-ref": "Broken references",
   "self-reference": "Self-references",
   orphan: "Orphans"
 };
-const ISSUE_ORDER: MdxGraphIssueKind[] = ["truncated", "cycle", "broken-ref", "self-reference", "orphan"];
+const ISSUE_ORDER: BrainIssueKind[] = ["truncated", "cycle", "broken-ref", "self-reference", "orphan"];
 
-export function MdxGraphApp() {
-  const persisted = useMemo<PersistedMdxGraphState | null>(() => {
+export function BrainApp() {
+  const persisted = useMemo<PersistedBrainState | null>(() => {
     const state = vscode.getState();
     if (isPersistedState(state)) return state;
     if (isSnapshot(state)) return { snapshot: state };
     return null;
   }, []);
 
-  const [snapshot, setSnapshot] = useState<MdxGraphSnapshot | null>(persisted?.snapshot ?? null);
+  const [snapshot, setSnapshot] = useState<BrainSnapshot | null>(persisted?.snapshot ?? null);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>(
     persisted?.hiddenNodeIds && persisted.snapshot
       ? reconcileHiddenNodeIds(persisted.hiddenNodeIds, persisted.snapshot)
@@ -89,22 +89,22 @@ export function MdxGraphApp() {
   );
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [visibleKinds, setVisibleKinds] = useState<Array<MdxGraphNode["kind"]>>(["doc"]);
+  const [visibleKinds, setVisibleKinds] = useState<Array<BrainNode["kind"]>>(["doc"]);
   const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   useEffect(() => {
-    function onMessage(event: MessageEvent<MdxGraphHostMessage>) {
+    function onMessage(event: MessageEvent<BrainHostMessage>) {
       const message = event.data;
-      if (message?.type === "mdxGraph:snapshot") {
+      if (message?.type === "brain:snapshot") {
         setSnapshot(message.snapshot);
         setError(null);
         setHiddenNodeIds((current) => reconcileHiddenNodeIds(current, message.snapshot));
         setSelectedNodeId((current) => reconcileSelectedNodeId(current, message.snapshot));
         return;
       }
-      if (message?.type === "mdxGraph:error") {
+      if (message?.type === "brain:error") {
         setError(message.error);
       }
     }
@@ -120,7 +120,7 @@ export function MdxGraphApp() {
       snapshot,
       hiddenNodeIds,
       selectedNodeId
-    } satisfies PersistedMdxGraphState);
+    } satisfies PersistedBrainState);
   }, [snapshot, hiddenNodeIds, selectedNodeId]);
 
   const flow = useMemo(
@@ -140,9 +140,9 @@ export function MdxGraphApp() {
     () => (snapshot && selectedNode ? relatedLinks(snapshot, selectedNode.id, visibleEdges) : []),
     [selectedNode, snapshot, visibleEdges]
   );
-  const nodesByKind = useMemo(() => (snapshot ? groupNodesByKind(snapshot.nodes) : new Map<MdxGraphNode["kind"], MdxGraphNode[]>()), [snapshot]);
+  const nodesByKind = useMemo(() => (snapshot ? groupNodesByKind(snapshot.nodes) : new Map<BrainNode["kind"], BrainNode[]>()), [snapshot]);
 
-  function showKind(kind: MdxGraphNode["kind"]) {
+  function showKind(kind: BrainNode["kind"]) {
     setVisibleKinds((current) => (current.includes(kind) ? current : [...current, kind]));
     setHiddenNodeIds((current) => {
       const ids = new Set(nodesByKind.get(kind)?.map((node) => node.id) ?? []);
@@ -150,11 +150,11 @@ export function MdxGraphApp() {
     });
   }
 
-  function hideKind(kind: MdxGraphNode["kind"]) {
+  function hideKind(kind: BrainNode["kind"]) {
     setVisibleKinds((current) => current.filter((item) => item !== kind));
   }
 
-  function setNodeVisible(node: MdxGraphNode, isVisible: boolean) {
+  function setNodeVisible(node: BrainNode, isVisible: boolean) {
     if (isVisible) {
       setVisibleKinds((current) => (current.includes(node.kind) ? current : [...current, node.kind]));
       setHiddenNodeIds((current) => {
@@ -201,26 +201,26 @@ export function MdxGraphApp() {
   }
 
   return (
-    <div className="md-graph-app">
-      <header className="md-graph-header">
+    <div className="brain-app">
+      <header className="brain-header">
         <div>
           <h1>Cortex Brain</h1>
           <p>{snapshot ? snapshot.rootPath : "Choose a folder with .md or .mdx files."}</p>
         </div>
-        <div className="md-graph-actions">
-          <button onClick={() => vscode.postMessage({ type: "mdxGraph:pickFolder" })} type="button">
+        <div className="brain-actions">
+          <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
             Folder
           </button>
-          <button onClick={() => vscode.postMessage({ type: "mdxGraph:refresh" })} type="button">
+          <button onClick={() => vscode.postMessage({ type: "brain:refresh" })} type="button">
             Refresh
           </button>
         </div>
       </header>
 
       {snapshot ? (
-        <section className="md-graph-toolbar">
+        <section className="brain-toolbar">
           <input onChange={(event) => setQuery(event.target.value)} placeholder="Filter docs, tags, accounts..." type="search" value={query} />
-          <div className="md-graph-presets" aria-label="View presets">
+          <div className="brain-presets" aria-label="View presets">
             <button onClick={() => setPreset("docs")} type="button">
               Docs
             </button>
@@ -231,7 +231,7 @@ export function MdxGraphApp() {
               Full
             </button>
           </div>
-          <div className="md-graph-layout-toggle" aria-label="Layout mode">
+          <div className="brain-layout-toggle" aria-label="Layout mode">
             <button className={layoutMode === "flow" ? "is-active" : ""} onClick={() => setLayoutMode("flow")} type="button">
               Flow
             </button>
@@ -239,14 +239,14 @@ export function MdxGraphApp() {
               Orbit
             </button>
           </div>
-          <div className="md-graph-edge-filters" aria-label="Relation filters">
+          <div className="brain-edge-filters" aria-label="Relation filters">
             {EDGE_FILTERS.map((edge) => (
               <button className={visibleEdges.includes(edge) ? "is-active" : ""} key={edge} onClick={() => toggleEdgeFilter(edge)} type="button">
                 {edge}
               </button>
             ))}
           </div>
-          <div className="md-graph-kinds">
+          <div className="brain-kinds">
             {GRAPH_KINDS.map((kind) => (
               <KindFilter
                 hiddenNodeIds={hiddenNodeIds}
@@ -260,26 +260,26 @@ export function MdxGraphApp() {
               />
             ))}
           </div>
-          <div className="md-graph-stats">
+          <div className="brain-stats">
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
             {snapshot.issues.some((issue) => issue.kind === "truncated") ? (
-              <span className="md-graph-stats__truncated" title="Scan reached cortex.mdxGraphMaxFiles. Some .md/.mdx files were not analyzed.">
+              <span className="brain-stats__truncated" title="Scan reached cortex.brainMaxFiles. Some .md/.mdx files were not analyzed.">
                 Scan truncated ({snapshot.stats.fileCount}/+)
               </span>
             ) : null}
             {snapshot.issues.length > 0 ? (
-              <span className="md-graph-stats__warn">{snapshot.issues.length} issues</span>
+              <span className="brain-stats__warn">{snapshot.issues.length} issues</span>
             ) : null}
             <span>{snapshot.stats.elapsedMs} ms</span>
           </div>
         </section>
       ) : null}
 
-      <main className="md-graph-main">
+      <main className="brain-main">
         {snapshot ? (
           <>
-            <section className="md-graph-canvas">
+            <section className="brain-canvas">
               <ReactFlow
                 fitView
                 fitViewOptions={{ maxZoom: 1.05, padding: 0.18 }}
@@ -287,12 +287,12 @@ export function MdxGraphApp() {
                 edges={flow.edges}
                 nodeTypes={nodeTypes}
                 onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                onNodeDoubleClick={(_, node) => vscode.postMessage({ type: "mdxGraph:openNode", nodeId: node.id })}
+                onNodeDoubleClick={(_, node) => vscode.postMessage({ type: "brain:openNode", nodeId: node.id })}
                 proOptions={{ hideAttribution: true }}
               >
                 <Controls />
                 <MiniMap
-                  className="md-graph-minimap"
+                  className="brain-minimap"
                   pannable
                   zoomable
                   nodeColor={(node) => colorForKind((node.data as GraphNodeData).kind)}
@@ -304,10 +304,10 @@ export function MdxGraphApp() {
             <BrainInspector node={selectedNode} onSelectNode={setSelectedNodeId} related={selectedLinks} snapshot={snapshot} />
           </>
         ) : (
-          <section className="md-graph-empty">
+          <section className="brain-empty">
             <h2>{error ? "Could not scan folder" : "No folder selected"}</h2>
             <p>{error ?? "Pick any local documentation folder and Cortex will scan .md/.mdx links, tags, accounts, and routes."}</p>
-            <button onClick={() => vscode.postMessage({ type: "mdxGraph:pickFolder" })} type="button">
+            <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
               Choose Folder
             </button>
           </section>
@@ -327,27 +327,27 @@ function KindFilter({
   visibleKinds
 }: {
   hiddenNodeIds: string[];
-  kind: MdxGraphNode["kind"];
-  nodes: MdxGraphNode[];
-  onHideKind(kind: MdxGraphNode["kind"]): void;
-  onSetNodeVisible(node: MdxGraphNode, isVisible: boolean): void;
-  onShowKind(kind: MdxGraphNode["kind"]): void;
-  visibleKinds: Array<MdxGraphNode["kind"]>;
+  kind: BrainNode["kind"];
+  nodes: BrainNode[];
+  onHideKind(kind: BrainNode["kind"]): void;
+  onSetNodeVisible(node: BrainNode, isVisible: boolean): void;
+  onShowKind(kind: BrainNode["kind"]): void;
+  visibleKinds: Array<BrainNode["kind"]>;
 }) {
   const hidden = new Set(hiddenNodeIds);
   const kindIsVisible = visibleKinds.includes(kind);
   const visibleCount = kindIsVisible ? nodes.filter((node) => !hidden.has(node.id)).length : 0;
 
   return (
-    <details className={`md-graph-kind-filter${kindIsVisible ? " is-active" : ""}`}>
+    <details className={`brain-kind-filter${kindIsVisible ? " is-active" : ""}`}>
       <summary>
-        <span className="md-graph-kind-filter__name">{kind}</span>
-        <span className="md-graph-kind-filter__count">
+        <span className="brain-kind-filter__name">{kind}</span>
+        <span className="brain-kind-filter__count">
           {visibleCount}/{nodes.length}
         </span>
       </summary>
-      <div className="md-graph-kind-filter__panel">
-        <div className="md-graph-kind-filter__actions">
+      <div className="brain-kind-filter__panel">
+        <div className="brain-kind-filter__actions">
           <button onClick={() => onShowKind(kind)} type="button">
             All
           </button>
@@ -355,7 +355,7 @@ function KindFilter({
             None
           </button>
         </div>
-        <div className="md-graph-kind-filter__list">
+        <div className="brain-kind-filter__list">
           {nodes.length === 0 ? <p>No {kind} nodes.</p> : null}
           {nodes.map((node) => {
             const checked = kindIsVisible && !hidden.has(node.id);
@@ -395,22 +395,22 @@ function BrainInspector({
   related,
   snapshot
 }: {
-  node: MdxGraphNode | null;
+  node: BrainNode | null;
   onSelectNode(nodeId: string): void;
   related: RelatedLink[];
-  snapshot: MdxGraphSnapshot;
+  snapshot: BrainSnapshot;
 }) {
   if (!node) {
     const labelOf = (id: string) => snapshot.nodes.find((item) => item.id === id)?.label ?? id;
     return (
-      <aside className="md-graph-inspector">
-        <div className="md-graph-inspector__label">Overview</div>
+      <aside className="brain-inspector">
+        <div className="brain-inspector__label">Overview</div>
         <h2>{snapshot.stats.fileCount} documents</h2>
         <p>{snapshot.stats.tagCount} tags, {snapshot.stats.accountCount} accounts, {snapshot.stats.unresolvedCount} unresolved references.</p>
         <section>
           <h3>Issues ({snapshot.issues.length})</h3>
           {snapshot.issues.length === 0 ? (
-            <p className="md-graph-muted">No issues — the related tree is healthy.</p>
+            <p className="brain-muted">No issues — the related tree is healthy.</p>
           ) : null}
           {ISSUE_ORDER.map((kind) => {
             const items = snapshot.issues.filter((issue) => issue.kind === kind);
@@ -418,16 +418,16 @@ function BrainInspector({
               return null;
             }
             return (
-              <div className="md-graph-issue-group" key={kind}>
-                <p className="md-graph-issue-group__title">
+              <div className="brain-issue-group" key={kind}>
+                <p className="brain-issue-group__title">
                   {ISSUE_LABEL[kind]} ({items.length})
                 </p>
-                <div className="md-graph-related">
+                <div className="brain-related">
                   {items.slice(0, 30).map((issue, index) => {
                     const isWorkspace = issue.nodeId === "__workspace__";
                     if (isWorkspace) {
                       return (
-                        <span key={`${issue.nodeId}-${index}`} className="md-graph-inspector__issue-workspace">
+                        <span key={`${issue.nodeId}-${index}`} className="brain-inspector__issue-workspace">
                           {issue.detail ?? "Workspace"}
                         </span>
                       );
@@ -451,16 +451,16 @@ function BrainInspector({
   const nodeIssues = snapshot.issues.filter((issue) => issue.nodeId === node.id);
 
   return (
-    <aside className="md-graph-inspector">
-      <div className="md-graph-inspector__label">{node.kind}</div>
+    <aside className="brain-inspector">
+      <div className="brain-inspector__label">{node.kind}</div>
       <h2>{node.label}</h2>
-      {node.route ? <p className="md-graph-inspector__route">{node.route}</p> : null}
+      {node.route ? <p className="brain-inspector__route">{node.route}</p> : null}
       {nodeIssues.length > 0 ? (
-        <p className="md-graph-inspector__warn">{nodeIssues.map((issue) => ISSUE_LABEL[issue.kind]).join(" · ")}</p>
+        <p className="brain-inspector__warn">{nodeIssues.map((issue) => ISSUE_LABEL[issue.kind]).join(" · ")}</p>
       ) : null}
       {node.description ? <p>{node.description}</p> : null}
       {node.domain || node.layer || node.docKind || node.badge ? (
-        <dl className="md-graph-inspector__meta">
+        <dl className="brain-inspector__meta">
           {node.badge ? <><dt>Badge</dt><dd>{node.badge}</dd></> : null}
           {node.domain ? <><dt>Domain</dt><dd>{node.domain}</dd></> : null}
           {node.layer ? <><dt>Layer</dt><dd>{node.layer}</dd></> : null}
@@ -468,23 +468,23 @@ function BrainInspector({
         </dl>
       ) : null}
       {node.tags?.length ? (
-        <div className="md-graph-inspector__chips">
+        <div className="brain-inspector__chips">
           {node.tags.slice(0, 12).map((tag) => (
             <span key={tag}>{tag}</span>
           ))}
         </div>
       ) : null}
       {node.kind === "doc" ? (
-        <button onClick={() => vscode.postMessage({ type: "mdxGraph:openNode", nodeId: node.id })} type="button">
+        <button onClick={() => vscode.postMessage({ type: "brain:openNode", nodeId: node.id })} type="button">
           Open document
         </button>
       ) : null}
       <section>
         <h3>Connected</h3>
-        {related.length === 0 ? <p className="md-graph-muted">No visible relations.</p> : null}
-        <div className="md-graph-related">
+        {related.length === 0 ? <p className="brain-muted">No visible relations.</p> : null}
+        <div className="brain-related">
           {related.slice(0, 24).map((item) => (
-            <button className={`md-graph-related__item md-graph-related__item--${item.relation}`} key={`${item.direction}:${item.relation}:${item.node.id}`} onClick={() => onSelectNode(item.node.id)} type="button">
+            <button className={`brain-related__item brain-related__item--${item.relation}`} key={`${item.direction}:${item.relation}:${item.node.id}`} onClick={() => onSelectNode(item.node.id)} type="button">
               <span>{item.direction === "from" ? "from this doc" : "to this doc"} · {item.relation}</span>
               {item.node.label}
             </button>
@@ -496,9 +496,9 @@ function BrainInspector({
 }
 
 function buildFlow(
-  snapshot: MdxGraphSnapshot,
+  snapshot: BrainSnapshot,
   query: string,
-  visibleKinds: Array<MdxGraphNode["kind"]>,
+  visibleKinds: Array<BrainNode["kind"]>,
   visibleEdges: EdgeFilter[],
   hiddenNodeIds: string[],
   selectedNodeId: string | null,
@@ -508,7 +508,7 @@ function buildFlow(
   const visibleEdgeSet = new Set(visibleEdges);
   const hidden = new Set(hiddenNodeIds);
   const degree = buildDegreeMap(snapshot, visibleEdgeSet);
-  const issueByNode = new Map<string, MdxGraphIssueKind>();
+  const issueByNode = new Map<string, BrainIssueKind>();
   for (const issue of snapshot.issues) {
     const current = issueByNode.get(issue.nodeId);
     if (!current || ISSUE_SEVERITY[issue.kind] > ISSUE_SEVERITY[current]) {
@@ -686,7 +686,7 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
 }
 
 function focusedNeighborhood(
-  snapshot: MdxGraphSnapshot,
+  snapshot: BrainSnapshot,
   selectedNodeId: string,
   matchingNodeIds: ReadonlySet<string>,
   visibleEdges: ReadonlySet<EdgeFilter>
@@ -711,7 +711,7 @@ function focusedNeighborhood(
   return ids.size > 0 ? ids : matchingNodeIds;
 }
 
-function buildDegreeMap(snapshot: MdxGraphSnapshot, visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS)) {
+function buildDegreeMap(snapshot: BrainSnapshot, visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS)) {
   const degree = new Map<string, number>();
   for (const edge of snapshot.edges) {
     if (!visibleEdges.has(edgeFilterFor(edge))) {
@@ -723,8 +723,8 @@ function buildDegreeMap(snapshot: MdxGraphSnapshot, visibleEdges = new Set<EdgeF
   return degree;
 }
 
-function groupNodesByKind(nodes: MdxGraphNode[]) {
-  const grouped = new Map<MdxGraphNode["kind"], MdxGraphNode[]>();
+function groupNodesByKind(nodes: BrainNode[]) {
+  const grouped = new Map<BrainNode["kind"], BrainNode[]>();
   for (const kind of GRAPH_KINDS) {
     grouped.set(kind, []);
   }
@@ -740,7 +740,7 @@ function groupNodesByKind(nodes: MdxGraphNode[]) {
   return grouped;
 }
 
-function relatedLinks(snapshot: MdxGraphSnapshot, nodeId: string, visibleEdges: EdgeFilter[]): RelatedLink[] {
+function relatedLinks(snapshot: BrainSnapshot, nodeId: string, visibleEdges: EdgeFilter[]): RelatedLink[] {
   const visibleEdgeSet = new Set(visibleEdges);
   const nodesById = new Map(snapshot.nodes.map((node) => [node.id, node]));
   const links: RelatedLink[] = [];
@@ -787,7 +787,7 @@ function compactRoute(route?: string) {
   return `/${parts.slice(-2).join("/")}`;
 }
 
-function colorForKind(kind: MdxGraphNode["kind"]) {
+function colorForKind(kind: BrainNode["kind"]) {
   switch (kind) {
     case "doc":
       return "#38bdf8";
@@ -800,7 +800,7 @@ function colorForKind(kind: MdxGraphNode["kind"]) {
   }
 }
 
-function edgeFilterFor(edge: MdxGraphEdge): EdgeFilter {
+function edgeFilterFor(edge: BrainEdge): EdgeFilter {
   if (edge.kind === "tag" || edge.kind === "account" || edge.kind === "unresolved") {
     return edge.kind;
   }
@@ -827,7 +827,7 @@ function edgeFilterForId(edgeId: string): EdgeFilter {
   return "link";
 }
 
-function colorForEdge(edge: MdxGraphEdge) {
+function colorForEdge(edge: BrainEdge) {
   switch (edgeFilterFor(edge)) {
     case "upstream":
       return "#60a5fa";

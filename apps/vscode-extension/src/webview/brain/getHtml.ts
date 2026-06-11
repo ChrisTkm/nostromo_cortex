@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 
-export function getMdxGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, nonce: string) {
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "md-graph.js"));
-  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "md-graph.css"));
+export function getBrainHtml(webview: vscode.Webview, extensionUri: vscode.Uri, nonce: string) {
+  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "brain.js"));
+  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "brain.css"));
   const csp = `default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';`;
 
   return `<!DOCTYPE html>

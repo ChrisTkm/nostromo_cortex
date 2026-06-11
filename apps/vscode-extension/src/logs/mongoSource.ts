@@ -1,17 +1,26 @@
 import type { Collection, Document } from "mongodb";
-import { normalizeLogCollection, type LogRecord } from "./logs.js";
-import type { LogsAppendCallback, LogsQuery, LogsSource } from "./logsSource.js";
+import { normalizeLogCollection, type LogRecord } from "./normalize.js";
+import type { LogsAppendCallback, LogsQuery, LogsSource } from "./source.js";
 
-type LogEvent = { type: "warn" | "error" | "info"; message: string; meta?: Record<string, unknown> };
+type LogEvent = {
+  type: "warn" | "error" | "info";
+  message: string;
+  meta?: Record<string, unknown>;
+};
 
 export class MongoLogsSource implements LogsSource {
   private changeStreamEnabled: boolean;
   private log?: (event: LogEvent) => void;
 
   constructor(
-    private readonly getCollection: () => Promise<Collection<Record<string, unknown>>>,
+    private readonly getCollection: () => Promise<
+      Collection<Record<string, unknown>>
+    >,
     private readonly indexDefinitions: ReadonlyArray<Document>,
-    options?: { changeStreamsEnabled?: boolean; log?: (event: LogEvent) => void },
+    options?: {
+      changeStreamsEnabled?: boolean;
+      log?: (event: LogEvent) => void;
+    },
   ) {
     this.changeStreamEnabled = options?.changeStreamsEnabled ?? false;
     this.log = options?.log;
@@ -23,7 +32,11 @@ export class MongoLogsSource implements LogsSource {
     if (typeof beforeTimestamp === "string" && beforeTimestamp.length > 0) {
       filter.timestamp = { $lt: beforeTimestamp };
     }
-    const items = await collection.find(filter).sort({ timestamp: -1 }).limit(limit).toArray();
+    const items = await collection
+      .find(filter)
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .toArray();
     return normalizeLogCollection(items);
   }
 
@@ -36,7 +49,9 @@ export class MongoLogsSource implements LogsSource {
     // El client es singleton del service, no se cierra aquí.
   }
 
-  async subscribe(onAppend: LogsAppendCallback): Promise<(() => Promise<void>) | null> {
+  async subscribe(
+    onAppend: LogsAppendCallback,
+  ): Promise<(() => Promise<void>) | null> {
     if (!this.changeStreamEnabled) return null;
     const collection = await this.getCollection();
     try {
@@ -50,11 +65,25 @@ export class MongoLogsSource implements LogsSource {
         if (normalized.length > 0) onAppend(normalized);
       });
       stream.on("error", (err: unknown) => {
-        this.log?.({ type: "warn", message: "mongoLogsSource.changeStream.error", meta: { error: err instanceof Error ? err.message : String(err) } });
+        this.log?.({
+          type: "warn",
+          message: "mongoLogsSource.changeStream.error",
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
       });
-      return async () => { try { await stream.close(); } catch { /* noop */ } };
+      return async () => {
+        try {
+          await stream.close();
+        } catch {
+          /* noop */
+        }
+      };
     } catch (err) {
-      this.log?.({ type: "warn", message: "mongoLogsSource.changeStream.unavailable", meta: { error: err instanceof Error ? err.message : String(err) } });
+      this.log?.({
+        type: "warn",
+        message: "mongoLogsSource.changeStream.unavailable",
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
       return null;
     }
   }

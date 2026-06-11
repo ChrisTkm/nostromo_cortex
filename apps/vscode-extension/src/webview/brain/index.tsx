@@ -5,7 +5,7 @@ import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { MdxGraphApp } from "./MdxGraphApp";
+import { BrainApp } from "./BrainApp";
 
 const rootElement = document.getElementById("root");
 
@@ -15,6 +15,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <MdxGraphApp />
+    <BrainApp />
   </StrictMode>
 );

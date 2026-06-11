@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  type MdxGraphSnapshot,
-} from "../../mdGraph/types.js";
+  type BrainSnapshot,
+} from "../../brain/types.js";
 import {
   isPersistedState,
   reconcileHiddenNodeIds,
   reconcileSelectedNodeId,
 } from "./state.js";
 
-function snapshot(nodes: string[]): MdxGraphSnapshot {
+function snapshot(nodes: string[]): BrainSnapshot {
   return {
     rootPath: "/fake",
     generatedAt: new Date().toISOString(),

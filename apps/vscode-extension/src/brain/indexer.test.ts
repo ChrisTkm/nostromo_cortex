@@ -39,9 +39,9 @@ vi.mock("vscode", () => ({
   }
 }));
 
-import { buildMdxGraphSnapshot, createMdxGraphCache, LEGACY_ACCOUNT_PATTERN, parseFrontmatter } from "./indexer.js";
+import { buildBrainSnapshot, createBrainCache, LEGACY_ACCOUNT_PATTERN, parseFrontmatter } from "./indexer.js";
 
-describe("buildMdxGraphSnapshot", () => {
+describe("buildBrainSnapshot", () => {
   beforeEach(() => {
     filesRef.current = [];
     sourcesRef.current = new Map<string, string>();
@@ -74,7 +74,7 @@ describe("buildMdxGraphSnapshot", () => {
       ].join("\n")
     );
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges).toEqual(
       expect.arrayContaining([
@@ -114,7 +114,7 @@ describe("buildMdxGraphSnapshot", () => {
       ].join("\n")
     );
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.nodes).toEqual(
       expect.arrayContaining([
@@ -188,7 +188,7 @@ describe("buildMdxGraphSnapshot", () => {
       ].join("\n")
     );
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges).toEqual(
       expect.arrayContaining([
@@ -250,7 +250,7 @@ describe("buildMdxGraphSnapshot", () => {
       ].join("\n")
     );
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:contabilidad" })]));
     expect(snapshot.nodes).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:no-deberia-ser-tag" })]));
@@ -266,7 +266,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(childPath, ["---", "title: Activos fijos", "---", "", "# Activos fijos"].join("\n"));
     sourcesRef.current.set(orphanPath, ["---", "title: Suelto", "---", "", "# Suelto"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.stats.orphanCount).toBe(1);
     expect(snapshot.nodes.find((node) => node.title === "Suelto")?.isOrphan).toBe(true);
@@ -282,7 +282,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(aPath, ["---", "title: A", "related:", "  upstream:", "    - /loop/b/", "---", "", "# A"].join("\n"));
     sourcesRef.current.set(bPath, ["---", "title: B", "related:", "  upstream:", "    - /loop/a/", "---", "", "# B"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.issues.filter((issue) => issue.kind === "cycle")).toHaveLength(0);
   });
@@ -297,7 +297,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(bPath, ["---", "title: Foo B", "---", "", "# Foo B"].join("\n"));
     sourcesRef.current.set(linkerPath, ["---", "title: Linker", "---", "", "See [[foo]] for details."].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:a/foo.mdx")).toBe(false);
     expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:b/foo.mdx")).toBe(false);
@@ -311,7 +311,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(uniquePath, ["---", "title: Unique", "---", "", "# Unique"].join("\n"));
     sourcesRef.current.set(linkerPath, ["---", "title: Linker 2", "---", "", "See [[unic]] for details."].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.to === "doc:unic.mdx" && e.from === "doc:linker2.mdx")).toBe(true);
     expect(snapshot.issues.filter((i) => i.kind === "broken-ref")).toHaveLength(0);
@@ -327,7 +327,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(bPath, ["---", "title: Bar B", "---", "", "# Bar B"].join("\n"));
     sourcesRef.current.set(linkerPath, ["---", "title: Linker 3", "---", "", 'See [bar](bar) for details.'].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:x/bar.mdx")).toBe(false);
     expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:y/bar.mdx")).toBe(false);
@@ -342,7 +342,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(page2, ["---", "title: Page 2", "---", "", "# Page 2"].join("\n"));
     starlightDirRef.current = false;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.stats.orphanCount).toBe(2);
     expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
@@ -357,7 +357,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(bPath, ["---", "title: B", "---", "", "See [A](./a.mdx)"].join("\n"));
     starlightDirRef.current = false;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.to === "doc:pages/a.mdx" && e.from === "doc:pages/b.mdx")).toBe(true);
     expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
@@ -378,7 +378,7 @@ describe("buildMdxGraphSnapshot", () => {
       "# Test",
     ].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     const br = snapshot.issues.find((i) => i.kind === "broken-ref");
     expect(br?.detail).toBe("references: /does-not-exist/");
@@ -399,7 +399,7 @@ describe("buildMdxGraphSnapshot", () => {
       "# Self Test",
     ].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.issues.some((i) => i.kind === "self-reference" && i.nodeId === "doc:selftest.mdx")).toBe(true);
     expect(snapshot.issues.find((i) => i.kind === "self-reference")?.detail).toBe("references");
@@ -417,7 +417,7 @@ describe("buildMdxGraphSnapshot", () => {
       "See [Example](https://example.com) and [HTTP](http://httpbin.org).",
     ].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.every((e) => !e.to.includes("example.com") && !e.to.includes("httpbin"))).toBe(true);
     expect(snapshot.issues.filter((i) => i.kind === "broken-ref")).toHaveLength(0);
@@ -436,7 +436,7 @@ describe("buildMdxGraphSnapshot", () => {
     ].join("\n"));
     starlightDirRef.current = false;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
+    const snapshot = await buildBrainSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
 
     expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(true);
   });
@@ -454,7 +454,7 @@ describe("buildMdxGraphSnapshot", () => {
     ].join("\n"));
     starlightDirRef.current = false;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(false);
   });
@@ -468,7 +468,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
     starlightDirRef.current = false;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "on" });
+    const snapshot = await buildBrainSnapshot(rootUri, { synthesizeTree: "on" });
 
     expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(true);
@@ -482,7 +482,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(parentPath, ["---", "title: Parent", "---", "", "# Parent"].join("\n"));
     sourcesRef.current.set(childPath, ["---", "title: Child", "---", "", "# Child"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { synthesizeTree: "off" });
+    const snapshot = await buildBrainSnapshot(rootUri, { synthesizeTree: "off" });
 
     expect(snapshot.edges.some((e) => e.label === "upstream")).toBe(false);
     expect(snapshot.edges.some((e) => e.label === "downstream")).toBe(false);
@@ -496,7 +496,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(indexPath, ["---", "title: Accounting", "---", "", "# Accounting"].join("\n"));
     sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:accounting/index.mdx")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:accounting/index.mdx")).toBe(true);
@@ -514,7 +514,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(acctPage, ["---", "title: Acct Page", "---", "", "# Acct Page"].join("\n"));
     sourcesRef.current.set(devPage, ["---", "title: Dev Page", "---", "", "# Dev Page"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:accounting/index.mdx" && e.to === "doc:accounting/p1.mdx")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:dev/index.mdx" && e.to === "doc:dev/p1.mdx")).toBe(true);
@@ -529,7 +529,7 @@ describe("buildMdxGraphSnapshot", () => {
     sourcesRef.current.set(indexPath, ["---", "title: Root", "---", "", "# Root"].join("\n"));
     sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:index.mdx")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:index.mdx")).toBe(true);
@@ -552,7 +552,7 @@ describe("cache", () => {
     filesRef.current = [{ fsPath: docPath }];
     sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.stats.fileCount).toBe(1);
     expect(snapshot.nodes.some((n) => n.id === "doc:docs/page.mdx")).toBe(true);
@@ -565,9 +565,9 @@ describe("cache", () => {
     filesRef.current = [{ fsPath: doc1 }, { fsPath: doc2 }];
     sourcesRef.current.set(doc1, ["---", "title: A", "---", "", "# A"].join("\n"));
     sourcesRef.current.set(doc2, ["---", "title: B", "---", "", "# B"].join("\n"));
-    const cache = createMdxGraphCache();
+    const cache = createBrainCache();
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+    const snapshot = await buildBrainSnapshot(rootUri, { cache });
 
     expect(snapshot.stats.fileCount).toBe(2);
     expect(cache.size).toBe(2);
@@ -578,11 +578,11 @@ describe("cache", () => {
     const docPath = "C:\\site\\docs\\page.mdx";
     filesRef.current = [{ fsPath: docPath }];
     sourcesRef.current.set(docPath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
-    const cache = createMdxGraphCache();
-    await buildMdxGraphSnapshot(rootUri, { cache });
+    const cache = createBrainCache();
+    await buildBrainSnapshot(rootUri, { cache });
     const readFileCallsAfterFirst = readFileCallCountRef.current;
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+    const snapshot = await buildBrainSnapshot(rootUri, { cache });
 
     expect(snapshot.stats.fileCount).toBe(1);
     expect(readFileCallCountRef.current - readFileCallsAfterFirst).toBe(0);
@@ -595,12 +595,12 @@ describe("cache", () => {
     filesRef.current = [{ fsPath: docA }, { fsPath: docB }];
     sourcesRef.current.set(docA, ["---", "title: A", "---", "", "# A"].join("\n"));
     sourcesRef.current.set(docB, ["---", "title: B", "---", "", "# B"].join("\n"));
-    const cache = createMdxGraphCache();
-    await buildMdxGraphSnapshot(rootUri, { cache });
+    const cache = createBrainCache();
+    await buildBrainSnapshot(rootUri, { cache });
     const readFileCallsAfterFirst = readFileCallCountRef.current;
     mtimeRef.current.set(docB, 42);
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+    const snapshot = await buildBrainSnapshot(rootUri, { cache });
 
     expect(snapshot.stats.fileCount).toBe(2);
     expect(readFileCallCountRef.current - readFileCallsAfterFirst).toBe(1);
@@ -613,14 +613,14 @@ describe("cache", () => {
     filesRef.current = [{ fsPath: docA }, { fsPath: docB }];
     sourcesRef.current.set(docA, ["---", "title: A", "---", "", "# A"].join("\n"));
     sourcesRef.current.set(docB, ["---", "title: B", "---", "", "# B"].join("\n"));
-    const cache = createMdxGraphCache();
-    await buildMdxGraphSnapshot(rootUri, { cache });
+    const cache = createBrainCache();
+    await buildBrainSnapshot(rootUri, { cache });
     expect(cache.size).toBe(2);
 
     filesRef.current = [{ fsPath: docA }];
     sourcesRef.current.delete(docB);
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { cache });
+    const snapshot = await buildBrainSnapshot(rootUri, { cache });
 
     expect(snapshot.stats.fileCount).toBe(1);
     expect(cache.size).toBe(1);
@@ -768,7 +768,7 @@ describe("stripCodeBlocks", () => {
       "```",
     ].join("\n")));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.edges.some((e) => e.to.includes("foo-fake"))).toBe(false);
   });
 
@@ -778,7 +778,7 @@ describe("stripCodeBlocks", () => {
     filesRef.current = [{ fsPath: docPath }];
     sourcesRef.current.set(docPath, doc('Some text `[a](/b)` here.'));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.edges.some((e) => e.to.includes("/b"))).toBe(false);
   });
 
@@ -792,7 +792,7 @@ describe("stripCodeBlocks", () => {
       "```",
     ].join("\n")));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
+    const snapshot = await buildBrainSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
     expect(snapshot.nodes.some((n) => n.id === "account:1100")).toBe(false);
   });
 
@@ -810,7 +810,7 @@ describe("stripCodeBlocks", () => {
     ].join("\n")));
     sourcesRef.current.set(targetPath, doc(""));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.edges.some((e) => e.to.includes("bad"))).toBe(false);
     expect(snapshot.edges.some((e) => e.to.includes("actual"))).toBe(true);
   });
@@ -825,7 +825,7 @@ describe("stripCodeBlocks", () => {
       "~~~",
     ].join("\n")));
 
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.edges.some((e) => e.to.includes("/b"))).toBe(false);
   });
 
@@ -838,7 +838,7 @@ describe("stripCodeBlocks", () => {
       "See [this](/section/actual/) and the account at /manual-cuentas/x/1201500/.",
     ].join("\n")));
     sourcesRef.current.set(targetPath, doc(""));
-    const snapshot = await buildMdxGraphSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
+    const snapshot = await buildBrainSnapshot(rootUri, { accountPattern: LEGACY_ACCOUNT_PATTERN });
     expect(snapshot.edges.some((e) => e.to.includes("actual"))).toBe(true);
     expect(snapshot.nodes.some((n) => n.id === "account:1201500")).toBe(true);
   });
@@ -852,7 +852,7 @@ describe("stripCodeBlocks", () => {
       '<a href="/inside-code">Ignored</a>',
       "```",
     ].join("\n")));
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.edges.some((e) => e.to.includes("inside-code"))).toBe(false);
   });
 });
@@ -875,7 +875,7 @@ describe("batched scan", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.stats.fileCount).toBe(5);
     expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(5);
   });
@@ -885,7 +885,7 @@ describe("batched scan", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.stats.fileCount).toBe(50);
     expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(50);
   });
@@ -895,7 +895,7 @@ describe("batched scan", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri);
+    const snapshot = await buildBrainSnapshot(rootUri);
     expect(snapshot.stats.fileCount).toBe(120);
     expect(snapshot.nodes.filter((n) => n.kind === "doc")).toHaveLength(120);
     const docs = snapshot.nodes.filter((n) => n.kind === "doc");
@@ -918,7 +918,7 @@ describe("truncation", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    const snapshot = await buildBrainSnapshot(rootUri, 10);
     expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(0);
     expect(snapshot.stats.fileCount).toBe(5);
   });
@@ -928,7 +928,7 @@ describe("truncation", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    const snapshot = await buildBrainSnapshot(rootUri, 10);
     expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(0);
     expect(snapshot.stats.fileCount).toBe(10);
   });
@@ -938,7 +938,7 @@ describe("truncation", () => {
     for (const f of filesRef.current) {
       sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    const snapshot = await buildBrainSnapshot(rootUri, 10);
     expect(snapshot.issues.filter((i) => i.kind === "truncated")).toHaveLength(1);
     expect(snapshot.issues.find((i) => i.kind === "truncated")?.nodeId).toBe("__workspace__");
     expect(snapshot.issues.find((i) => i.kind === "truncated")?.detail).toContain("10");
@@ -964,7 +964,7 @@ describe("truncation", () => {
         sourcesRef.current.set(f.fsPath, ["---", "title: test", "---", "", "# Test"].join("\n"));
       }
     }
-    const snapshot = await buildMdxGraphSnapshot(rootUri, 10);
+    const snapshot = await buildBrainSnapshot(rootUri, 10);
     const truncatedIssues = snapshot.issues.filter((i) => i.kind === "truncated");
     expect(truncatedIssues).toHaveLength(1);
     expect(truncatedIssues[0].nodeId).toBe("__workspace__");

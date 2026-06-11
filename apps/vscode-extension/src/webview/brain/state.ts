@@ -1,12 +1,12 @@
-import type { MdxGraphSnapshot } from "../../mdGraph/types.js";
+import type { BrainSnapshot } from "../../brain/types.js";
 
-export type PersistedMdxGraphState = {
-  snapshot: MdxGraphSnapshot;
+export type PersistedBrainState = {
+  snapshot: BrainSnapshot;
   hiddenNodeIds?: string[];
   selectedNodeId?: string | null;
 };
 
-export function isSnapshot(value: unknown): value is MdxGraphSnapshot {
+export function isSnapshot(value: unknown): value is BrainSnapshot {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return (
@@ -16,7 +16,7 @@ export function isSnapshot(value: unknown): value is MdxGraphSnapshot {
   );
 }
 
-export function isPersistedState(value: unknown): value is PersistedMdxGraphState {
+export function isPersistedState(value: unknown): value is PersistedBrainState {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return isSnapshot(v.snapshot);
@@ -24,7 +24,7 @@ export function isPersistedState(value: unknown): value is PersistedMdxGraphStat
 
 export function reconcileSelectedNodeId(
   current: string | null,
-  snapshot: MdxGraphSnapshot
+  snapshot: BrainSnapshot
 ): string | null {
   if (current && snapshot.nodes.some((node) => node.id === current)) {
     return current;
@@ -34,7 +34,7 @@ export function reconcileSelectedNodeId(
 
 export function reconcileHiddenNodeIds(
   current: ReadonlyArray<string>,
-  snapshot: MdxGraphSnapshot
+  snapshot: BrainSnapshot
 ): string[] {
   const knownIds = new Set(snapshot.nodes.map((node) => node.id));
   return current.filter((id) => knownIds.has(id));

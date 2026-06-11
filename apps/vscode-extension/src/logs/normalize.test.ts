@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLogDocument } from "./logs";
+import { normalizeLogDocument } from "./normalize";
 
 describe("buildSummary extra keys", () => {
   it("event=INSERT with rows and table injects key=value pairs", () => {
@@ -8,7 +8,7 @@ describe("buildSummary extra keys", () => {
       rows: 8,
       table: "impuesto_2cat",
       process: "impuesto_2cat_runner",
-      message: "Inserting rows"
+      message: "Inserting rows",
     });
     expect(result.summary).toContain("rows=8");
     expect(result.summary).toContain("table=impuesto_2cat");
@@ -20,7 +20,7 @@ describe("buildSummary extra keys", () => {
       endpoint: "https://www.sii.cl/consulta",
       status: 200,
       process: "currency_loader",
-      message: "API call"
+      message: "API call",
     });
     expect(result.summary).toContain("endpoint=https://www.sii.cl/consulta");
     expect(result.summary).toContain("status=200");
@@ -31,7 +31,7 @@ describe("buildSummary extra keys", () => {
       event: "MOVE_FILE_START",
       file: "AA00393.pdf",
       process: "cargas_sii",
-      message: "Moving file"
+      message: "Moving file",
     });
     expect(result.summary).toContain("file=AA00393.pdf");
   });
@@ -41,7 +41,7 @@ describe("buildSummary extra keys", () => {
       event: "INFO",
       message: "Operation completed",
       process: "worker",
-      source: "worker"
+      source: "worker",
     });
     expect(result.summary).toBe("INFO - Operation completed (worker)");
   });
@@ -50,7 +50,7 @@ describe("buildSummary extra keys", () => {
     const result = normalizeLogDocument({
       event: "INSERT",
       message: "No rows data",
-      process: "loader"
+      process: "loader",
     });
     expect(result.summary).toBe("INSERT - No rows data (loader)");
   });
@@ -58,7 +58,7 @@ describe("buildSummary extra keys", () => {
   it("no event produces same summary as before", () => {
     const result = normalizeLogDocument({
       message: "Plain message",
-      process: "worker"
+      process: "worker",
     });
     expect(result.summary).toBe("Plain message (worker)");
   });
@@ -69,7 +69,7 @@ describe("buildSummary extra keys", () => {
       event: "MOVE_FILE_START",
       file: longFile,
       process: "cargas_sii",
-      message: "Moving file"
+      message: "Moving file",
     });
     expect(result.summary).not.toContain("file=");
   });

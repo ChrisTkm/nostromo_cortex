@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { PROCESS_FALLBACK_THRESHOLD, buildExecutionGroups, buildLogJson, buildLogsCsvExport, buildLogsJsonExport, countLogsByLevel, detectRuns, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, shouldShowFilter, sortLogLevelKeys } from "./state";
-import type { LogRecord } from "../../logs";
+import {
+  PROCESS_FALLBACK_THRESHOLD,
+  buildExecutionGroups,
+  buildLogJson,
+  buildLogsCsvExport,
+  buildLogsJsonExport,
+  countLogsByLevel,
+  detectRuns,
+  getOldestLogTimestamp,
+  LOGS_PYTHON_SNIPPET,
+  mergeLogPages,
+  shouldShowFilter,
+  sortLogLevelKeys,
+} from "./state";
+import type { LogRecord } from "../../logs/normalize";
 
 function mockLog(overrides: Partial<LogRecord>): LogRecord {
   return {
@@ -12,7 +25,7 @@ function mockLog(overrides: Partial<LogRecord>): LogRecord {
     summary: "sum",
     timestamp: "2026-06-07T10:00:00.000Z",
     details: [],
-    ...overrides
+    ...overrides,
   } as LogRecord;
 }
 
@@ -23,7 +36,7 @@ describe("countLogsByLevel", () => {
       { level: "error" },
       { level: "INFO" },
       { level: "WARNING" },
-      { level: "ERROR" }
+      { level: "ERROR" },
     ] as any;
     expect(countLogsByLevel(logs)).toEqual({ ERROR: 3, INFO: 1, WARNING: 1 });
   });
@@ -35,7 +48,13 @@ describe("countLogsByLevel", () => {
 
 describe("sortLogLevelKeys", () => {
   it("places ERROR before WARNING before INFO before DEBUG; unknown goes last", () => {
-    const result = sortLogLevelKeys(["INFO", "CUSTOM", "DEBUG", "ERROR", "WARNING"]);
+    const result = sortLogLevelKeys([
+      "INFO",
+      "CUSTOM",
+      "DEBUG",
+      "ERROR",
+      "WARNING",
+    ]);
     expect(result).toEqual(["ERROR", "WARNING", "INFO", "DEBUG", "CUSTOM"]);
   });
 });
@@ -51,9 +70,7 @@ describe("buildLogJson", () => {
       folder: "nostromo",
       message: "hello",
       summary: "hello (nostromo.test)",
-      details: [
-        { key: "count", label: "Count", value: "42" }
-      ]
+      details: [{ key: "count", label: "Count", value: "42" }],
     };
     const json = buildLogJson(log as any);
     const parsed = JSON.parse(json);
@@ -84,7 +101,7 @@ describe("buildExecutionGroups", () => {
     const logs = [
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06" }),
-      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", day: "2026-06-05" })
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", day: "2026-06-05" }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(3);
@@ -100,7 +117,7 @@ describe("buildExecutionGroups", () => {
       mockLog({ timestamp: "2026-06-07T09:00:00.000Z", day: "2026-06-07" }),
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06" }),
-      mockLog({ timestamp: "2026-06-06T11:00:00.000Z", day: "2026-06-06" })
+      mockLog({ timestamp: "2026-06-06T11:00:00.000Z", day: "2026-06-06" }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(2);
@@ -112,9 +129,17 @@ describe("buildExecutionGroups", () => {
 
   it("mixed: executions + ungrouped subgroups interleaved by timestamp desc", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", day: "2026-06-08", executionId: "exec-late" }),
+      mockLog({
+        timestamp: "2026-06-08T10:00:00.000Z",
+        day: "2026-06-08",
+        executionId: "exec-late",
+      }),
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07" }),
-      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", day: "2026-06-06", executionId: "exec-early" })
+      mockLog({
+        timestamp: "2026-06-06T10:00:00.000Z",
+        day: "2026-06-06",
+        executionId: "exec-early",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(3);
@@ -125,8 +150,16 @@ describe("buildExecutionGroups", () => {
 
   it("only executions, no ungrouped → no isUngrouped groups", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-08T10:00:00.000Z", day: "2026-06-08", executionId: "a" }),
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07", executionId: "b" })
+      mockLog({
+        timestamp: "2026-06-08T10:00:00.000Z",
+        day: "2026-06-08",
+        executionId: "a",
+      }),
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        day: "2026-06-07",
+        executionId: "b",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups.every((g) => !g.isUngrouped)).toBe(true);
@@ -138,7 +171,7 @@ describe("buildExecutionGroups", () => {
   it("only ungrouped, all same day → 1 group", () => {
     const logs = [
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z" }),
-      mockLog({ timestamp: "2026-06-07T11:00:00.000Z" })
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z" }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(1);
@@ -153,8 +186,16 @@ describe("buildExecutionGroups", () => {
 
   it("subgroup contains correct beginTimestamp and endTimestamp", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-07T08:00:00.000Z", day: "2026-06-07", tag: "BEGIN" }),
-      mockLog({ timestamp: "2026-06-07T09:00:00.000Z", day: "2026-06-07", tag: "END" })
+      mockLog({
+        timestamp: "2026-06-07T08:00:00.000Z",
+        day: "2026-06-07",
+        tag: "BEGIN",
+      }),
+      mockLog({
+        timestamp: "2026-06-07T09:00:00.000Z",
+        day: "2026-06-07",
+        tag: "END",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.beginTimestamp).toBe("2026-06-07T08:00:00.000Z");
@@ -165,7 +206,7 @@ describe("buildExecutionGroups", () => {
     it("produces a valid JSON array string from an array of logs", () => {
       const logs = [
         mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "ERROR" }),
-        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" })
+        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" }),
       ];
       const result = buildLogsJsonExport(logs);
       const parsed = JSON.parse(result);
@@ -187,10 +228,10 @@ describe("buildExecutionGroups", () => {
 
     it("includes details array in each entry", () => {
       const logs = [
-        mockLog({ details: [{ key: "k", label: "K", value: "v" }] })
+        mockLog({ details: [{ key: "k", label: "K", value: "v" }] }),
       ];
       const result = buildLogsJsonExport(logs);
-      expect(result).toContain("\"details\"");
+      expect(result).toContain('"details"');
     });
   });
 
@@ -198,11 +239,13 @@ describe("buildExecutionGroups", () => {
     it("produces CSV with header and one row per log", () => {
       const logs = [
         mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "ERROR" }),
-        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" })
+        mockLog({ timestamp: "2026-06-07T11:00:00.000Z", level: "INFO" }),
       ];
       const result = buildLogsCsvExport(logs);
       const lines = result.split("\n");
-      expect(lines[0]).toBe("timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details");
+      expect(lines[0]).toBe(
+        "timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details",
+      );
       expect(lines[1]).toContain("2026-06-07T10:00:00.000Z");
       expect(lines[1]).toContain("ERROR");
       expect(lines).toHaveLength(3);
@@ -210,13 +253,15 @@ describe("buildExecutionGroups", () => {
 
     it("only returns header for empty array", () => {
       const result = buildLogsCsvExport([]);
-      expect(result).toBe("timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details");
+      expect(result).toBe(
+        "timestamp,level,source,folder,executionId,tag,event,className,methodName,process,loggerName,title,summary,message,day,details",
+      );
     });
 
     it("escapes commas and quotes in field values", () => {
       const logs = [
         mockLog({ summary: "hello, world" }),
-        mockLog({ message: 'say "hi"' })
+        mockLog({ message: 'say "hi"' }),
       ];
       const result = buildLogsCsvExport(logs);
       const lines = result.split("\n");
@@ -226,7 +271,9 @@ describe("buildExecutionGroups", () => {
 
     it("serializes details as JSON string in CSV", () => {
       const logs = [
-        mockLog({ details: [{ key: "host", label: "Host", value: "localhost" }] })
+        mockLog({
+          details: [{ key: "host", label: "Host", value: "localhost" }],
+        }),
       ];
       const result = buildLogsCsvExport(logs);
       const rows = result.split("\n");
@@ -236,7 +283,13 @@ describe("buildExecutionGroups", () => {
 
   it("preserves dominantTag and classMethod from representative log", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", day: "2026-06-07", level: "ERROR", className: "MyClass", methodName: "run" })
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        day: "2026-06-07",
+        level: "ERROR",
+        className: "MyClass",
+        methodName: "run",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.dominantTag).toBe("ERROR");
@@ -264,13 +317,20 @@ describe("buildExecutionGroups", () => {
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "sii_loader" }),
       mockLog({ timestamp: "2026-06-07T11:00:00.000Z", process: "cargas_sii" }),
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: "sii_loader" }),
-      mockLog({ timestamp: "2026-06-06T11:00:00.000Z", process: "previred_runner" }),
+      mockLog({
+        timestamp: "2026-06-06T11:00:00.000Z",
+        process: "previred_runner",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(3);
     const processGroups = groups.filter((g) => g.kind === "process");
     expect(processGroups).toHaveLength(3);
-    expect(processGroups.map((g) => g.label).sort()).toEqual(["cargas_sii", "previred_runner", "sii_loader"]);
+    expect(processGroups.map((g) => g.label).sort()).toEqual([
+      "cargas_sii",
+      "previred_runner",
+      "sii_loader",
+    ]);
     for (const group of processGroups) {
       expect(group.isUngrouped).toBe(false);
     }
@@ -281,8 +341,14 @@ describe("buildExecutionGroups", () => {
       mockLog({ timestamp: "2026-06-08T10:00:00.000Z", executionId: "exec-a" }),
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "loader" }),
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: "loader" }),
-      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", process: "transformer" }),
-      mockLog({ timestamp: "2026-06-04T10:00:00.000Z", process: "transformer" }),
+      mockLog({
+        timestamp: "2026-06-05T10:00:00.000Z",
+        process: "transformer",
+      }),
+      mockLog({
+        timestamp: "2026-06-04T10:00:00.000Z",
+        process: "transformer",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups).toHaveLength(3);
@@ -292,8 +358,16 @@ describe("buildExecutionGroups", () => {
 
   it("coverage 0 with no process nor loggerName falls to ungrouped by day", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: undefined, loggerName: undefined }),
-      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", process: undefined, loggerName: undefined }),
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        process: undefined,
+        loggerName: undefined,
+      }),
+      mockLog({
+        timestamp: "2026-06-06T10:00:00.000Z",
+        process: undefined,
+        loggerName: undefined,
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups.every((g) => g.kind === "ungrouped")).toBe(true);
@@ -413,8 +487,16 @@ describe("buildExecutionGroups", () => {
 
   it("process group with BEGIN/END populates runs", () => {
     const logs = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "my_loader", event: "BEGIN" }),
-      mockLog({ timestamp: "2026-06-07T10:05:00.000Z", process: "my_loader", event: "END" }),
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        process: "my_loader",
+        event: "BEGIN",
+      }),
+      mockLog({
+        timestamp: "2026-06-07T10:05:00.000Z",
+        process: "my_loader",
+        event: "END",
+      }),
     ];
     const groups = buildExecutionGroups(logs);
     expect(groups[0]!.runs).toBeDefined();
@@ -468,7 +550,7 @@ describe("getOldestLogTimestamp", () => {
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z" }),
       mockLog({ timestamp: "2026-06-05T10:00:00.000Z" }),
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z" }),
-      mockLog({ timestamp: "2026-06-04T10:00:00.000Z" })
+      mockLog({ timestamp: "2026-06-04T10:00:00.000Z" }),
     ];
     expect(getOldestLogTimestamp(logs)).toBe("2026-06-04T10:00:00.000Z");
   });
@@ -478,11 +560,11 @@ describe("mergeLogPages", () => {
   it("merges disjoint pages sorted desc by timestamp", () => {
     const existing = [
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
-      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" }),
     ];
     const incoming = [
       mockLog({ timestamp: "2026-06-05T10:00:00.000Z", id: "c" }),
-      mockLog({ timestamp: "2026-06-04T10:00:00.000Z", id: "d" })
+      mockLog({ timestamp: "2026-06-04T10:00:00.000Z", id: "d" }),
     ];
     const result = mergeLogPages(existing, incoming);
     expect(result).toHaveLength(4);
@@ -493,11 +575,11 @@ describe("mergeLogPages", () => {
   it("deduplicates by id when incoming has overlap", () => {
     const existing = [
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
-      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" }),
     ];
     const incoming = [
       mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" }),
-      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", id: "c" })
+      mockLog({ timestamp: "2026-06-05T10:00:00.000Z", id: "c" }),
     ];
     const result = mergeLogPages(existing, incoming);
     expect(result).toHaveLength(3);
@@ -507,7 +589,7 @@ describe("mergeLogPages", () => {
   it("merges into empty existing array", () => {
     const incoming = [
       mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
-      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" })
+      mockLog({ timestamp: "2026-06-06T10:00:00.000Z", id: "b" }),
     ];
     const result = mergeLogPages([], incoming);
     expect(result).toHaveLength(2);
@@ -516,7 +598,7 @@ describe("mergeLogPages", () => {
 
   it("returns existing unchanged when incoming is empty", () => {
     const existing = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" })
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", id: "a" }),
     ];
     const result = mergeLogPages(existing, []);
     expect(result).toHaveLength(1);
@@ -525,10 +607,20 @@ describe("mergeLogPages", () => {
 
   it("deduplicates by fallback key when id is absent", () => {
     const existing = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "INFO", source: "src", summary: "msg" })
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        level: "INFO",
+        source: "src",
+        summary: "msg",
+      }),
     ];
     const incoming = [
-      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", level: "INFO", source: "src", summary: "msg" })
+      mockLog({
+        timestamp: "2026-06-07T10:00:00.000Z",
+        level: "INFO",
+        source: "src",
+        summary: "msg",
+      }),
     ];
     const result = mergeLogPages(existing, incoming);
     expect(result).toHaveLength(1);

@@ -1,9 +1,9 @@
-import type { LogRecord } from "../../logs";
+import type { LogRecord } from "../../logs/normalize";
 
 export const TIME_RANGE_MS: Record<"1h" | "24h" | "7d", number> = {
   "1h": 60 * 60 * 1000,
   "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000
+  "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
 export const LOGS_PYTHON_SNIPPET = `from datetime import datetime, timezone
@@ -64,7 +64,14 @@ export type LogExecutionGroup = {
 
 export const PROCESS_FALLBACK_THRESHOLD = 0.25;
 
-export const LOG_LEVEL_ORDER = ["ERROR", "WARNING", "WARN", "INFO", "DEBUG", "TRACE"] as const;
+export const LOG_LEVEL_ORDER = [
+  "ERROR",
+  "WARNING",
+  "WARN",
+  "INFO",
+  "DEBUG",
+  "TRACE",
+] as const;
 
 export function countLogsByLevel(logs: LogRecord[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -88,18 +95,26 @@ export function sortLogLevelKeys(keys: string[]): string[] {
 }
 
 export function shouldShowFilter(values: string[]): boolean {
-  const real = values.filter((value) => value !== "all" && value.trim().length > 0);
+  const real = values.filter(
+    (value) => value !== "all" && value.trim().length > 0,
+  );
   return real.length >= 2;
 }
 
-export function filterLogsByTime(logs: LogRecord[], timeRange: "all" | "1h" | "24h" | "7d"): LogRecord[] {
+export function filterLogsByTime(
+  logs: LogRecord[],
+  timeRange: "all" | "1h" | "24h" | "7d",
+): LogRecord[] {
   if (timeRange === "all") return logs;
   const cutoff = Date.now() - TIME_RANGE_MS[timeRange];
   return logs.filter((entry) => new Date(entry.timestamp).getTime() >= cutoff);
 }
 
 export function buildLogKey(entry: LogRecord) {
-  return entry.id ?? `${entry.timestamp}:${entry.source}:${entry.level}:${entry.summary}`;
+  return (
+    entry.id ??
+    `${entry.timestamp}:${entry.source}:${entry.level}:${entry.summary}`
+  );
 }
 
 export function getOldestLogTimestamp(logs: LogRecord[]): string | null {
@@ -113,7 +128,10 @@ export function getOldestLogTimestamp(logs: LogRecord[]): string | null {
   return oldest;
 }
 
-export function mergeLogPages(existing: readonly LogRecord[], incoming: readonly LogRecord[]): LogRecord[] {
+export function mergeLogPages(
+  existing: readonly LogRecord[],
+  incoming: readonly LogRecord[],
+): LogRecord[] {
   const seen = new Set(existing.map((entry) => buildLogKey(entry)));
   const merged: LogRecord[] = [...existing];
   for (const entry of incoming) {
@@ -122,7 +140,9 @@ export function mergeLogPages(existing: readonly LogRecord[], incoming: readonly
     seen.add(key);
     merged.push(entry);
   }
-  return merged.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  return merged.sort((left, right) =>
+    right.timestamp.localeCompare(left.timestamp),
+  );
 }
 
 export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
@@ -156,7 +176,9 @@ export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
   const groups: LogExecutionGroup[] = [];
 
   for (const [executionId, entries] of byExecution) {
-    groups.push(buildExecutionGroup(executionId, entries, false, undefined, "execution"));
+    groups.push(
+      buildExecutionGroup(executionId, entries, false, undefined, "execution"),
+    );
   }
 
   if (useProcessFallback) {
@@ -166,27 +188,47 @@ export function buildExecutionGroups(logs: LogRecord[]): LogExecutionGroup[] {
   }
 
   for (const [day, entries] of ungroupedByDay) {
-    groups.push(buildExecutionGroup(`ungrouped:${day}`, entries, true, `ungrouped · ${day}`, "ungrouped"));
+    groups.push(
+      buildExecutionGroup(
+        `ungrouped:${day}`,
+        entries,
+        true,
+        `ungrouped · ${day}`,
+        "ungrouped",
+      ),
+    );
   }
 
-  return groups.sort((left, right) => right.beginTimestamp.localeCompare(left.beginTimestamp));
+  return groups.sort((left, right) =>
+    right.beginTimestamp.localeCompare(left.beginTimestamp),
+  );
 }
 
-export function coerceLogFilterValue(current: string, availableValues: string[]) {
+export function coerceLogFilterValue(
+  current: string,
+  availableValues: string[],
+) {
   if (current === "all") {
     return current;
   }
   return availableValues.includes(current) ? current : "all";
 }
 
-export function reconcileSelectedLogKey(current: string | null, logs: LogRecord[]) {
+export function reconcileSelectedLogKey(
+  current: string | null,
+  logs: LogRecord[],
+) {
   if (current && logs.some((entry) => buildLogKey(entry) === current)) {
     return current;
   }
   return logs[0] ? buildLogKey(logs[0]) : null;
 }
 
-export function getLogsEmptyState(logCount: number, filteredCount: number, hasActiveFilters: boolean) {
+export function getLogsEmptyState(
+  logCount: number,
+  filteredCount: number,
+  hasActiveFilters: boolean,
+) {
   if (logCount === 0) {
     return "empty";
   }
@@ -220,16 +262,21 @@ const CSV_COLUMNS = [
   "summary",
   "message",
   "day",
-  "details"
+  "details",
 ] as const;
 
 export function buildLogsCsvExport(logs: LogRecord[]): string {
   const header = CSV_COLUMNS.join(",");
-  const rows = logs.map((log) => CSV_COLUMNS.map((column) => csvCell(csvValue(log, column))).join(","));
+  const rows = logs.map((log) =>
+    CSV_COLUMNS.map((column) => csvCell(csvValue(log, column))).join(","),
+  );
   return [header, ...rows].join("\n");
 }
 
-function csvValue(log: LogRecord, column: (typeof CSV_COLUMNS)[number]): string {
+function csvValue(
+  log: LogRecord,
+  column: (typeof CSV_COLUMNS)[number],
+): string {
   if (column === "details") {
     return JSON.stringify(log.details ?? []);
   }
@@ -238,7 +285,12 @@ function csvValue(log: LogRecord, column: (typeof CSV_COLUMNS)[number]): string 
 }
 
 function csvCell(value: string): string {
-  if (value.includes(",") || value.includes("\"") || value.includes("\n") || value.includes("\r")) {
+  if (
+    value.includes(",") ||
+    value.includes('"') ||
+    value.includes("\n") ||
+    value.includes("\r")
+  ) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
@@ -251,12 +303,21 @@ function buildExecutionGroup(
   labelOverride?: string,
   kind: LogExecutionGroup["kind"] = isUngrouped ? "ungrouped" : "execution",
 ): LogExecutionGroup {
-  const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-  const begin = ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;
+  const ordered = [...entries].sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp),
+  );
+  const begin =
+    ordered.find((entry) => matchesTag(entry, "BEGIN")) ?? ordered[0]!;
   const end = [...ordered].reverse().find((entry) => matchesTag(entry, "END"));
   const newestFirst = [...ordered].reverse();
-  const representative = newestFirst.find((entry) => entry.className || entry.methodName || entry.source) ?? newestFirst[0]!;
-  const classMethod = [representative.className, representative.methodName].filter(Boolean).join(".") || representative.source;
+  const representative =
+    newestFirst.find(
+      (entry) => entry.className || entry.methodName || entry.source,
+    ) ?? newestFirst[0]!;
+  const classMethod =
+    [representative.className, representative.methodName]
+      .filter(Boolean)
+      .join(".") || representative.source;
   const dominantTag = getDominantTag(ordered);
   const durationMs = getDurationMs(begin.timestamp, end?.timestamp, end);
 
@@ -274,12 +335,20 @@ function buildExecutionGroup(
   };
 }
 
-function buildProcessGroup(processKey: string, entries: LogRecord[]): LogExecutionGroup {
-  const ordered = [...entries].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+function buildProcessGroup(
+  processKey: string,
+  entries: LogRecord[],
+): LogExecutionGroup {
+  const ordered = [...entries].sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp),
+  );
   const newestFirst = [...ordered].reverse();
   const dominantTag = getDominantTag(ordered);
   const representative = newestFirst[0]!;
-  const classMethod = [representative.className, representative.methodName].filter(Boolean).join(".") || processKey;
+  const classMethod =
+    [representative.className, representative.methodName]
+      .filter(Boolean)
+      .join(".") || processKey;
   const runs = detectRuns(ordered);
   return {
     id: `process:${processKey}`,
@@ -328,11 +397,17 @@ export function detectRuns(ordered: LogRecord[]): LogProcessRun[] | undefined {
   return runs.length > 0 ? runs : undefined;
 }
 
-function buildRun(index: number, entries: LogRecord[], isLoose: boolean): LogProcessRun {
+function buildRun(
+  index: number,
+  entries: LogRecord[],
+  isLoose: boolean,
+): LogProcessRun {
   const begin = entries[0]!;
   const last = entries[entries.length - 1]!;
   const endLog = matchesTag(last, "END") ? last : undefined;
-  const durationMs = endLog ? getDurationMs(begin.timestamp, endLog.timestamp, endLog) : undefined;
+  const durationMs = endLog
+    ? getDurationMs(begin.timestamp, endLog.timestamp, endLog)
+    : undefined;
   return {
     id: `run:${index}`,
     beginTimestamp: begin.timestamp,
@@ -346,17 +421,33 @@ function buildRun(index: number, entries: LogRecord[], isLoose: boolean): LogPro
 }
 
 function getDominantTag(logs: LogRecord[]) {
-  if (logs.some((entry) => entry.level === "ERROR" || matchesTag(entry, "ERROR"))) {
+  if (
+    logs.some((entry) => entry.level === "ERROR" || matchesTag(entry, "ERROR"))
+  ) {
     return "ERROR";
   }
-  if (logs.some((entry) => entry.level === "WARNING" || matchesTag(entry, "WARNING"))) {
+  if (
+    logs.some(
+      (entry) => entry.level === "WARNING" || matchesTag(entry, "WARNING"),
+    )
+  ) {
     return "WARNING";
   }
-  return logs.find((entry) => entry.tag)?.tag ?? logs.find((entry) => entry.event)?.event ?? "INFO";
+  return (
+    logs.find((entry) => entry.tag)?.tag ??
+    logs.find((entry) => entry.event)?.event ??
+    "INFO"
+  );
 }
 
-function getDurationMs(beginTimestamp: string, endTimestamp: string | undefined, endLog: LogRecord | undefined) {
-  const explicit = endLog?.details.find((detail) => detail.key === "duration_ms")?.value;
+function getDurationMs(
+  beginTimestamp: string,
+  endTimestamp: string | undefined,
+  endLog: LogRecord | undefined,
+) {
+  const explicit = endLog?.details.find(
+    (detail) => detail.key === "duration_ms",
+  )?.value;
   if (explicit && Number.isFinite(Number(explicit))) {
     return Number(explicit);
   }
@@ -365,7 +456,9 @@ function getDurationMs(beginTimestamp: string, endTimestamp: string | undefined,
   }
   const begin = new Date(beginTimestamp).getTime();
   const end = new Date(endTimestamp).getTime();
-  return Number.isFinite(begin) && Number.isFinite(end) && end >= begin ? end - begin : undefined;
+  return Number.isFinite(begin) && Number.isFinite(end) && end >= begin
+    ? end - begin
+    : undefined;
 }
 
 function matchesTag(entry: LogRecord, tag: string) {

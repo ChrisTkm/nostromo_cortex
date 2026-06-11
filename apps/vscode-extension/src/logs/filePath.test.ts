@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveLogsFilePath } from "./logsFilePath.js";
+import { resolveLogsFilePath } from "./filePath.js";
 
 describe("resolveLogsFilePath", () => {
   it("returns absolute path as-is", () => {
