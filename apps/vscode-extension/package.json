@@ -1,7 +1,7 @@
 {
-  "name": "cortex",
-  "displayName": "Cortex",
-  "publisher": "cortex-local",
+  "name": "cortex-local",
+  "displayName": "Cortex Local",
+  "publisher": "AlbornozStudio",
   "version": "0.1.5",
   "private": true,
   "type": "module",
