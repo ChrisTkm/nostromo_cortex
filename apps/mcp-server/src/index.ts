@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { createMongoTaskStore, loadConfig, stableStringify, type TaskFilter, TASK_SEVERITIES, TASK_STATUSES } from "@cortex/core";
+import { createMongoTaskStore, ensureAiAgentRuns, insertRun, loadConfig, queryAgentStats, queryRuns, stableStringify, type AgentRunQuery, type TaskFilter, TASK_SEVERITIES, TASK_STATUSES } from "@cortex/core";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { MongoClient } from "mongodb";
 import { z } from "zod";
 
 import { CortexApplicationService } from "./service.js";
@@ -49,6 +50,11 @@ async function main() {
   });
   const app = new CortexApplicationService(config, taskStore);
   await app.initialize();
+
+  const mongoClient = new MongoClient(config.mongoUrl);
+  await mongoClient.connect();
+  const db = mongoClient.db(config.mongoDbName);
+  await ensureAiAgentRuns(db);
 
   const server = new McpServer({
     name: "cortex",
@@ -142,6 +148,68 @@ async function main() {
           }
         )
       )
+  );
+
+  server.tool(
+    "record_run",
+    {
+      agent_slug: z.string().min(1),
+      task_codes: z.array(z.string()).default([]),
+      tokens_in: z.number().nonnegative().optional(),
+      tokens_out: z.number().nonnegative().optional(),
+      files: z.array(z.string()).default([]),
+      status: z.enum(["running", "completed", "failed"]).default("running")
+    },
+    async ({ agent_slug, task_codes, tokens_in, tokens_out, files, status }) => {
+      const id = `run-${randomUUID()}`;
+      await insertRun(db, {
+        id,
+        agent_slug,
+        started_at: new Date(),
+        task_codes,
+        files_touched: files,
+        commits: [],
+        ...(typeof tokens_in === "number" ? { tokens_in } : {}),
+        ...(typeof tokens_out === "number" ? { tokens_out } : {}),
+        status
+      });
+      return jsonContent({ id, status });
+    }
+  );
+
+  server.tool(
+    "query_runs",
+    {
+      agent_slug: z.string().optional(),
+      status: z.enum(["running", "completed", "failed"]).optional(),
+      limit: z.number().int().positive().max(200).default(50),
+      before_timestamp: z.string().optional()
+    },
+    async ({ agent_slug, status, limit, before_timestamp }) => {
+      const query: AgentRunQuery = { limit };
+      if (agent_slug) query.agentSlug = agent_slug;
+      if (status) query.status = status;
+      if (before_timestamp) query.beforeTimestamp = before_timestamp;
+      const runs = await queryRuns(db, query);
+      return jsonContent(runs);
+    }
+  );
+
+  server.tool(
+    "agent_stats",
+    {
+      agent_slug: z.string().optional(),
+      from: z.string().optional(),
+      to: z.string().optional()
+    },
+    async ({ agent_slug, from, to }) => {
+      const stats = await queryAgentStats(db, {
+        ...(agent_slug ? { agentSlug: agent_slug } : {}),
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {})
+      });
+      return jsonContent(stats);
+    }
   );
 
   server.tool("task_cycles", {}, async () =>

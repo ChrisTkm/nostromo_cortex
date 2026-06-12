@@ -5,8 +5,16 @@
   height: 100%;
   color: var(--cortex-text-strong);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--cortex-accent) 14%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--cortex-bg) 95%, #06080d 5%), var(--cortex-bg));
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--cortex-accent) 14%, transparent),
+      transparent 30%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--cortex-bg) 95%, #06080d 5%),
+      var(--cortex-bg)
+    );
   font-family: var(--cortex-font);
 }
 
@@ -36,7 +44,8 @@
 }
 
 .notes-sidebar {
-  border-right: 1px solid color-mix(in srgb, var(--cortex-border) 60%, transparent);
+  border-right: 1px solid
+    color-mix(in srgb, var(--cortex-border) 60%, transparent);
   background: color-mix(in srgb, var(--cortex-surface-strong) 92%, transparent);
   backdrop-filter: blur(14px);
 }
@@ -162,7 +171,8 @@
 .notes-textarea:focus {
   outline: none;
   border-color: var(--cortex-border-strong);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cortex-accent) 18%, transparent);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--cortex-accent) 18%, transparent);
 }
 
 .notes-textarea {
@@ -191,7 +201,11 @@
 }
 
 .notes-button--primary {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--cortex-accent) 18%, transparent), color-mix(in srgb, white 6%, transparent));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--cortex-accent) 18%, transparent),
+    color-mix(in srgb, white 6%, transparent)
+  );
   color: var(--cortex-text-strong);
 }
 
@@ -206,6 +220,7 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  padding-top: 2px;
   padding-right: 4px;
   justify-items: stretch;
 }
@@ -221,7 +236,10 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
 }
 
 .notes-app--list-only .notes-list__item {
@@ -230,13 +248,22 @@
 
 .notes-list__item:hover,
 .notes-list__item--selected {
-  border-color: color-mix(in srgb, var(--cortex-accent) 50%, var(--cortex-border));
-  background: color-mix(in srgb, var(--cortex-accent) 10%, var(--cortex-surface-strong));
+  border-color: color-mix(
+    in srgb,
+    var(--cortex-accent) 50%,
+    var(--cortex-border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--cortex-accent) 10%,
+    var(--cortex-surface-strong)
+  );
   transform: translateY(-1px);
 }
 
 .notes-list__item--selected {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cortex-accent) 24%, transparent);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--cortex-accent) 24%, transparent);
 }
 
 .notes-list__item-top,
@@ -557,7 +584,12 @@
 .notes-list__items,
 .notes-editor-panel {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 72%, transparent) transparent;
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--vscode-scrollbarSlider-background) 72%,
+      transparent
+    )
+    transparent;
 }
 
 .notes-list__items::-webkit-scrollbar,
@@ -569,7 +601,11 @@
 .notes-list__items::-webkit-scrollbar-thumb,
 .notes-editor-panel::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-scrollbarSlider-background) 72%,
+    transparent
+  );
 }
 
 @media (max-width: 880px) {
@@ -580,7 +616,8 @@
 
   .notes-sidebar {
     border-right: none;
-    border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 60%, transparent);
+    border-bottom: 1px solid
+      color-mix(in srgb, var(--cortex-border) 60%, transparent);
   }
 
   .note-editor__layout,

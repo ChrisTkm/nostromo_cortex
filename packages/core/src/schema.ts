@@ -2,10 +2,15 @@ import { z } from "zod";
 
 import {
   PLAN_STATUSES,
+  TASK_AGENTS,
   TASK_SEVERITIES,
   TASK_STATUSES,
   type ActionPlanDocument,
   type ActionPlanRecord,
+  type AgentRunDocument,
+  type AgentRunRecord,
+  type AiAgentDocument,
+  type AiAgentRecord,
   type NoteDocumentInput,
   type NoteRecord,
   type TaskDocumentInput,
@@ -44,7 +49,7 @@ const taskSchema = z.preprocess((input) => {
   short_task: z.string().min(1),
   detail: z.string().default(""),
   status: z.enum(TASK_STATUSES),
-  agent: z.string().min(1),
+  agent: z.enum(TASK_AGENTS).or(z.string().min(1)),
   severity: z.enum(TASK_SEVERITIES),
   tags: z.array(z.string()).default([]),
   depends_on: z.array(z.string()).default([]),
@@ -56,6 +61,8 @@ const taskSchema = z.preprocess((input) => {
   prompt: z.string().optional().nullable(),
   acceptance: z.string().optional().nullable(),
   out_of_scope: z.string().optional().nullable(),
+  started_at: z.union([z.string(), z.date()]).optional().nullable(),
+  completed_at: z.union([z.string(), z.date()]).optional().nullable(),
   created_at: z.union([z.string(), z.date()]).optional(),
   updated_at: z.union([z.string(), z.date()]).optional()
 }));
@@ -116,6 +123,10 @@ const actionPlanSchema = z.preprocess((input) => {
     failed: 0
   }),
   current_task_code: z.string().optional().nullable(),
+  /** Persona que crea o lidera el plan. */
+  author: z.string().optional(),
+  /** Agente IA asignado al plan (slug del catálogo ai_agents). */
+  assigned_agent: z.enum(TASK_AGENTS).optional(),
   notes: z.string().optional().nullable(),
   created_at: z.union([z.string(), z.date()]).optional(),
   updated_at: z.union([z.string(), z.date()]).optional(),
@@ -152,8 +163,46 @@ const noteSchema = z.preprocess((input) => {
   updated_at: z.union([z.string(), z.date()]).optional()
 }));
 
+const aiAgentSchema = z.object({
+  _id: z.unknown().optional(),
+  slug: z.string().min(1),
+  display_name: z.string().min(1),
+  vendor: z.string().min(1),
+  model_family: z.string().optional(),
+  icon_path: z.string().optional().nullable(),
+  active: z.boolean().default(true),
+  created_at: z.union([z.string(), z.date()]).optional(),
+  updated_at: z.union([z.string(), z.date()]).optional()
+});
+
+const agentRunSchema = z.object({
+  _id: z.unknown().optional(),
+  id: z.string().min(1),
+  agent_slug: z.string().min(1),
+  model_id: z.string().optional().nullable(),
+  started_at: z.union([z.string(), z.date()]),
+  ended_at: z.union([z.string(), z.date()]).optional().nullable(),
+  task_codes: z.array(z.string()).default([]),
+  files_touched: z.array(z.string()).default([]),
+  commits: z.array(z.string()).default([]),
+  tokens_in: z.number().nonnegative().optional().nullable(),
+  tokens_out: z.number().nonnegative().optional().nullable(),
+  cost_usd: z.number().nonnegative().optional().nullable(),
+  status: z.enum(["running", "completed", "failed"]),
+  notes: z.string().optional().nullable(),
+  created_at: z.union([z.string(), z.date()]).optional(),
+  updated_at: z.union([z.string(), z.date()]).optional()
+});
+
 function normalizeIsoDate(value: string | Date | undefined): string {
   return value ? new Date(value).toISOString() : new Date().toISOString();
+}
+
+function normalizeNullableIsoDate(
+  value: string | Date | null | undefined
+): string | null {
+  if (value === null || typeof value === "undefined") return null;
+  return new Date(value).toISOString();
 }
 
 function normalizeOptionalIsoDate(
@@ -211,6 +260,8 @@ export function normalizeTaskDocument(input: TaskDocumentInput): TaskRecord {
     ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
     ...(parsed.acceptance ? { acceptance: parsed.acceptance } : {}),
     ...(parsed.out_of_scope ? { outOfScope: parsed.out_of_scope } : {}),
+    ...(parsed.started_at === null ? { startedAt: null } : parsed.started_at ? { startedAt: normalizeIsoDate(parsed.started_at) } : {}),
+    ...(parsed.completed_at === null ? { completedAt: null } : parsed.completed_at ? { completedAt: normalizeIsoDate(parsed.completed_at) } : {}),
     createdAt: normalizeIsoDate(parsed.created_at),
     updatedAt: normalizeIsoDate(parsed.updated_at)
   };
@@ -237,6 +288,8 @@ export function normalizeActionPlan(input: ActionPlanDocument): ActionPlanRecord
       failed: parsed.progress.failed
     },
     ...(parsed.current_task_code ? { currentTaskCode: parsed.current_task_code.trim() } : {}),
+    ...(parsed.author ? { author: parsed.author.trim() } : {}),
+    ...(parsed.assigned_agent ? { assignedAgent: parsed.assigned_agent } : {}),
     ...(parsed.notes ? { notes: parsed.notes.trim() } : {}),
     createdAt: normalizeIsoDate(parsed.created_at),
     updatedAt: normalizeIsoDate(parsed.updated_at),
@@ -261,6 +314,43 @@ export function normalizeNote(input: NoteDocumentInput): NoteRecord {
     pinned: Boolean(parsed.pinned),
     ...(remindAt ? { remindAt } : {}),
     ...(remindedAt ? { remindedAt } : {}),
+    createdAt: normalizeIsoDate(parsed.created_at),
+    updatedAt: normalizeIsoDate(parsed.updated_at)
+  };
+}
+
+export function normalizeAiAgentDocument(input: AiAgentDocument): AiAgentRecord {
+  const parsed = aiAgentSchema.parse(input);
+  return {
+    ...(parsed._id ? { id: String(parsed._id) } : {}),
+    slug: parsed.slug.trim(),
+    displayName: parsed.display_name.trim(),
+    vendor: parsed.vendor.trim(),
+    ...(parsed.model_family ? { modelFamily: parsed.model_family.trim() } : {}),
+    ...(typeof parsed.icon_path === "string" ? { iconPath: parsed.icon_path.trim() } : { iconPath: null }),
+    active: parsed.active,
+    createdAt: normalizeIsoDate(parsed.created_at),
+    updatedAt: normalizeIsoDate(parsed.updated_at)
+  };
+}
+
+export function normalizeAgentRunDocument(input: AgentRunDocument): AgentRunRecord {
+  const parsed = agentRunSchema.parse(input);
+  return {
+    ...(parsed._id ? { id: String(parsed._id) } : {}),
+    id: parsed.id,
+    agentSlug: parsed.agent_slug.trim(),
+    ...(parsed.model_id ? { modelId: parsed.model_id.trim() } : {}),
+    startedAt: normalizeIsoDate(parsed.started_at),
+    endedAt: normalizeNullableIsoDate(parsed.ended_at),
+    taskCodes: [...parsed.task_codes],
+    filesTouched: [...parsed.files_touched],
+    commits: [...parsed.commits],
+    ...(typeof parsed.tokens_in === "number" ? { tokensIn: parsed.tokens_in } : {}),
+    ...(typeof parsed.tokens_out === "number" ? { tokensOut: parsed.tokens_out } : {}),
+    ...(typeof parsed.cost_usd === "number" ? { costUsd: parsed.cost_usd } : {}),
+    status: parsed.status,
+    ...(parsed.notes ? { notes: parsed.notes.trim() } : {}),
     createdAt: normalizeIsoDate(parsed.created_at),
     updatedAt: normalizeIsoDate(parsed.updated_at)
   };

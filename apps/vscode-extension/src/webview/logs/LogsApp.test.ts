@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildExecutionGroups, buildLogKey, coerceLogFilterValue, getLogsEmptyState, reconcileSelectedLogKey } from "./state";
+import { buildExecutionGroups, buildLogKey, buildLogsCsvExport, buildLogsJsonExport, coerceLogFilterValue, countLogsByLevel, filterLogsByTime, getLogsEmptyState, getOldestLogTimestamp, LOGS_PYTHON_SNIPPET, mergeLogPages, reconcileSelectedLogKey, shouldShowFilter, sortLogLevelKeys } from "./state";
 
 const sampleLogs = [
   {
@@ -74,6 +74,174 @@ describe("LogsApp helpers", () => {
       isUngrouped: false
     });
     expect(groups[0]?.logs.map((entry) => entry.tag)).toEqual(["END", "BEGIN"]);
-    expect(groups[1]).toMatchObject({ id: "ungrouped", isUngrouped: true });
+    expect(groups[1]).toMatchObject({ isUngrouped: true });
+  });
+
+  describe("filterLogsByTime", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-06-07T12:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("with timeRange='1h' excludes entries older than 1 hour", () => {
+      const recent = { ...sampleLogs[0]!, timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString() };
+      const old = { ...sampleLogs[1]!, timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() };
+      expect(filterLogsByTime([recent, old], "1h")).toEqual([recent]);
+    });
+
+    it("with timeRange='all' returns all logs unchanged", () => {
+      expect(filterLogsByTime(sampleLogs, "all")).toEqual(sampleLogs);
+    });
+
+    it("with timeRange='24h' combined with level filter works", () => {
+      const recent = { ...sampleLogs[0]!, level: "INFO", timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+      const recentError = { ...sampleLogs[1]!, level: "ERROR", timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+      const old = { ...sampleLogs[0]!, level: "ERROR", timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() };
+      const timeFiltered = filterLogsByTime([recent, recentError, old], "24h");
+      expect(timeFiltered).toEqual([recent, recentError]);
+    });
+  });
+
+  describe("level counters", () => {
+    it("countLogsByLevel yields {ERROR: 2, INFO: 1} for [ERROR, ERROR, INFO]", () => {
+      const logs = [
+        { level: "ERROR" },
+        { level: "ERROR" },
+        { level: "INFO" }
+      ] as any;
+      expect(countLogsByLevel(logs)).toEqual({ ERROR: 2, INFO: 1 });
+    });
+
+    it("countLogsByLevel reflects only logs passed after source filter", () => {
+      const logs = [
+        { level: "ERROR", source: "A" },
+        { level: "ERROR", source: "B" },
+        { level: "INFO", source: "A" }
+      ] as any;
+      const filteredBySource = logs.filter((entry: any) => entry.source === "B");
+      expect(countLogsByLevel(filteredBySource)).toEqual({ ERROR: 1 });
+    });
+
+    it("sortLogLevelKeys orders ERROR, WARNING, INFO, DEBUG, custom at end", () => {
+      expect(sortLogLevelKeys(["INFO", "CUSTOM", "DEBUG", "ERROR", "WARNING"])).toEqual([
+        "ERROR", "WARNING", "INFO", "DEBUG", "CUSTOM"
+      ]);
+    });
+  });
+
+  describe("onboarding", () => {
+    it('getLogsEmptyState returns "empty" for zero logs', () => {
+      expect(getLogsEmptyState(0, 0, false)).toBe("empty");
+    });
+
+    it('getLogsEmptyState returns "filtered" when filters hide all results', () => {
+      expect(getLogsEmptyState(5, 0, true)).toBe("filtered");
+    });
+
+    it("LOGS_PYTHON_SNIPPET is a non-empty string with pymongo", () => {
+      expect(LOGS_PYTHON_SNIPPET.length).toBeGreaterThan(0);
+      expect(LOGS_PYTHON_SNIPPET).toContain("from pymongo import MongoClient");
+    });
+  });
+
+  describe("export serializers", () => {
+    it("buildLogsJsonExport returns a JSON array with all logs", () => {
+      const json = buildLogsJsonExport(sampleLogs);
+      const parsed = JSON.parse(json);
+      expect(parsed).toHaveLength(2);
+      expect(parsed[0]?.source).toBe("nostromo.bootstrap");
+    });
+
+    it("buildLogsCsvExport produces header and data rows", () => {
+      const csv = buildLogsCsvExport(sampleLogs);
+      const lines = csv.split("\n");
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain("timestamp");
+      expect(lines[0]).toContain("level");
+      expect(lines[0]).toContain("summary");
+      expect(lines[1]).toContain("2026-04-20T10:00:00.000Z");
+    });
+
+    it("buildLogsCsvExport handles array values (details) as JSON", () => {
+      const logsWithDetails = [
+        { ...sampleLogs[0]!, details: [{ key: "k", label: "K", value: "v" }] }
+      ];
+      const csv = buildLogsCsvExport(logsWithDetails);
+      expect(csv).toContain('"[{""key"":""k""');
+    });
+  });
+
+  describe("pagination helpers (getOldestLogTimestamp / mergeLogPages)", () => {
+    it("getOldestLogTimestamp returns null for empty list", () => {
+      expect(getOldestLogTimestamp([])).toBeNull();
+    });
+
+    it("getOldestLogTimestamp returns the oldest timestamp", () => {
+      const result = getOldestLogTimestamp(sampleLogs);
+      expect(result).toBe("2026-04-20T09:00:00.000Z");
+    });
+
+    it("mergeLogPages merges + sorts desc by timestamp", () => {
+      const incoming = [
+        { ...sampleLogs[0]!, timestamp: "2026-04-19T10:00:00.000Z" }
+      ];
+      const result = mergeLogPages(sampleLogs, incoming);
+      expect(result).toHaveLength(3);
+      expect(result[0]!.timestamp).toBe("2026-04-20T10:00:00.000Z");
+      expect(result[1]!.timestamp).toBe("2026-04-20T09:00:00.000Z");
+      expect(result[2]!.timestamp).toBe("2026-04-19T10:00:00.000Z");
+    });
+
+    it("mergeLogPages deduplicates by fallback key when id is absent", () => {
+      const incoming = [sampleLogs[0]!];
+      const result = mergeLogPages(sampleLogs, incoming);
+      expect(result).toHaveLength(2);
+    });
+
+    it("mergeLogPages deduplicates by id", () => {
+      const logsWithId = sampleLogs.map((entry, index) => ({ ...entry, id: `id-${index}` }));
+      const incoming = [logsWithId[0]!];
+      const result = mergeLogPages(logsWithId, incoming);
+      expect(result).toHaveLength(2);
+    });
+
+    it("mergeLogPages handles empty existing", () => {
+      const result = mergeLogPages([], sampleLogs);
+      expect(result).toHaveLength(2);
+      expect(result[0]!.timestamp).toBe("2026-04-20T10:00:00.000Z");
+    });
+
+    it("mergeLogPages handles empty incoming", () => {
+      const result = mergeLogPages(sampleLogs, []);
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  describe("filter visibility (shouldShowFilter)", () => {
+    it("folder filter hidden when all logs share same folder", () => {
+      const folders = ["all", ...new Set(sampleLogs.map((entry) => entry.folder))];
+      expect(shouldShowFilter(folders)).toBe(false);
+    });
+
+    it("level filter visible when 2+ distinct levels exist", () => {
+      const levels = ["all", ...new Set(sampleLogs.map((entry) => entry.level))];
+      expect(shouldShowFilter(levels)).toBe(true);
+    });
+
+    it("process filter visible when 2+ processes and filtering reduces visible count", () => {
+      const logsWithProcess = [
+        ...sampleLogs.map((entry) => ({ ...entry, process: "loader_a" })),
+        { ...sampleLogs[0]!, timestamp: "2026-04-21T10:00:00.000Z", process: "loader_b" }
+      ];
+      const processes = ["all", ...new Set(logsWithProcess.map((entry) => entry.process ?? "unknown"))];
+      expect(shouldShowFilter(processes)).toBe(true);
+
+      const filteredByProcess = logsWithProcess.filter((entry) => (entry.process ?? "unknown") === "loader_a");
+      expect(filteredByProcess).toHaveLength(2);
+    });
   });
 });

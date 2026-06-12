@@ -21,7 +21,8 @@
   position: sticky;
   top: 0;
   z-index: var(--z-toolbar);
-  border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 50%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--cortex-border) 50%, transparent);
   background: color-mix(in srgb, var(--cortex-bg) 96%, transparent);
   box-shadow: none;
   backdrop-filter: blur(14px);
@@ -44,7 +45,10 @@
   color: var(--cortex-text);
   cursor: pointer;
   font-size: var(--cortex-text-xs);
-  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
 }
 
 .app-toolbar__button:hover {
@@ -53,7 +57,11 @@
 }
 
 .app-toolbar__button--active {
-  border-bottom-color: color-mix(in srgb, var(--cortex-accent) 55%, transparent);
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--cortex-accent) 55%,
+    transparent
+  );
   color: var(--cortex-accent);
 }
 
@@ -139,10 +147,79 @@
   overflow: hidden;
 }
 
+.onboarding-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 12px;
+  max-width: 620px;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+.onboarding-state__eyebrow {
+  color: var(--cortex-accent);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.onboarding-state__title {
+  margin: 0;
+  color: var(--cortex-text-strong);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.onboarding-state__text,
+.onboarding-state__hint {
+  margin: 0;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-sm);
+  line-height: 1.5;
+}
+
+.onboarding-state__hint {
+  color: var(--cortex-text-faint);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+}
+
+.onboarding-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.onboarding-state__button {
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 70%, transparent);
+  border-radius: var(--cortex-radius-sm);
+  padding: 8px 10px;
+  background: color-mix(in srgb, white 3%, transparent);
+  color: var(--cortex-text);
+  cursor: pointer;
+  font-size: var(--cortex-text-sm);
+}
+
+.onboarding-state__button:hover {
+  border-color: var(--cortex-border-strong);
+  color: var(--cortex-accent);
+}
+
+.onboarding-state__button--primary {
+  border-color: color-mix(in srgb, var(--cortex-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
+  color: var(--cortex-accent);
+}
+
 .graph-warning-banner {
   width: 100%;
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--status-blocked) 28%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--status-blocked) 28%, transparent);
   padding: 6px 10px;
   background: color-mix(in srgb, var(--status-blocked) 10%, var(--cortex-bg));
   color: var(--cortex-text);
@@ -160,7 +237,8 @@
   display: grid;
   gap: 6px;
   padding: 8px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 50%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--cortex-border) 50%, transparent);
   background: color-mix(in srgb, var(--cortex-bg) 98%, transparent);
 }
 
@@ -283,7 +361,11 @@
 .plan-banner__progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--status-done) 90%, white 10%), var(--cortex-accent));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--status-done) 90%, white 10%),
+    var(--cortex-accent)
+  );
   box-shadow: 0 0 18px color-mix(in srgb, var(--cortex-accent) 24%, transparent);
   transition: width 220ms ease;
 }
@@ -309,8 +391,11 @@
 
 .react-flow {
   z-index: var(--z-graph);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--cortex-bg) 98%, rgba(255, 255, 255, 0.02)), var(--cortex-bg));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--cortex-bg) 98%, rgba(255, 255, 255, 0.02)),
+    var(--cortex-bg)
+  );
 }
 
 .react-flow__controls,
@@ -343,25 +428,80 @@
   0%,
   100% {
     opacity: 0.78;
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent-cyan) 72%, transparent));
+    filter: drop-shadow(
+      0 0 3px color-mix(in srgb, var(--accent-cyan) 72%, transparent)
+    );
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-cyan) 88%, transparent));
+    filter: drop-shadow(
+      0 0 6px color-mix(in srgb, var(--accent-cyan) 88%, transparent)
+    );
   }
+}
+
+.react-flow__edge.edge-critical-path .react-flow__edge-path {
+  stroke: #f59e0b;
+  stroke-width: 2.6;
+  stroke-dasharray: 8 4;
+  animation: edge-critical-path-dash 1.6s linear infinite;
+}
+
+.react-flow__edge.edge-critical-path .react-flow__edge-interaction {
+  stroke: transparent;
+  stroke-width: 18;
+}
+
+@keyframes edge-critical-path-dash {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.react-flow__attribution {
+  background: transparent !important;
+}
+
+.react-flow__attribution a {
+  color: #ff0073;
+  font-weight: 300;
 }
 
 .task-node {
   position: relative;
-  min-width: 244px;
-  min-height: 112px;
+  width: 244px;
+  height: 140px;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 12px;
   border: 1px solid var(--vscode-widget-border);
   border-radius: 16px;
   background: var(--vscode-editorWidget-background);
   box-shadow: var(--cortex-shadow);
   backdrop-filter: blur(12px);
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.task-node--status-pending {
+  border-color: var(--status-pending);
+}
+.task-node--status-in-progress {
+  border-color: var(--status-in-progress);
+}
+.task-node--status-done {
+  border-color: var(--status-done);
+}
+.task-node--status-blocked {
+  border-color: var(--status-blocked);
+}
+.task-node--status-failed {
+  border-color: var(--status-failed);
 }
 
 .task-node:hover {
@@ -370,13 +510,18 @@
 
 .task-node--selected {
   border-color: var(--cortex-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cortex-accent) 24%, transparent), var(--cortex-shadow);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--cortex-accent) 24%, transparent),
+    var(--cortex-shadow);
 }
 
 .current-task {
   border-width: 2px;
   border-color: var(--cortex-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cortex-accent) 30%, transparent), 0 0 20px color-mix(in srgb, var(--cortex-accent) 14%, transparent), var(--cortex-shadow);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cortex-accent) 30%, transparent),
+    0 0 20px color-mix(in srgb, var(--cortex-accent) 14%, transparent),
+    var(--cortex-shadow);
 }
 
 .task-node__header {
@@ -399,6 +544,11 @@
   font-size: var(--cortex-text-sm);
   font-weight: 700;
   line-height: var(--cortex-line-height);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .task-node__lane,
@@ -476,6 +626,18 @@
   background: #94a3b8;
 }
 
+.task-node__agent-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cortex-surface-strong) 90%, transparent);
+  padding: 2px;
+  pointer-events: none;
+}
+
 .filter-chip {
   position: relative;
   flex: 0 0 auto;
@@ -520,7 +682,8 @@
   display: grid;
   gap: 8px;
   padding-bottom: 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 50%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--cortex-border) 50%, transparent);
 }
 
 .toolbar-more__section:last-child {
@@ -567,7 +730,8 @@
 
 .plan-filter-option--selected {
   border-color: var(--cortex-border-strong);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cortex-accent) 18%, transparent);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--cortex-accent) 18%, transparent);
 }
 
 .plan-filter-option__row {
@@ -767,7 +931,12 @@
 
 .drawer-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cortex-border), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cortex-border),
+    transparent
+  );
 }
 
 .drawer-card {
@@ -966,7 +1135,8 @@
   min-height: var(--chrome-status-bar-height);
   margin: 0;
   padding: 3px 8px;
-  border-top: 1px solid color-mix(in srgb, var(--cortex-border) 50%, transparent);
+  border-top: 1px solid
+    color-mix(in srgb, var(--cortex-border) 50%, transparent);
   background: color-mix(in srgb, var(--cortex-bg) 96%, transparent);
   backdrop-filter: blur(16px);
 }
@@ -1131,7 +1301,12 @@
 .prompt-panel__content,
 .drawer-prompt {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 72%, transparent) transparent;
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--vscode-scrollbarSlider-background) 72%,
+      transparent
+    )
+    transparent;
 }
 
 .app-drawer__body::-webkit-scrollbar,
@@ -1147,7 +1322,11 @@
 .prompt-panel__content::-webkit-scrollbar-thumb,
 .drawer-prompt::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-scrollbarSlider-background) 72%,
+    transparent
+  );
 }
 
 .app-drawer__body::-webkit-scrollbar-track,
@@ -1155,4 +1334,22 @@
 .prompt-panel__content::-webkit-scrollbar-track,
 .drawer-prompt::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.lane-node {
+  background: color-mix(in srgb, var(--cortex-surface) 60%, transparent);
+  border: 1px dashed var(--vscode-widget-border);
+  border-radius: 12px;
+  position: relative;
+  pointer-events: none;
+}
+.lane-node__label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }

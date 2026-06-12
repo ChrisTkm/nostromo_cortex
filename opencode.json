@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "cortex": {
+      "type": "local",
+      "command": ["node", "C:/dev/Cortex/apps/mcp-server/dist/index.js"],
+      "enabled": true,
+      "environment": {
+        "MONGO_URL": "mongodb://127.0.0.1:27017",
+        "MONGO_DB_NAME": "nostromo_cortex",
+        "MONGO_TASKS_COLLECTION": "tasks",
+        "TELEMETRY_BACKEND": "jsonl",
+        "TELEMETRY_JSONL_PATH": "C:/dev/Cortex/data/telemetry/cortex-telemetry.jsonl"
+      }
+    },
+    "mongodb": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "mongodb-mcp-server",
+        "--connectionString",
+        "mongodb://127.0.0.1:27017"
+      ],
+      "enabled": true
+    }
+  }
+}

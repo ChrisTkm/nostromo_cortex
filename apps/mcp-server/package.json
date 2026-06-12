@@ -6,13 +6,14 @@
   "main": "./dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm",
+    "build": "tsup src/index.ts --format esm --external mongodb",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
     "@cortex/core": "workspace:*",
     "@cortex/telemetry": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "mongodb": "^6.21.0",
     "zod": "^3.24.4"
   },
   "devDependencies": {

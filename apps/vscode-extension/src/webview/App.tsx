@@ -6,7 +6,8 @@ import { Graph } from "./components/Graph";
 import { PlanBanner } from "./components/PlanBanner";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import type { ActionPlanRecord, FilterCatalog, GraphDirection, GraphSnapshot, PlanTaskSummary, SnapshotMessage, SnapshotNode, TaskFilter } from "./types";
+import type { ActionPlanRecord, CriticalPathResult, FilterCatalog, GraphDirection, GraphSnapshot, PlanTaskSummary, SnapshotMessage, SnapshotNode, TaskFilter } from "./types";
+import { toPng, toSvg } from "html-to-image";
 
 declare global {
   interface Window {
@@ -20,12 +21,33 @@ declare global {
 
 const vscode = window.acquireVsCodeApi();
 
+async function exportGraph(format: "png" | "svg", planCodeForName: string | undefined) {
+  const element = document.querySelector<HTMLElement>(".app-graph .react-flow");
+  if (!element) return;
+
+  const backgroundColor = window.getComputedStyle(element).backgroundColor || "#0d1117";
+
+  const dataUrl = format === "png"
+    ? await toPng(element, { backgroundColor, pixelRatio: 2, cacheBust: true })
+    : await toSvg(element, { backgroundColor, cacheBust: true });
+
+  const planSlug = (planCodeForName ?? "all").toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `cortex-graph-${planSlug}-${stamp}.${format}`;
+
+  const link = document.createElement("a");
+  link.download = filename;
+  link.href = dataUrl;
+  link.click();
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
   const [plans, setPlans] = useState<ActionPlanRecord[]>([]);
   const [planTasks, setPlanTasks] = useState<Record<string, PlanTaskSummary[]>>({});
   const [orientation, setOrientation] = useState<GraphDirection>("LR");
   const [showMiniMap, setShowMiniMap] = useState(true);
+  const [groupByLane, setGroupByLane] = useState(false);
   const [selectedTaskCode, setSelectedTaskCode] = useState<string | undefined>();
   const [totalTaskCount, setTotalTaskCount] = useState(0);
   const [viewport, setViewport] = useState<{ zoom?: number; pan?: { x: number; y: number } }>({});
@@ -37,6 +59,7 @@ export function App() {
     statuses: [],
     severities: []
   });
+  const [criticalPath, setCriticalPath] = useState<CriticalPathResult | undefined>();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"inspector" | "filters">("inspector");
   const [viewerPlanCode, setViewerPlanCode] = useState<string | undefined>();
@@ -44,8 +67,10 @@ export function App() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [planFocusRequest, setPlanFocusRequest] = useState<{ code: string; nonce: number } | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [agentIconBase, setAgentIconBase] = useState<string | undefined>(undefined);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const lastPlanTaskCodeRef = useRef<string | undefined>();
+  const viewportPostRef = useRef<number | undefined>(undefined);
 
   const selectedNode = useMemo<SnapshotNode | undefined>(
     () => snapshot?.nodes.find((node) => node.code === selectedTaskCode || node.id === selectedTaskCode),
@@ -66,6 +91,7 @@ export function App() {
       setTotalTaskCount(event.data.totals.totalTaskCount);
       setOrientation(event.data.state.orientation);
       setShowMiniMap(event.data.state.showMiniMap);
+      setGroupByLane(event.data.state.groupByLane ?? false);
       setSelectedTaskCode(event.data.state.selectedTaskCode);
       setViewport({
         zoom: event.data.state.zoom,
@@ -73,6 +99,8 @@ export function App() {
       });
       setFilters(normalizeFilter(event.data.snapshot.filters));
       setCatalog(event.data.catalog);
+      setCriticalPath(event.data.criticalPath);
+      setAgentIconBase(event.data.agentIconBase);
 
       const currentTaskCode = event.data.snapshot.planContext?.currentTaskCode;
       if (currentTaskCode && currentTaskCode !== lastPlanTaskCodeRef.current) {
@@ -112,6 +140,14 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [promptExpanded, viewerPlanCode]);
 
+  useEffect(() => {
+    return () => {
+      if (viewportPostRef.current !== undefined) {
+        window.clearTimeout(viewportPostRef.current);
+      }
+    };
+  }, []);
+
   function handleSelectTask(code: string) {
     setSelectedTaskCode(code);
     setCenterTaskCode(code);
@@ -127,7 +163,13 @@ export function App() {
 
   function handleViewportChange(zoom: number, pan: { x: number; y: number }) {
     setViewport({ zoom, pan });
-    vscode.postMessage({ type: "viewportChanged", zoom, pan });
+    if (viewportPostRef.current !== undefined) {
+      window.clearTimeout(viewportPostRef.current);
+    }
+    viewportPostRef.current = window.setTimeout(() => {
+      vscode.postMessage({ type: "viewportChanged", zoom, pan });
+      viewportPostRef.current = undefined;
+    }, 200);
   }
 
   function handleFilterChange(next: TaskFilter) {
@@ -207,16 +249,45 @@ export function App() {
     });
   }
 
+  function handleToggleLanes() {
+    setGroupByLane((current) => {
+      const next = !current;
+      vscode.postMessage({ type: "toggleGroupByLane", groupByLane: next });
+      return next;
+    });
+  }
+
   function handleRefreshGraph() {
     setIsRefreshing(true);
     vscode.postMessage({ type: "refresh" });
+  }
+
+  function handleBootstrapDatabase() {
+    vscode.postMessage({ type: "bootstrapDatabase" });
+  }
+
+  function handleSelectDatabase() {
+    vscode.postMessage({ type: "selectDatabase" });
+  }
+
+  function handleCreateTask() {
+    vscode.postMessage({ type: "newTask" });
   }
 
   function handleShowOrphanWarnings() {
     vscode.postMessage({ type: "showOrphanWarnings" });
   }
 
+  function handleExportPng() {
+    void exportGraph("png", snapshot?.planContext?.code ?? filters.planCode);
+  }
+
+  function handleExportSvg() {
+    void exportGraph("svg", snapshot?.planContext?.code ?? filters.planCode);
+  }
+
   const orphanCount = snapshot?.warnings?.orphans.length ?? 0;
+  const showOnboarding = Boolean(snapshot && totalTaskCount === 0);
 
   return (
     <div className="app-shell">
@@ -248,23 +319,58 @@ export function App() {
         </button>
       ) : null}
       <div className="app-graph">
-        <Graph
-          centerTaskCode={centerTaskCode}
-          emptyMessage="No tasks match the current filters. Clear filters to show everything."
-          onSelectTask={handleSelectTask}
-          onViewportChange={handleViewportChange}
-          orientation={orientation}
-          pan={viewport.pan}
-          planFocusRequest={planFocusRequest}
-          selectedTaskCode={selectedTaskCode}
-          showMiniMap={showMiniMap}
-          snapshot={snapshot}
-          zoom={viewport.zoom}
-        />
+        {showOnboarding ? (
+          <section className="onboarding-state" aria-label="Cortex setup">
+            <div className="onboarding-state__eyebrow">Cortex setup</div>
+            <h1 className="onboarding-state__title">Start with a Mongo database.</h1>
+            <p className="onboarding-state__text">
+              Connect an existing database or seed a local sample to see tasks, plans, notes, and logs in Cortex.
+            </p>
+            <div className="onboarding-state__actions">
+              <button className="onboarding-state__button onboarding-state__button--primary" onClick={handleBootstrapDatabase} type="button">
+                Create sample database
+              </button>
+              <button className="onboarding-state__button" onClick={handleSelectDatabase} type="button">
+                Select database
+              </button>
+              <button className="onboarding-state__button" onClick={handleCreateTask} type="button">
+                New task
+              </button>
+              <button className="onboarding-state__button" onClick={handleRefreshGraph} type="button">
+                Refresh
+              </button>
+            </div>
+            <p className="onboarding-state__hint">
+              Default connection: mongodb://127.0.0.1:27017
+            </p>
+          </section>
+        ) : (
+          <Graph
+            agentIconBase={agentIconBase}
+            centerTaskCode={centerTaskCode}
+            criticalPath={criticalPath}
+            emptyMessage="No tasks match the current filters. Clear filters to show everything."
+            groupByLane={groupByLane}
+            onSelectTask={handleSelectTask}
+            onViewportChange={handleViewportChange}
+            orientation={orientation}
+            pan={viewport.pan}
+            planFocusRequest={planFocusRequest}
+            selectedTaskCode={selectedTaskCode}
+            showMiniMap={showMiniMap}
+            snapshot={snapshot}
+            zoom={viewport.zoom}
+          />
+        )}
       </div>
       <StatusBar
+        criticalPath={criticalPath}
+        groupByLane={groupByLane}
         onOrientationChange={handleOrientationChange}
         onToggleMiniMap={handleToggleMiniMap}
+        onToggleLanes={handleToggleLanes}
+        onExportPng={handleExportPng}
+        onExportSvg={handleExportSvg}
         orientation={orientation}
         showMiniMap={showMiniMap}
         statusCounts={{

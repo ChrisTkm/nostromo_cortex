@@ -1,0 +1,10 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cortex REM: grafo de contexto (nodo central + 3 satelites conectados) -->
+  <circle cx="12" cy="12" r="2.75" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="4.5" cy="5.5" r="1.6" fill="currentColor"/>
+  <circle cx="19.5" cy="5.5" r="1.6" fill="currentColor"/>
+  <circle cx="12" cy="20" r="1.6" fill="currentColor"/>
+  <path d="M10.05 10.2L6 7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+  <path d="M13.95 10.2L18 7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+  <path d="M12 14.75V18.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+</svg>

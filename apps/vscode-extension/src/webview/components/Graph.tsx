@@ -4,6 +4,7 @@ import {
   Controls,
   MarkerType,
   MiniMap,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -11,15 +12,24 @@ import {
   useEdgesState,
   useNodesState
 } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { LaneNode } from "./LaneNode";
 import { computeLayout } from "../lib/layout";
-import type { GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
+import type { CriticalPathResult, GraphDirection, GraphSnapshot, SnapshotNode, TaskStatus } from "../types";
 import { TaskNode, type TaskNodeData } from "./TaskNode";
 
+type LayoutCacheValue = {
+  positions: Map<string, { x: number; y: number }>;
+  lanes: NonNullable<ReturnType<typeof computeLayout>["lanes"]>;
+};
+
 export function Graph(props: {
+  agentIconBase?: string;
   centerTaskCode?: string;
+  criticalPath?: CriticalPathResult;
   emptyMessage?: string;
+  groupByLane?: boolean;
   onSelectTask(code: string): void;
   onViewportChange(zoom: number, pan: { x: number; y: number }): void;
   orientation: GraphDirection;
@@ -33,8 +43,10 @@ export function Graph(props: {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TaskNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [instance, setInstance] = useState<ReactFlowInstance<Node<TaskNodeData>, Edge> | null>(null);
+  const layoutCacheRef = useRef<Map<string, LayoutCacheValue>>(new Map());
+  const LAYOUT_CACHE_MAX = 5;
 
-  const nodeTypes = useMemo(() => ({ task: TaskNode }), []);
+  const nodeTypes = useMemo(() => ({ lane: LaneNode, task: TaskNode }), []);
   const rawNodes = useMemo<Array<Node<TaskNodeData>>>(() => {
     if (!props.snapshot) {
       return [];
@@ -44,7 +56,7 @@ export function Graph(props: {
       id: node.id,
       type: "task",
       selected: node.code === props.selectedTaskCode,
-      data: buildTaskNodeData(node, props.orientation, props.snapshot.planContext?.currentTaskCode),
+      data: buildTaskNodeData(node, props.orientation, props.snapshot.planContext?.currentTaskCode, props.agentIconBase),
       position: { x: 0, y: 0 }
     }));
   }, [props.orientation, props.selectedTaskCode, props.snapshot]);
@@ -56,11 +68,32 @@ export function Graph(props: {
 
     const nodeStatusById = new Map(props.snapshot.nodes.map((node) => [node.id, node.status]));
 
+    const cpEdgeSet = new Set<string>();
+    if (props.criticalPath?.available && props.criticalPath.path) {
+      const cpPath = props.criticalPath.path;
+      for (let i = 0; i < cpPath.length - 1; i++) {
+        cpEdgeSet.add(`${cpPath[i]}->${cpPath[i + 1]}`);
+      }
+    }
+
     return props.snapshot.edges.map((edge) => {
       const sourceStatus = nodeStatusById.get(edge.source);
       const targetStatus = nodeStatusById.get(edge.target);
       const isActiveFrontier =
         sourceStatus === "DONE" && (targetStatus === "PENDING" || targetStatus === "IN_PROGRESS");
+      const isCritical = cpEdgeSet.has(`${edge.source}->${edge.target}`);
+
+      if (isCritical) {
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          animated: true,
+          className: "edge-critical-path",
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
+          style: { stroke: "#f59e0b", strokeWidth: 2.6 }
+        } satisfies Edge;
+      }
 
       return {
         id: edge.id,
@@ -75,7 +108,7 @@ export function Graph(props: {
         }
       } satisfies Edge;
     });
-  }, [props.snapshot]);
+  }, [props.snapshot, props.criticalPath]);
 
   useEffect(() => {
     if (!props.snapshot) {
@@ -84,10 +117,50 @@ export function Graph(props: {
       return;
     }
 
-    const layouted = computeLayout(rawNodes, rawEdges, props.orientation);
-    setNodes(layouted.nodes);
-    setEdges(layouted.edges);
-  }, [props.orientation, props.snapshot, rawEdges, rawNodes, setEdges, setNodes]);
+    const nodeIdSig = rawNodes.map((n) => n.id).sort().join(",");
+    const edgeSig = rawEdges.map((e) => `${e.source}>${e.target}`).sort().join("|");
+    const layoutKey = `${props.orientation}::${props.groupByLane ? "L" : "0"}::${nodeIdSig}::${edgeSig}`;
+
+    const cache = layoutCacheRef.current;
+    const sourcePosition = props.orientation === "LR" ? Position.Right : Position.Bottom;
+    const targetPosition = props.orientation === "LR" ? Position.Left : Position.Top;
+
+    let cached = cache.get(layoutKey);
+    if (cached) {
+      cache.delete(layoutKey);
+      cache.set(layoutKey, cached);
+    } else {
+      const layouted = computeLayout(rawNodes, rawEdges, props.orientation, props.groupByLane);
+      cached = {
+        positions: new Map(layouted.nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }])),
+        lanes: layouted.lanes ?? []
+      };
+      cache.set(layoutKey, cached);
+      while (cache.size > LAYOUT_CACHE_MAX) {
+        const oldest = cache.keys().next().value;
+        if (oldest === undefined) break;
+        cache.delete(oldest);
+      }
+    }
+
+    const positionedNodes = rawNodes.map((n) => {
+      const pos = cached!.positions.get(n.id);
+      if (!pos) return n;
+      return { ...n, position: pos, sourcePosition, targetPosition };
+    });
+
+    const laneNodes = (cached.lanes ?? []).map((l) => ({
+      id: l.id,
+      type: "lane",
+      position: { x: l.x, y: l.y },
+      data: { name: l.name, width: l.width, height: l.height },
+      draggable: false,
+      selectable: false
+    }));
+
+    setNodes([...laneNodes, ...positionedNodes]);
+    setEdges(rawEdges);
+  }, [props.orientation, props.snapshot, rawEdges, rawNodes, setEdges, setNodes, props.groupByLane]);
 
   useEffect(() => {
     if (!instance || !props.snapshot) {
@@ -162,7 +235,7 @@ export function Graph(props: {
   );
 }
 
-function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, currentTaskCode?: string): TaskNodeData {
+function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, currentTaskCode?: string, agentIconBase?: string): TaskNodeData {
   return {
     code: node.code,
     label: node.label,
@@ -170,8 +243,19 @@ function buildTaskNodeData(node: SnapshotNode, direction: GraphDirection, curren
     status: node.status,
     lane: node.lane,
     direction,
-    isCurrentTask: node.code === currentTaskCode
+    isCurrentTask: node.code === currentTaskCode,
+    agent: node.agent,
+    agentIconUrl: resolveAgentIconUrl(node.agent, agentIconBase)
   };
+}
+
+const KNOWN_AGENT_SLUGS = new Set(["big-pickle", "copilot", "codex", "claude"]);
+
+function resolveAgentIconUrl(agent: string | undefined, base: string | undefined): string | undefined {
+  if (!base) return undefined;
+  const slug = (agent ?? "").toLowerCase().trim().replace(/\s+/g, "-");
+  const safe = KNOWN_AGENT_SLUGS.has(slug) ? slug : "user";
+  return `${base}/${safe}.svg`;
 }
 
 function colorForStatus(status: TaskStatus) {

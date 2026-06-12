@@ -1,9 +1,10 @@
-import type { ActionPlanRecord, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus } from "@cortex/core";
+import type { ActionPlanRecord, CriticalPathResult, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus } from "@cortex/core";
 
-export type { ActionPlanRecord, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus };
+export type { ActionPlanRecord, CriticalPathResult, GraphSnapshot, SnapshotNode, TaskFilter, TaskSeverity, TaskStatus };
 
 export type PlanTaskSummary = {
   code: string;
+  dependsOn: string[];
   durationEstimate?: number;
   label: string;
   lane?: string;
@@ -32,10 +33,13 @@ export type SnapshotMessage = {
   state: {
     orientation: GraphDirection;
     showMiniMap: boolean;
+    groupByLane: boolean;
     selectedTaskCode?: string;
     zoom?: number;
     pan?: { x: number; y: number };
   };
   filters: TaskFilter;
+  criticalPath?: CriticalPathResult;
   catalog: FilterCatalog;
+  agentIconBase?: string;
 };

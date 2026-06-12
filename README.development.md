@@ -95,6 +95,12 @@ node apps/mcp-server/dist/index.js
    - `Cortex: Set tag filter`
    - `Cortex: List dependency cycles`
 
+### Assets runtime (wasm)
+
+El analyzer de Python carga `web-tree-sitter.wasm` y `tree-sitter-python.wasm` en runtime desde `apps/vscode-extension/media/`. El build los copia desde `node_modules` vía `copyStaticAssets()` en `esbuild.mjs` y verifica su presencia al final — si faltan, el build falla con un error explícito.
+
+El `files` de `package.json` los empaqueta vía el glob `"media/**"`. NO restringir ese glob a subsets como `"media/*.{js,css}"`: el `.vsix` quedaría sin wasm y el panel Script Flow para Python rompería en runtime con 'could not find tree-sitter-python.wasm'.
+
 ## Inspección y debugging
 
 ```bash
@@ -108,3 +114,69 @@ pnpm check:cycles
 ## Registro del MCP en Codex
 
 Usa el archivo de ejemplo `.codex/config.toml.example`.
+
+## Registro del MCP en Claude Code
+
+Añadir a `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "cortex": {
+      "command": "node",
+      "args": ["C:/dev/Cortex/apps/mcp-server/dist/index.js"],
+      "env": {
+        "MONGO_URL": "mongodb://127.0.0.1:27017",
+        "MONGO_DB_NAME": "nostromo_cortex",
+        "MONGO_TASKS_COLLECTION": "tasks",
+        "TELEMETRY_BACKEND": "jsonl",
+        "TELEMETRY_JSONL_PATH": "C:/dev/Cortex/data/telemetry/cortex-telemetry.jsonl"
+      }
+    }
+  }
+}
+```
+
+## Registro del MCP en opencode
+
+El repo incluye `opencode.json` en la raíz con dos servers MCP locales: `cortex` (tools de dominio: `task_list`, `graph_snapshot`, `record_run`, `query_runs`, etc. — requiere build previo con `pnpm --filter @cortex/mcp-server build`) y `mongodb` (el oficial `mongodb-mcp-server` vía npx, CRUD genérico sobre `nostromo_cortex` que usan las skills `/tareas` y `/plan`). opencode los carga automáticamente al abrir `C:/dev/Cortex` — verificar con `/mcp` que aparezcan ambos.
+
+### Tool `record_run`
+
+Registra una sesión de agente en la colección `agent_runs`. Pensado para que el agente (Claude Code, Codex, etc.) lo invoque al finalizar una tarea o al recibir un "Stop" hook.
+
+**Parámetros:**
+
+| Campo        | Tipo                                   | Default     | Descripción                                         |
+| ------------ | -------------------------------------- | ----------- | --------------------------------------------------- |
+| `agent_slug` | `string`                               | —           | Slug del agente (`big-pickle`, `claude-code`, etc.) |
+| `task_codes` | `string[]`                             | `[]`        | Códigos de las tasks tocadas en la sesión           |
+| `tokens_in`  | `number` (opcional)                    | —           | Tokens de entrada consumidos                        |
+| `tokens_out` | `number` (opcional)                    | —           | Tokens de salida generados                          |
+| `files`      | `string[]`                             | `[]`        | Rutas relativas de archivos modificados             |
+| `status`     | `"running" \| "completed" \| "failed"` | `"running"` | Estado de la sesión                                 |
+
+**Ejemplo de invocación desde Claude Code Stop hook** (`~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": {
+      "stop": {
+        "condition": "toolName === 'task_update' || toolName === 'task_create'",
+        "trigger": "mcp_cortex record_run",
+        "params": {
+          "agent_slug": "claude-code",
+          "task_codes": ["$touchedCodes"],
+          "tokens_in": "$tokensIn",
+          "tokens_out": "$tokensOut",
+          "files": "$changedFiles",
+          "status": "completed"
+        }
+      }
+    }
+  }
+}
+```
+
+La extracción precisa de `tokens_in`/`tokens_out` desde el contexto de Claude Code depende del cliente — el agente debe pasar estos valores explícitamente al tool. No hay extracción automática desde la API de Anthropic.

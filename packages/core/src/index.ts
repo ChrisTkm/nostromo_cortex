@@ -4,3 +4,4 @@ export * from "./mongo.js";
 export * from "./sample-data.js";
 export * from "./schema.js";
 export * from "./types.js";
+export * from "./ai-agents-seed.js";

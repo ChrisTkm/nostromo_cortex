@@ -11,6 +11,7 @@ const {
   filterStateRef,
   listLogsMock,
   listArchivedPlansMock,
+  getLogsSourceMock,
   loadBundleMock,
   loadPlansMock,
   loadSnapshotMock,
@@ -44,13 +45,18 @@ const {
   outputAppendLineMock,
   outputClearMock,
   outputShowMock,
+  clipboardWriteTextMock,
+  showSaveDialogMock,
+  fsWriteFileMock,
   treePlansRef,
   treeProviderInstances,
-  treeRefreshMock
+  treeRefreshMock,
+  configChangeHandlers
 } = vi.hoisted(() => {
   const activeTextEditorRef: { current?: unknown } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
+  const configChangeHandlers: Array<(event: { affectsConfiguration: (section: string) => boolean }) => void> = [];
   const treePlansRef = {
     current: [
       { code: "PLAN-A", status: "IN_PROGRESS" },
@@ -82,6 +88,7 @@ const {
   const listNotesMock = vi.fn();
   const listLogsMock = vi.fn();
   const listArchivedPlansMock = vi.fn();
+  const getLogsSourceMock = vi.fn(() => ({ subscribe: undefined }));
   const loadBundleMock = vi.fn();
   const loadPlansMock = vi.fn();
   const loadSnapshotMock = vi.fn();
@@ -115,6 +122,9 @@ const {
   const outputAppendLineMock = vi.fn();
   const outputClearMock = vi.fn();
   const outputShowMock = vi.fn();
+  const clipboardWriteTextMock = vi.fn();
+  const showSaveDialogMock = vi.fn();
+  const fsWriteFileMock = vi.fn();
   const createOutputChannelMock = vi.fn(() => ({
     appendLine: outputAppendLineMock,
     clear: outputClearMock,
@@ -138,6 +148,7 @@ const {
         html: string;
         postMessage: ReturnType<typeof vi.fn>;
         onDidReceiveMessage: ReturnType<typeof vi.fn>;
+        asWebviewUri: ReturnType<typeof vi.fn>;
       };
       onDidDispose: ReturnType<typeof vi.fn>;
     };
@@ -173,12 +184,16 @@ const {
         onDidReceiveMessage: vi.fn((handler: (message: unknown) => unknown) => {
           panelState.messageHandler = handler;
           return { dispose: vi.fn() };
-        })
+        }),
+        asWebviewUri: vi.fn((uri: unknown) => ({
+          toString: () => `mock-resource://${uri}`
+        }))
       },
       onDidDispose: vi.fn((handler: () => unknown) => {
         panelState.disposeHandler = handler;
         return { dispose: vi.fn() };
       }),
+      onDidChangeViewState: vi.fn(() => ({ dispose: vi.fn() })),
       iconPath: undefined
     };
     panelState.panel = panel;
@@ -196,6 +211,7 @@ const {
     filterStateRef,
     listLogsMock,
     listArchivedPlansMock,
+    getLogsSourceMock,
     loadBundleMock,
     loadPlansMock,
     loadSnapshotMock,
@@ -229,16 +245,21 @@ const {
     outputAppendLineMock,
     outputClearMock,
     outputShowMock,
+    clipboardWriteTextMock,
+    showSaveDialogMock,
+    fsWriteFileMock,
     treePlansRef,
     treeProviderInstances,
-    treeRefreshMock
+    treeRefreshMock,
+    configChangeHandlers
   };
 });
 
 vi.mock("@cortex/core", () => ({
   TASK_SEVERITIES: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
   TASK_STATUSES: ["PENDING", "IN_PROGRESS", "BLOCKED", "DONE", "FAILED"],
-  buildTaskGraph: vi.fn(() => ({ cycles: [] }))
+  buildTaskGraph: vi.fn(() => ({ cycles: [] })),
+  criticalPathEstimate: vi.fn(() => ({ available: false, coverage: { withEstimate: 0, withoutEstimate: 0 }, reason: "critical path unavailable" }))
 }));
 
 vi.mock("mongodb", () => ({
@@ -270,6 +291,7 @@ vi.mock("vscode", () => ({
     showTextDocument: showTextDocumentMock,
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: showErrorMessageMock,
+    showSaveDialog: showSaveDialogMock,
     createOutputChannel: createOutputChannelMock
   },
   commands: {
@@ -303,7 +325,19 @@ vi.mock("vscode", () => ({
       get: getConfigMock,
       update: updateConfigMock
     })),
-    openTextDocument: openTextDocumentMock
+    onDidChangeConfiguration: vi.fn((handler: (event: { affectsConfiguration: (section: string) => boolean }) => void) => {
+      configChangeHandlers.push(handler);
+      return { dispose: vi.fn() };
+    }),
+    openTextDocument: openTextDocumentMock,
+    fs: {
+      writeFile: fsWriteFileMock
+    }
+  },
+  env: {
+    clipboard: {
+      writeText: clipboardWriteTextMock
+    }
   }
 }));
 
@@ -313,7 +347,8 @@ vi.mock("./service.js", () => ({
     dispose: vi.fn().mockResolvedValue(undefined),
     logger: {
       debug: vi.fn(),
-      error: vi.fn()
+      error: vi.fn(),
+      warn: vi.fn()
     },
     getConnectionSettings: vi.fn(() => ({
       mongoUrl: "mongodb://127.0.0.1:27017",
@@ -363,6 +398,7 @@ vi.mock("./service.js", () => ({
     listPendingReminders: listPendingRemindersMock,
     listLogs: listLogsMock,
     listArchivedPlans: listArchivedPlansMock,
+    getLogsSource: getLogsSourceMock,
     markReminded: markRemindedMock,
     recordInteraction: recordInteractionMock,
     rescheduleReminder: rescheduleReminderMock,
@@ -379,7 +415,11 @@ vi.mock("./service.js", () => ({
     updateConnectionSettings: updateConnectionSettingsMock,
     saveMongoUrl: saveMongoUrlMock,
     bootstrapSampleDatabase: vi.fn().mockResolvedValue(undefined),
-    loadPlans: loadPlansMock
+    loadPlans: loadPlansMock,
+    isJsonPathInArchive: vi.fn(() => true),
+    getArchivePath: vi.fn(() => "C:\\temp\\cortex-archive"),
+    listAiAgents: vi.fn().mockResolvedValue([]),
+    queryAgentRuns: vi.fn().mockResolvedValue([])
   }))
 }));
 
@@ -425,6 +465,10 @@ vi.mock("./webview/archive/getHtml.js", () => ({
 
 vi.mock("./webview/script-flow/getHtml.js", () => ({
   getScriptFlowHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"script-flow.js\"></script></html>")
+}));
+
+vi.mock("./webview/task-editor/getHtml.js", () => ({
+  getTaskEditorHtml: vi.fn(() => "<html><div id=\"root\"></div><script src=\"task-editor.js\"></script></html>")
 }));
 
 import { activate } from "./extension.js";
@@ -900,7 +944,9 @@ describe("activate notes commands", () => {
     expect(listLogsMock).toHaveBeenCalledTimes(1);
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "logs:list",
-      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })])
+      logs: expect.arrayContaining([expect.objectContaining({ source: "nostromo.bootstrap" })]),
+      autoRefreshSeconds: 0,
+      hasMore: false
     });
 
     await panelState.messageHandler?.({ type: "logs:refresh" });
@@ -913,6 +959,202 @@ describe("activate notes commands", () => {
     expect(listLogsMock).toHaveBeenCalledTimes(3);
   });
 
+  describe("logs:copy host handler", () => {
+    it("copies a non-empty string to clipboard", async () => {
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:copy", value: "test-value" });
+      expect(clipboardWriteTextMock).toHaveBeenCalledWith("test-value");
+    });
+
+    it("ignores empty string message", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy", value: "" });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores missing value field", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy" });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores non-string value", async () => {
+      clipboardWriteTextMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:copy", value: 123 });
+      expect(clipboardWriteTextMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("logs:openContract host handler", () => {
+    beforeEach(() => {
+      openTextDocumentMock.mockReset();
+    });
+
+    it("opens an untitled markdown document with the contract content", async () => {
+      const fakeDoc = { uri: { scheme: "untitled" } };
+      openTextDocumentMock.mockResolvedValueOnce(fakeDoc);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:openContract" });
+      expect(openTextDocumentMock).toHaveBeenCalledWith({
+        content: expect.stringContaining("Cortex log execution contract"),
+        language: "markdown"
+      });
+      expect(showTextDocumentMock).toHaveBeenCalledWith(fakeDoc, { preview: false });
+    });
+  });
+
+  describe("logs:export host handler", () => {
+    beforeEach(() => {
+      showSaveDialogMock.mockReset();
+      fsWriteFileMock.mockReset();
+    });
+
+    it("export csv calls showSaveDialog with csv filter and writes file on confirm", async () => {
+      showSaveDialogMock.mockResolvedValueOnce({ fsPath: "C:\\temp\\cortex-logs-export.csv" });
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "csv", content: "a,b\n1,2", defaultFilename: "cortex-logs-test.csv" });
+      expect(showSaveDialogMock).toHaveBeenCalledWith({
+        defaultUri: { fsPath: "cortex-logs-test.csv" },
+        filters: { CSV: ["csv"] }
+      });
+      expect(fsWriteFileMock).toHaveBeenCalledWith(
+        { fsPath: "C:\\temp\\cortex-logs-export.csv" },
+        expect.any(Uint8Array)
+      );
+    });
+
+    it("export json calls showSaveDialog with json filter and writes file on confirm", async () => {
+      showSaveDialogMock.mockResolvedValueOnce({ fsPath: "C:\\temp\\cortex-logs-export.json" });
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "json", content: "[{}]", defaultFilename: "cortex-logs-test.json" });
+      expect(showSaveDialogMock).toHaveBeenCalledWith({
+        defaultUri: { fsPath: "cortex-logs-test.json" },
+        filters: { JSON: ["json"] }
+      });
+      expect(fsWriteFileMock).toHaveBeenCalledWith(
+        { fsPath: "C:\\temp\\cortex-logs-export.json" },
+        expect.any(Uint8Array)
+      );
+    });
+
+    it("does not write file when showSaveDialog returns undefined (cancelled)", async () => {
+      showSaveDialogMock.mockResolvedValueOnce(undefined);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "logs:export", format: "csv", content: "a,b\n1,2", defaultFilename: "cortex-logs.csv" });
+      expect(fsWriteFileMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores invalid format value", async () => {
+      showSaveDialogMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:export", format: "xlsx", content: "x", defaultFilename: "f.xlsx" });
+      expect(showSaveDialogMock).not.toHaveBeenCalled();
+      expect(fsWriteFileMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("logs:loadOlder host handler + hasMore", () => {
+    beforeEach(() => {
+      listLogsMock.mockReset();
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-18T00:00:00.000Z",
+        day: "2026-04-18",
+        level: "INFO",
+        source: "nostromo.bootstrap",
+        folder: "nostromo",
+        message: "Mongo ready",
+        summary: "Mongo ready (nostromo.bootstrap)",
+        details: []
+      }]);
+    });
+
+    it("postLogsList sets hasMore=false when fewer results than limit", async () => {
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "logs:list", hasMore: false })
+      );
+    });
+
+    it("postLogsList sets hasMore=true when results equal limit", async () => {
+      const manyLogs = Array.from({ length: 500 }, (_, index) => ({
+        timestamp: `2026-04-${String(18 - Math.floor(index / 100)).padStart(2, "0")}T${String((index * 3) % 24).padStart(2, "0")}:00:00.000Z`,
+        day: `2026-04-${String(18 - Math.floor(index / 100)).padStart(2, "0")}`,
+        level: "INFO",
+        source: "nostromo.bootstrap",
+        folder: "nostromo",
+        message: `Log ${index}`,
+        summary: `Log ${index} (nostromo.bootstrap)`,
+        details: []
+      }));
+      listLogsMock.mockResolvedValue(manyLogs);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "logs:list", hasMore: true })
+      );
+    });
+
+    it("handler calls listLogs with cursor and posts logs:append", async () => {
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-17T00:00:00.000Z",
+        day: "2026-04-17",
+        level: "WARNING",
+        source: "nostromo.old",
+        folder: "nostromo",
+        message: "Old log",
+        summary: "Old log (nostromo.old)",
+        details: []
+      }]);
+      await activate(createContext());
+      await executeCommandMock("cortex.openLogs");
+      await panelState.messageHandler?.({ type: "ready" });
+
+      listLogsMock.mockClear();
+      panelState.panel?.webview.postMessage.mockClear();
+
+      listLogsMock.mockResolvedValue([{
+        timestamp: "2026-04-17T00:00:00.000Z",
+        day: "2026-04-17",
+        level: "WARNING",
+        source: "nostromo.old",
+        folder: "nostromo",
+        message: "Old log",
+        summary: "Old log (nostromo.old)",
+        details: []
+      }]);
+
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: "2026-04-18T00:00:00.000Z" });
+
+      expect(listLogsMock).toHaveBeenCalledWith(500, "2026-04-18T00:00:00.000Z");
+      expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "logs:append",
+          logs: expect.arrayContaining([expect.objectContaining({ level: "WARNING" })]),
+          hasMore: false
+        })
+      );
+    });
+
+    it("ignores logs:loadOlder with empty beforeTimestamp", async () => {
+      listLogsMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: "" });
+      expect(listLogsMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores logs:loadOlder with non-string beforeTimestamp", async () => {
+      listLogsMock.mockClear();
+      await panelState.messageHandler?.({ type: "logs:loadOlder", beforeTimestamp: 123 });
+      expect(listLogsMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("opens the archive panel, posts archived plans, and opens JSON snapshots", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openArchive");
@@ -923,7 +1165,8 @@ describe("activate notes commands", () => {
     expect(listArchivedPlansMock).toHaveBeenCalledTimes(1);
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "archive:list",
-      plans: expect.arrayContaining([expect.objectContaining({ code: "PLAN-B" })])
+      plans: expect.arrayContaining([expect.objectContaining({ code: "PLAN-B" })]),
+      archivePath: "C:\\temp\\cortex-archive"
     });
 
     openTextDocumentMock.mockResolvedValueOnce({ uri: { fsPath: "C:\\temp\\cortex-archive\\plans\\PLAN-B.json" } });
@@ -944,6 +1187,9 @@ describe("activate notes commands", () => {
 
     await activate(createContext());
     await executeCommandMock("cortex.showOptions");
+
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
 
     const [items] = showQuickPickMock.mock.calls[0] ?? [];
@@ -1074,14 +1320,35 @@ describe("activate notes commands", () => {
   });
 
   it("reuses the existing task edit flow when the Graph webview posts editTask", async () => {
-    showInputBoxMock.mockResolvedValueOnce("Edited from inspector");
-    showQuickPickMock.mockResolvedValueOnce("DONE").mockResolvedValueOnce("HIGH");
-
     await activate(createContext());
     await executeCommandMock("cortex.openGraph", "TASK-1");
-    await panelState.messageHandler?.({ type: "editTask", code: "TASK-1" });
+
+    // Save the graph panel message handler before editTask creates a new (task editor) panel
+    const graphMessageHandler = panelState.messageHandler!;
+
+    // Graph webview posts editTask → opens the task editor panel
+    await graphMessageHandler({ type: "editTask", code: "TASK-1" });
 
     expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+
+    // panelState.messageHandler is now the task editor's handler; simulate webview "ready"
+    await panelState.messageHandler?.({ type: "ready" });
+
+    // Simulate the task editor webview posting taskEditor:save
+    await panelState.messageHandler?.({
+      type: "taskEditor:save",
+      input: {
+        code: "TASK-1",
+        short_task: "Edited from inspector",
+        detail: "Existing detail",
+        status: "DONE",
+        severity: "HIGH",
+        agent: "codex",
+        created_at: "2026-04-18T00:00:00.000Z",
+        updated_at: new Date().toISOString()
+      }
+    });
+
     expect(saveTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
         code: "TASK-1",
@@ -1091,6 +1358,165 @@ describe("activate notes commands", () => {
       })
     );
     expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 updated.");
+  });
+
+  it("markDone updates task status to DONE without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markDone", {
+      kind: "task",
+      task: { code: "TASK-1", shortTask: "First task", detail: "detail", status: "PENDING", agent: "codex", severity: "LOW" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-1",
+        status: "DONE",
+        created_at: "2026-04-18T00:00:00.000Z"
+      })
+    );
+    expect(treeRefreshMock).toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as done.");
+  });
+
+  it("markInProgress updates task status to IN_PROGRESS without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markInProgress", {
+      kind: "task",
+      task: { code: "TASK-1" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "IN_PROGRESS" })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as in progress.");
+  });
+
+  it("markBlocked updates task status to BLOCKED without opening the editor", async () => {
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markBlocked", {
+      kind: "task",
+      task: { code: "TASK-1" }
+    });
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "BLOCKED" })
+    );
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-1 marked as blocked.");
+  });
+
+  it("markDone falls back to selectedTaskCode when no arg is provided", async () => {
+    filterStateRef.current.selectedTaskCode = "TASK-1";
+    await activate(createContext());
+
+    await executeCommandMock("cortex.markDone");
+
+    expect(getTaskMock).toHaveBeenCalledWith("TASK-1");
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-1", status: "DONE" })
+    );
+  });
+
+  it("cortex.newTask creates a task with PENDING/MEDIUM defaults and correct code + title", async () => {
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock
+      .mockResolvedValueOnce("TASK-NEW")
+      .mockResolvedValueOnce("Brand new task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "TASK-NEW",
+        short_task: "Brand new task",
+        detail: "",
+        status: "PENDING",
+        severity: "MEDIUM",
+        agent: "any",
+        tags: [],
+        depends_on: []
+      })
+    );
+    expect(treeRefreshMock).toHaveBeenCalled();
+    expect(showInformationMessageMock).toHaveBeenCalledWith("Task TASK-NEW created.");
+  });
+
+  it("cortex.newTask aborts if the user cancels the code input box", async () => {
+    showInputBoxMock.mockResolvedValueOnce(undefined);
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).not.toHaveBeenCalled();
+    expect(showInformationMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("cortex.newTask aborts when the code already exists (duplicate guard)", async () => {
+    // loadBundle returns TASK-1; user enters TASK-1 (duplicate)
+    showInputBoxMock.mockResolvedValueOnce("TASK-1");
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).not.toHaveBeenCalled();
+    expect(showWarningMessageMock).toHaveBeenCalledWith(expect.stringContaining("TASK-1"));
+  });
+
+  it("cortex.newTask assigns plan_code when user picks a plan", async () => {
+    loadPlansMock.mockResolvedValueOnce([
+      {
+        code: "PLAN-A",
+        title: "Alpha plan",
+        status: "IN_PROGRESS",
+        progress: { done: 1, total: 3, pending: 2, in_progress: 0, blocked: 0, failed: 0 }
+      }
+    ]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Plan task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "PLAN-A", planCode: "PLAN-A" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-NEW", plan_code: "PLAN-A" })
+    );
+  });
+
+  it("cortex.newTask inherits planCode from group tree node arg", async () => {
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Group task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask", { kind: "group", planCode: "PLAN-A" });
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TASK-NEW", short_task: "Group task" })
+    );
+  });
+
+  it("cortex.newTask reads cortex.defaultAgent setting", async () => {
+    getConfigMock.mockImplementation((key: string) => (key === "defaultAgent" ? "cursor" : undefined));
+    loadPlansMock.mockResolvedValueOnce([]);
+    showInputBoxMock.mockResolvedValueOnce("TASK-NEW").mockResolvedValueOnce("Cursor task");
+    showQuickPickMock.mockResolvedValueOnce({ label: "$(close) No plan" });
+
+    await activate(createContext());
+    await executeCommandMock("cortex.newTask");
+
+    expect(saveTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "cursor" })
+    );
   });
 
   it("lets editNote and deleteNote pick a note code when none is provided", async () => {
@@ -1129,6 +1555,8 @@ describe("activate notes commands", () => {
   it("records node selection telemetry from the Script Flow webview", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
     await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
 
@@ -1153,11 +1581,129 @@ describe("activate notes commands", () => {
   it("records drawer click telemetry from the Script Flow webview", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
     await panelState.messageHandler?.({ type: "scriptFlow:drawerClick", section: "decisions" });
 
     expect(recordInteractionMock).toHaveBeenCalledWith("script_flow_drawer_click", {
       section: "decisions"
     });
+  });
+});
+
+function fireConfigChange(affectedKeys: string[]) {
+  configChangeHandlers.forEach((handler) => {
+    handler({
+      affectsConfiguration: (key: string) => affectedKeys.includes(key),
+    });
+  });
+}
+
+describe("logs panel change stream", () => {
+  beforeEach(() => {
+    listLogsMock.mockReset();
+    listLogsMock.mockResolvedValue([]);
+  });
+
+  it("subscribe returning cleanup is called on panel dispose", async () => {
+    const cleanup = vi.fn();
+    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(cleanup) });
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+
+    panelState.disposeHandler?.();
+    expect(cleanup).toHaveBeenCalled();
+  });
+
+  it("subscribe returning null does not set up cleanup", async () => {
+    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(null) });
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+
+    expect(() => panelState.disposeHandler?.()).not.toThrow();
+  });
+
+  it("config change logsChangeStreams re-suscribes and refetches", async () => {
+    getLogsSourceMock.mockReturnValue({ subscribe: undefined });
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+    await panelState.messageHandler?.({ type: "ready" });
+    getLogsSourceMock.mockClear();
+    listLogsMock.mockClear();
+
+    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(vi.fn()) });
+    fireConfigChange(["cortex.logsChangeStreams"]);
+    expect(getLogsSourceMock).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(listLogsMock).toHaveBeenCalled();
+    });
+  });
+
+  it("stream append event posts logs:append to webview", async () => {
+    const onAppendRef: { current?: (logs: unknown[]) => void } = {};
+    const subscribeMock = vi.fn(async (onAppend: (logs: unknown[]) => void) => {
+      onAppendRef.current = onAppend;
+      return vi.fn();
+    });
+    getLogsSourceMock.mockReturnValue({ subscribe: subscribeMock });
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+
+    const testLog = { timestamp: "2026-06-07T12:00:00.000Z", level: "INFO", source: "test", message: "streamed" };
+    onAppendRef.current!([testLog]);
+
+    expect(panelState.panel!.webview.postMessage).toHaveBeenCalledWith({
+      type: "logs:append",
+      logs: [testLog],
+      hasMore: false,
+    });
+  });
+});
+
+describe("logs panel config changes", () => {
+  beforeEach(() => {
+    listLogsMock.mockReset();
+    listLogsMock.mockResolvedValue([]);
+  });
+
+  it("re-fetches logs when logsSource changes", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+    await panelState.messageHandler?.({ type: "ready" });
+    listLogsMock.mockClear();
+
+    fireConfigChange(["cortex.logsSource"]);
+    expect(listLogsMock).toHaveBeenCalled();
+  });
+
+  it("re-fetches logs when logsFilePath changes", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+    await panelState.messageHandler?.({ type: "ready" });
+    listLogsMock.mockClear();
+
+    fireConfigChange(["cortex.logsFilePath"]);
+    expect(listLogsMock).toHaveBeenCalled();
+  });
+
+  it("re-fetches logs when logsLimit changes", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+    await panelState.messageHandler?.({ type: "ready" });
+    listLogsMock.mockClear();
+
+    fireConfigChange(["cortex.logsLimit"]);
+    expect(listLogsMock).toHaveBeenCalled();
+  });
+
+  it("does NOT re-fetch on unrelated config change", async () => {
+    await activate(createContext());
+    await executeCommandMock("cortex.openLogs");
+    await panelState.messageHandler?.({ type: "ready" });
+    listLogsMock.mockClear();
+
+    fireConfigChange(["cortex.mongoUrl"]);
+    expect(listLogsMock).not.toHaveBeenCalled();
   });
 });

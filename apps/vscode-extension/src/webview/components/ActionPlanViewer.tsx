@@ -70,6 +70,11 @@ export function ActionPlanViewer(props: {
                   <div className="action-plan-task__meta">
                     {task.lane ? <span>{task.lane}</span> : null}
                     {typeof task.durationEstimate === "number" ? <span>{formatHours(task.durationEstimate)}</span> : null}
+                    {task.dependsOn.length > 0 ? (
+                      <span className="action-plan-task__deps" title={`Blocked by: ${task.dependsOn.join(", ")}`}>
+                        ⬆ {task.dependsOn.join(", ")}
+                      </span>
+                    ) : null}
                   </div>
                 </button>
               ))

@@ -74,7 +74,7 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Componentes
 
-- `apps/vscode-extension` — extensión de VS Code con navegación textual, PERT/DAG, Notes, Logs, Archive, Cortex Brain y Script Flow.
+- `apps/vscode-extension` — extensión de VS Code con navegación textual, PERT/DAG, Notes, Logs, Archive, Cortex Brain y Script Flow (ver [glosario de nodos y aristas](docs/script-flow-kinds.md)).
 - `apps/mcp-server` — servidor MCP local con tools, resources y prompts sobre tareas y telemetría.
 - `packages/core` — dominio compartido: tipos, normalización Zod, grafo, Mongo y seeds.
 - `packages/telemetry` — capa reusable de telemetría, pricing versionado, logging y persistencia local.
@@ -105,6 +105,15 @@ La extensión VS Code expone siete superficies. Tasks/Graph/Notes/Logs/Archive v
 | Panel switcher | `cortex.switchPanel` |  |
 
 Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs/Archive/Cortex Brain y al resto de filtros.
+
+## v0.1.6
+
+Release enfocada en mejorar Cortex Brain para documentación Starlight y pulir la lectura del grafo MD/MDX.
+
+- **Cortex Brain + Starlight**: los enlaces absolutos tipo `href="/accounting/activos-fijos/"` ahora resuelven contra documentos bajo `src/content/docs` y `content/docs`, aunque el Brain escanee desde el root del proyecto o desde una subsección como `accounting`. Esto evita nodos externos falsos y grafica correctamente relaciones internas de Starlight.
+- **Filtros de relaciones**: Brain separa `related.upstream`, `related.downstream`, `related.standards` y `related.accounts`; el panel permite encender o apagar esas familias de líneas junto con links, tags y unresolved.
+- **Cobertura del indexador**: se agrega test focalizado para asegurar que rutas absolutas Starlight enlacen al documento `.mdx` correspondiente.
+- **Build/webviews**: se incluyen los bundles actualizados del panel Brain junto con los ajustes visuales pendientes del grafo.
 
 ## v0.1.5
 
@@ -201,3 +210,4 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 - [Arquitectura](./README.architecture.md)
 - [Desarrollo local](./README.development.md)
 - [Contrato de logs](./docs/log-contract.md)
+- [Glosario de Script Flow](./docs/script-flow-kinds.md)

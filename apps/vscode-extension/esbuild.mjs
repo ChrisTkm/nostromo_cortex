@@ -1,4 +1,5 @@
 import { copyFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -76,13 +77,33 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...browserBundle,
-    entryPoints: ["src/webview/md-graph/index.tsx"],
-    outfile: "media/md-graph.js"
+    entryPoints: ["src/webview/brain/index.tsx"],
+    outfile: "media/brain.js"
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/script-flow/index.tsx"],
     outfile: "media/script-flow.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/task-editor/index.tsx"],
+    outfile: "media/task-editor.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/ledger/index.tsx"],
+    outfile: "media/ledger.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/plans/index.tsx"],
+    outfile: "media/plans.js"
+  }),
+  esbuild.context({
+    ...browserBundle,
+    entryPoints: ["src/webview/plan-editor/index.tsx"],
+    outfile: "media/plan-editor.js"
   })
 ]);
 
@@ -93,6 +114,12 @@ async function copyStaticAssets() {
       await copyFile(asset.source, asset.target);
     })
   );
+
+  const missing = staticAssets.filter((asset) => !existsSync(asset.target));
+  if (missing.length > 0) {
+    const list = missing.map((asset) => path.relative(process.cwd(), asset.target)).join(", ");
+    throw new Error(`esbuild copyStaticAssets: missing after copy: ${list}. Build aborted — .vsix would ship broken Python analyzer.`);
+  }
 }
 
 if (watch) {

@@ -6,6 +6,7 @@
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
+  "icon": "media/marketplace-icon.png",
   "files": [
     "dist/**",
     "media/**",
@@ -21,12 +22,18 @@
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openArchive",
     "onCommand:cortex.openBrain",
-    "onCommand:cortex.openMdxGraph",
     "onCommand:cortex.openScriptFlow",
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
+    "onCommand:cortex.restorePlan",
+    "onCommand:cortex.deleteArchivedPlan",
+    "onCommand:cortex.exportArchive",
+    "onCommand:cortex.importArchive",
     "onCommand:cortex.setMongoUrl",
-    "onCommand:cortex.clearMongoUrl"
+    "onCommand:cortex.clearMongoUrl",
+    "onCommand:cortex.openLedger",
+    "onCommand:cortex.openPlans",
+    "onCommand:cortex.openPlanEditor"
   ],
   "contributes": {
     "commands": [
@@ -70,10 +77,6 @@
       {
         "command": "cortex.openBrain",
         "title": "Cortex: Open Brain"
-      },
-      {
-        "command": "cortex.openMdxGraph",
-        "title": "Cortex: Open MD/MDX Graph"
       },
       {
         "command": "cortex.openScriptFlow",
@@ -136,6 +139,11 @@
         "title": "Cortex: Edit task"
       },
       {
+        "command": "cortex.newTask",
+        "title": "Cortex: New task",
+        "icon": "$(add)"
+      },
+      {
         "command": "cortex.clearFilters",
         "title": "Cortex: Clear filters"
       },
@@ -148,8 +156,52 @@
         "title": "Cortex: Archive Plan"
       },
       {
+        "command": "cortex.restorePlan",
+        "title": "Cortex: Restore Plan"
+      },
+      {
+        "command": "cortex.deleteArchivedPlan",
+        "title": "Cortex: Delete Archived Plan"
+      },
+      {
+        "command": "cortex.exportArchive",
+        "title": "Cortex: Export Archive (ZIP)"
+      },
+      {
+        "command": "cortex.importArchive",
+        "title": "Cortex: Import Archive (ZIP)"
+      },
+      {
         "command": "cortex.listCycles",
         "title": "Cortex: List dependency cycles"
+      },
+      {
+        "command": "cortex.markDone",
+        "title": "Mark done"
+      },
+      {
+        "command": "cortex.markInProgress",
+        "title": "Mark in progress"
+      },
+      {
+        "command": "cortex.markBlocked",
+        "title": "Mark blocked"
+      },
+      {
+        "command": "cortex.setAiAgentIcon",
+        "title": "Cortex: Set AI Agent icon"
+      },
+      {
+        "command": "cortex.openLedger",
+        "title": "Cortex: Open Ledger"
+      },
+      {
+        "command": "cortex.openPlans",
+        "title": "Cortex: Open Plans"
+      },
+      {
+        "command": "cortex.openPlanEditor",
+        "title": "Cortex: Open Plan Editor"
       }
     ],
     "viewsContainers": {
@@ -169,6 +221,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "cortex.overview",
+        "contents": "Connect Cortex to MongoDB or create a sample local database to get started.\n[Create sample local database](command:cortex.bootstrapDatabase)\n[Select Mongo database](command:cortex.selectDatabase)\n[Set Mongo URL](command:cortex.setMongoUrl)\n[Open graph](command:cortex.openGraph)"
+      }
+    ],
     "keybindings": [
       {
         "command": "cortex.newNote",
@@ -179,6 +237,11 @@
         "command": "cortex.openNotes",
         "key": "ctrl+alt+shift+n",
         "mac": "cmd+alt+shift+n"
+      },
+      {
+        "command": "cortex.newTask",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
       }
     ],
     "menus": {
@@ -199,9 +262,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "cortex.showOptions",
+          "command": "cortex.newTask",
           "when": "view == cortex.overview",
           "group": "navigation@4"
+        },
+        {
+          "command": "cortex.showOptions",
+          "when": "view == cortex.overview",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -216,6 +284,21 @@
           "group": "inline@2"
         },
         {
+          "command": "cortex.markDone",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@1"
+        },
+        {
+          "command": "cortex.markInProgress",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@2"
+        },
+        {
+          "command": "cortex.markBlocked",
+          "when": "view == cortex.overview && viewItem == cortex.task",
+          "group": "1_status@3"
+        },
+        {
           "command": "cortex.archivePlan",
           "when": "view == cortex.overview && viewItem == cortex.plan.done",
           "group": "inline@1"
@@ -224,12 +307,12 @@
       "editor/context": [
         {
           "command": "cortex.openScriptFlow",
-          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .js || resourceExtname == .jsx || resourceExtname == .py || resourceExtname == .sql)",
           "group": "navigation@10"
         },
         {
           "command": "cortex.openScriptFlowForSelection",
-          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .py || resourceExtname == .sql)",
+          "when": "editorTextFocus && editorHasSelection && (resourceExtname == .ts || resourceExtname == .tsx || resourceExtname == .js || resourceExtname == .jsx || resourceExtname == .py || resourceExtname == .sql)",
           "group": "navigation@11"
         }
       ]
@@ -263,6 +346,46 @@
           "default": "logs",
           "description": "Colección de logs en Mongo."
         },
+        "cortex.logsLimit": {
+          "type": "number",
+          "default": 500,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
+        },
+        "cortex.scriptFlowMaxDepth": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum depth for cross-file expansion in Script Flow (0 disables, 5 is the hard cap). Solo TypeScript/JavaScript. Requiere reabrir el panel para tomar efecto."
+        },
+        "cortex.logsAutoRefreshSeconds": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 600,
+          "description": "Auto-refresh interval for the Cortex Logs panel, in seconds. 0 disables it."
+        },
+        "cortex.logsSource": {
+          "type": "string",
+          "enum": [
+            "mongo",
+            "file"
+          ],
+          "default": "mongo",
+          "description": "Where the Cortex Logs panel reads from. 'mongo' queries the MongoDB logs collection (default). 'file' tails a JSONL file written by your app following docs/log-contract.md."
+        },
+        "cortex.logsFilePath": {
+          "type": "string",
+          "default": "",
+          "description": "JSONL file path used when cortex.logsSource is 'file'. Empty resolves to <workspaceFolder>/logs/cortex.jsonl. Relative paths resolve against the first workspace folder."
+        },
+        "cortex.logsChangeStreams": {
+          "type": "boolean",
+          "default": false,
+          "description": "Subscribe to MongoDB Change Streams for real-time log updates instead of polling. Requires a replica set or Atlas. On single-node Mongo the extension logs a warning and falls back to polling (cortex.logsAutoRefreshSeconds)."
+        },
         "cortex.mongoPlansCollection": {
           "type": "string",
           "default": "action_plans",
@@ -273,7 +396,7 @@
           "default": "",
           "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
         },
-        "cortex.mdxGraphMaxFiles": {
+        "cortex.brainMaxFiles": {
           "type": "number",
           "default": 800,
           "minimum": 1,
@@ -283,6 +406,11 @@
           "type": "string",
           "default": "",
           "description": "Default local folder scanned by Cortex Brain. Leave empty to choose a folder when opening the panel."
+        },
+        "cortex.brainAccountPattern": {
+          "type": "string",
+          "default": "",
+          "description": "Regex (sin delimitadores, capture group con el account id) usado por el panel Brain para extraer 'accounts' desde el body de los .md/.mdx. Empty desactiva la extracción. Ejemplo legacy de jean_d_arc: /manual-cuentas/[^)\\s\"']+/(\\d{4,})/?"
         },
         "cortex.telemetryBackend": {
           "type": "string",
@@ -297,6 +425,11 @@
           "type": "string",
           "default": "./data/telemetry/cortex-telemetry.db",
           "description": "Local SQLite path for telemetry."
+        },
+        "cortex.defaultAgent": {
+          "type": "string",
+          "default": "any",
+          "description": "Default agent assigned to new tasks created via cortex.newTask (e.g. codex, cursor, human). Falls back to 'any' if empty."
         }
       }
     }
@@ -315,9 +448,11 @@
     "html-to-image": "^1.11.13",
     "mongodb": "^6.16.0",
     "node-sql-parser": "^5.4.0",
+    "jszip": "^3.10.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "web-tree-sitter": "^0.26.8"
+    "web-tree-sitter": "^0.26.8",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

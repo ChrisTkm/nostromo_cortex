@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AI_AGENT_SEEDS,
   buildGraphSnapshot,
   buildTaskGraph,
   criticalPathEstimate,
@@ -13,10 +14,13 @@ import {
   normalizeTasks,
   sampleTasks,
   MongoActionPlanStore,
+  MongoAiAgentStore,
   MongoNoteStore,
   MongoTaskStore,
-  SharedMongoClient,
-  stableStringify
+  SELF_HOSTED_AGENTS,
+  type SharedMongoClient,
+  stableStringify,
+  TASK_AGENTS,
 } from "./index.js";
 
 describe("task normalization", () => {
@@ -32,7 +36,7 @@ describe("task normalization", () => {
       tags: ["admin", "frontend", "admin"],
       depends_on: ["S2.1", "S5a", "S2.1"],
       created_at: "2026-04-12T00:00:00.000Z",
-      updated_at: "2026-04-12T01:00:00.000Z"
+      updated_at: "2026-04-12T01:00:00.000Z",
     });
 
     expect(task).toMatchObject({
@@ -40,7 +44,7 @@ describe("task normalization", () => {
       code: "S5b",
       shortTask: "UI editor",
       tags: ["admin", "frontend"],
-      dependsOn: ["S2.1", "S5a"]
+      dependsOn: ["S2.1", "S5a"],
     });
   });
 
@@ -50,9 +54,9 @@ describe("task normalization", () => {
         sampleTasks[0]!,
         {
           ...sampleTasks[0]!,
-          short_task: "duplicate"
-        }
-      ])
+          short_task: "duplicate",
+        },
+      ]),
     ).toThrow(/Duplicate task codes/i);
   });
 
@@ -66,7 +70,7 @@ describe("task normalization", () => {
       severity: "medium" as never,
       dependsOn: ["S1"],
       durationEstimate: 2,
-      sourceRef: "legacy"
+      sourceRef: "legacy",
     } as unknown as Parameters<typeof normalizeTaskDocument>[0]);
 
     expect(task).toMatchObject({
@@ -76,7 +80,7 @@ describe("task normalization", () => {
       severity: "MEDIUM",
       dependsOn: ["S1"],
       durationEstimate: 2,
-      sourceRef: "legacy"
+      sourceRef: "legacy",
     });
   });
 
@@ -89,7 +93,7 @@ describe("task normalization", () => {
       agent: "atlas",
       severity: "high" as never,
       depends_on: ["S1"],
-      durationEstimate: 3
+      durationEstimate: 3,
     } as unknown as Parameters<typeof normalizeTaskDocument>[0]);
 
     expect(task).toMatchObject({
@@ -98,8 +102,60 @@ describe("task normalization", () => {
       status: "IN_PROGRESS",
       severity: "HIGH",
       dependsOn: ["S1"],
-      durationEstimate: 3
+      durationEstimate: 3,
     });
+  });
+
+  it("normalizes started_at ISO string to startedAt", () => {
+    const task = normalizeTaskDocument({
+      code: "S10",
+      short_task: "With start",
+      detail: "x",
+      status: "IN_PROGRESS",
+      agent: "test",
+      severity: "LOW",
+      started_at: "2026-05-01T10:00:00.000Z",
+    });
+    expect(task.startedAt).toBe("2026-05-01T10:00:00.000Z");
+  });
+
+  it("normalizes completed_at Date to completedAt ISO string", () => {
+    const task = normalizeTaskDocument({
+      code: "S11",
+      short_task: "With completion",
+      detail: "x",
+      status: "DONE",
+      agent: "test",
+      severity: "LOW",
+      completed_at: new Date("2026-06-01T12:00:00.000Z"),
+    });
+    expect(task.completedAt).toBe("2026-06-01T12:00:00.000Z");
+  });
+
+  it("allows legacy tasks without started_at/completed_at", () => {
+    const task = normalizeTaskDocument({
+      code: "S12",
+      short_task: "Legacy",
+      detail: "x",
+      status: "PENDING",
+      agent: "test",
+      severity: "LOW",
+    });
+    expect(task.startedAt).toBeUndefined();
+    expect(task.completedAt).toBeUndefined();
+  });
+
+  it("propagates null started_at as null", () => {
+    const task = normalizeTaskDocument({
+      code: "S13",
+      short_task: "Null start",
+      detail: "x",
+      status: "PENDING",
+      agent: "test",
+      severity: "LOW",
+      started_at: null,
+    });
+    expect(task.startedAt).toBeNull();
   });
 });
 
@@ -121,13 +177,13 @@ describe("action plan normalization", () => {
         inProgress: 2,
         blocked: 1,
         done: 4,
-        failed: 0
+        failed: 0,
       } as never,
       currentTaskCode: "S5b",
       notes: "Keep vscode extension untouched",
       createdAt: "2026-04-12T00:00:00.000Z",
       updated_at: "2026-04-12T01:00:00.000Z",
-      completedAt: null
+      completedAt: null,
     } as never);
 
     expect(plan).toMatchObject({
@@ -142,9 +198,9 @@ describe("action plan normalization", () => {
         in_progress: 2,
         blocked: 1,
         done: 4,
-        failed: 0
+        failed: 0,
       },
-      completedAt: null
+      completedAt: null,
     });
   });
 
@@ -163,9 +219,9 @@ describe("action plan normalization", () => {
           in_progress: 0,
           blocked: 0,
           done: 0,
-          failed: 0
-        }
-      })
+          failed: 0,
+        },
+      }),
     ).toThrow();
   });
 });
@@ -179,19 +235,19 @@ describe("graph algorithms", () => {
         {
           ...sampleTasks[0]!,
           code: "A",
-          depends_on: ["C"]
+          depends_on: ["C"],
         },
         {
           ...sampleTasks[1]!,
           code: "B",
-          depends_on: ["A"]
+          depends_on: ["A"],
         },
         {
           ...sampleTasks[2]!,
           code: "C",
-          depends_on: ["B"]
-        }
-      ])
+          depends_on: ["B"],
+        },
+      ]),
     );
 
     expect(graph.cycles[0]?.path).toEqual(["A", "B", "C", "A"]);
@@ -207,26 +263,35 @@ describe("graph algorithms", () => {
         {
           ...sampleTasks[0]!,
           code: "A",
-          depends_on: ["MISSING"]
+          depends_on: ["MISSING"],
         },
         {
           ...sampleTasks[1]!,
           code: "B",
-          depends_on: ["A"]
-        }
-      ])
+          depends_on: ["A"],
+        },
+      ]),
     );
 
     expect(graph.edges.map((edge) => edge.id)).toEqual(["A->B"]);
-    expect(graph.warnings.orphans).toEqual([{ taskCode: "A", missing: "MISSING" }]);
+    expect(graph.warnings.orphans).toEqual([
+      { taskCode: "A", missing: "MISSING" },
+    ]);
   });
 
   it("returns direct blockers for a task", () => {
-    expect(getTaskBlockers(tasks, "S5b").map((task) => task.code)).toEqual(["S2.1", "S5a"]);
+    expect(getTaskBlockers(tasks, "S5b").map((task) => task.code)).toEqual([
+      "S2.1",
+      "S5a",
+    ]);
   });
 
   it("returns downstream tasks", () => {
-    expect(getTaskDownstream(tasks, "S2.1").map((task) => task.code)).toEqual(["S3", "S4", "S5b"]);
+    expect(getTaskDownstream(tasks, "S2.1").map((task) => task.code)).toEqual([
+      "S3",
+      "S4",
+      "S5b",
+    ]);
   });
 
   it("creates graph snapshots with deterministic ordering", () => {
@@ -236,7 +301,10 @@ describe("graph algorithms", () => {
   });
 
   it("filters snapshots by project and group", () => {
-    const snapshot = buildGraphSnapshot(tasks, { project: ["cortex"], group: ["Extension"] });
+    const snapshot = buildGraphSnapshot(tasks, {
+      project: ["cortex"],
+      group: ["Extension"],
+    });
     expect(snapshot.nodes.map((node) => node.code)).toEqual(["S3", "S5b"]);
   });
 
@@ -246,42 +314,49 @@ describe("graph algorithms", () => {
         ...sampleTasks[0]!,
         code: "PLAN-A",
         plan_code: "PLAN-X",
-        depends_on: []
+        depends_on: [],
       },
       {
         ...sampleTasks[1]!,
         code: "PLAN-B",
         plan_code: "PLAN-X",
-        depends_on: ["PLAN-A"]
+        depends_on: ["PLAN-A"],
       },
       {
         ...sampleTasks[2]!,
         code: "PLAN-C",
         plan_code: "PLAN-Y",
-        depends_on: ["PLAN-B"]
-      }
+        depends_on: ["PLAN-B"],
+      },
     ]);
 
-    const snapshot = buildGraphSnapshot(planTasks, { planCode: "PLAN-X" }, {
-      plan: normalizeActionPlan({
-        code: "PLAN-X",
-        title: "Plan X",
-        description: "",
-        goal: "",
-        context: "",
-        status: "PLANNING",
-        progress: {
-          total: 2,
-          pending: 2,
-          in_progress: 0,
-          blocked: 0,
-          done: 0,
-          failed: 0
-        }
-      })
-    });
+    const snapshot = buildGraphSnapshot(
+      planTasks,
+      { planCode: "PLAN-X" },
+      {
+        plan: normalizeActionPlan({
+          code: "PLAN-X",
+          title: "Plan X",
+          description: "",
+          goal: "",
+          context: "",
+          status: "PLANNING",
+          progress: {
+            total: 2,
+            pending: 2,
+            in_progress: 0,
+            blocked: 0,
+            done: 0,
+            failed: 0,
+          },
+        }),
+      },
+    );
 
-    expect(snapshot.nodes.map((node) => node.code)).toEqual(["PLAN-A", "PLAN-B"]);
+    expect(snapshot.nodes.map((node) => node.code)).toEqual([
+      "PLAN-A",
+      "PLAN-B",
+    ]);
     expect(snapshot.edges.map((edge) => edge.id)).toEqual(["PLAN-A->PLAN-B"]);
     expect(snapshot.warnings.orphans).toEqual([]);
     expect(snapshot.planContext?.code).toBe("PLAN-X");
@@ -306,27 +381,27 @@ describe("graph algorithms", () => {
           ...sampleTasks[3]!,
           code: "D",
           short_task: "Task D",
-          depends_on: ["B", "C"]
+          depends_on: ["B", "C"],
         },
         {
           ...sampleTasks[2]!,
           code: "C",
           short_task: "Task C",
-          depends_on: ["A"]
+          depends_on: ["A"],
         },
         {
           ...sampleTasks[1]!,
           code: "B",
           short_task: "Task B",
-          depends_on: ["A"]
+          depends_on: ["A"],
         },
         {
           ...sampleTasks[0]!,
           code: "A",
           short_task: "Task A",
-          depends_on: []
-        }
-      ])
+          depends_on: [],
+        },
+      ]),
     );
 
     expect(graph.topologicalOrder).toEqual(["A", "B", "C", "D"]);
@@ -337,7 +412,7 @@ describe("note normalization", () => {
   it("normalizes a minimal note input with defaults", () => {
     const note = normalizeNote({
       code: "n1",
-      title: "Hola"
+      title: "Hola",
     });
 
     expect(note.code).toBe("n1");
@@ -362,7 +437,7 @@ describe("note normalization", () => {
       remindAt: "2026-04-12T02:00:00.000Z",
       remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
-      updatedAt: new Date("2026-04-12T01:00:00.000Z")
+      updatedAt: new Date("2026-04-12T01:00:00.000Z"),
     } as never);
 
     expect(note).toMatchObject({
@@ -377,7 +452,7 @@ describe("note normalization", () => {
       remindAt: "2026-04-12T02:00:00.000Z",
       remindedAt: "2026-04-12T03:00:00.000Z",
       createdAt: "2026-04-12T00:00:00.000Z",
-      updatedAt: "2026-04-12T01:00:00.000Z"
+      updatedAt: "2026-04-12T01:00:00.000Z",
     });
   });
 
@@ -385,7 +460,7 @@ describe("note normalization", () => {
     const note = normalizeNote({
       code: "n3",
       title: "Tags",
-      tags: ["zeta", "alpha", "zeta", "beta", "alpha"]
+      tags: ["zeta", "alpha", "zeta", "beta", "alpha"],
     });
 
     expect(note.tags).toEqual(["alpha", "beta", "zeta"]);
@@ -397,15 +472,15 @@ describe("shared mongo client support", () => {
     const sharedClient = createSharedClient([
       {
         ...sampleTasks[0]!,
-        _id: "task-1"
-      }
+        _id: "task-1",
+      },
     ]) as unknown as SharedMongoClient;
 
     const store = new MongoTaskStore({
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "tasks",
-      sharedClient
+      sharedClient,
     });
 
     const tasks = await store.listTasks();
@@ -433,16 +508,16 @@ describe("shared mongo client support", () => {
           in_progress: 0,
           blocked: 0,
           done: 0,
-          failed: 0
-        }
-      }
+          failed: 0,
+        },
+      },
     ]) as unknown as SharedMongoClient;
 
     const store = new MongoActionPlanStore({
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "action_plans",
-      sharedClient
+      sharedClient,
     });
 
     const plans = await store.listPlans();
@@ -462,7 +537,7 @@ describe("shared mongo client support", () => {
         code: "n2",
         title: "Second",
         pinned: false,
-        updated_at: "2026-04-12T11:00:00.000Z"
+        updated_at: "2026-04-12T11:00:00.000Z",
       },
       {
         _id: "note-1",
@@ -470,8 +545,8 @@ describe("shared mongo client support", () => {
         title: "First",
         pinned: true,
         updated_at: "2026-04-12T12:00:00.000Z",
-        tags: ["b", "a", "b"]
-      }
+        tags: ["b", "a", "b"],
+      },
     ]) as unknown as SharedMongoClient;
 
     sharedClient.collectionApi.findOne.mockResolvedValue({
@@ -480,27 +555,30 @@ describe("shared mongo client support", () => {
       title: "First",
       task_code: "TASK-1",
       plan_code: "PLAN-1",
-      pinned: true
+      pinned: true,
     });
 
     const store = new MongoNoteStore({
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "notes",
-      sharedClient
+      sharedClient,
     });
 
     const notes = await store.listNotes();
     const note = await store.getNote("n1");
 
     expect(sharedClient.collectionApi.find).toHaveBeenCalledWith({});
-    expect(sharedClient.collectionApi.sort).toHaveBeenCalledWith({ pinned: -1, updated_at: -1 });
+    expect(sharedClient.collectionApi.sort).toHaveBeenCalledWith({
+      pinned: -1,
+      updated_at: -1,
+    });
     expect(notes.map((item) => item.code)).toEqual(["n2", "n1"]);
     expect(note).toMatchObject({
       code: "n1",
       taskCode: "TASK-1",
       planCode: "PLAN-1",
-      pinned: true
+      pinned: true,
     });
 
     await store.close();
@@ -521,7 +599,7 @@ describe("shared mongo client support", () => {
       remind_at: "2026-04-12T12:00:00.000Z",
       reminded_at: "2026-04-12T13:00:00.000Z",
       created_at: "2026-04-12T10:00:00.000Z",
-      updated_at: "2026-04-12T11:00:00.000Z"
+      updated_at: "2026-04-12T11:00:00.000Z",
     });
     sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 1 });
 
@@ -529,13 +607,13 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "notes",
-      sharedClient
+      sharedClient,
     });
 
     const note = await store.upsertNote({
       code: "n3",
       title: "Stored",
-      pinned: true
+      pinned: true,
     });
     const deleted = await store.deleteNote("n3");
 
@@ -549,10 +627,10 @@ describe("shared mongo client support", () => {
           title: "Stored",
           pinned: true,
           created_at: expect.any(String),
-          updated_at: expect.any(String)
-        })
+          updated_at: expect.any(String),
+        }),
       },
-      { upsert: true }
+      { upsert: true },
     );
     expect(note).toMatchObject({
       id: "note-3",
@@ -561,16 +639,23 @@ describe("shared mongo client support", () => {
       taskCode: "TASK-3",
       planCode: "PLAN-3",
       remindAt: "2026-04-12T12:00:00.000Z",
-      remindedAt: "2026-04-12T13:00:00.000Z"
+      remindedAt: "2026-04-12T13:00:00.000Z",
     });
-    expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "n3" });
+    expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({
+      code: "n3",
+    });
     expect(deleted).toBe(true);
     expect(sharedClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
+      {
+        key: { code: 1 },
+        name: "code_unique",
+        unique: true,
+        partialFilterExpression: { code: { $type: "string" } },
+      },
       { key: { task_code: 1 }, name: "task_code_idx" },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
       { key: { remind_at: 1, reminded_at: 1 }, name: "reminder_due_idx" },
-      { key: { updated_at: -1 }, name: "updated_at_desc_idx" }
+      { key: { updated_at: -1 }, name: "updated_at_desc_idx" },
     ]);
   });
 
@@ -580,7 +665,7 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "tasks",
-      sharedClient
+      sharedClient,
     });
 
     await expect(store.upsertTasks([])).resolves.toBe(0);
@@ -593,19 +678,19 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "tasks",
-      sharedClient
+      sharedClient,
     });
 
     const writes = await store.upsertTasks([
       {
         ...sampleTasks[0]!,
-        code: "T-1"
+        code: "T-1",
       },
       {
         ...sampleTasks[1]!,
         code: "T-2",
-        created_at: "2026-04-12T10:00:00.000Z"
-      }
+        created_at: "2026-04-12T10:00:00.000Z",
+      },
     ]);
 
     expect(writes).toBe(2);
@@ -619,11 +704,11 @@ describe("shared mongo client support", () => {
               $set: expect.objectContaining({
                 code: "T-1",
                 created_at: expect.any(String),
-                updated_at: expect.any(String)
-              })
+                updated_at: expect.any(String),
+              }),
             },
-            upsert: true
-          })
+            upsert: true,
+          }),
         }),
         expect.objectContaining({
           updateOne: expect.objectContaining({
@@ -632,19 +717,94 @@ describe("shared mongo client support", () => {
               $set: expect.objectContaining({
                 code: "T-2",
                 created_at: "2026-04-12T10:00:00.000Z",
-                updated_at: expect.any(String)
-              })
+                updated_at: expect.any(String),
+              }),
             },
-            upsert: true
-          })
-        })
+            upsert: true,
+          }),
+        }),
       ],
-      { ordered: false }
+      { ordered: false },
     );
 
-    const [operations] = sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const [operations] =
+      sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
     const firstWrite = operations?.[0]?.updateOne.update.$set;
     expect(firstWrite?.created_at).toEqual(firstWrite?.updated_at);
+  });
+
+  it("applies $unset for null fields and omits them from $set", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await store.upsertTasks([
+      {
+        code: "T-UNSET",
+        short_task: "Task with nulls",
+        detail: "detail",
+        status: "PENDING",
+        agent: "atlas",
+        severity: "LOW",
+        lane: null,
+        project: null,
+        source_ref: null,
+        duration_estimate: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const [operations] =
+      sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const op = operations?.[0]?.updateOne;
+    expect(op?.filter).toEqual({ code: "T-UNSET" });
+    expect(op?.update.$set).not.toHaveProperty("lane");
+    expect(op?.update.$set).not.toHaveProperty("project");
+    expect(op?.update.$set).not.toHaveProperty("source_ref");
+    expect(op?.update.$set).not.toHaveProperty("duration_estimate");
+    expect(op?.update.$unset).toEqual({
+      lane: 1,
+      project: 1,
+      source_ref: 1,
+      duration_estimate: 1,
+    });
+  });
+
+  it("mixes $set and $unset when only some fields are null", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await store.upsertTasks([
+      {
+        code: "T-MIX",
+        short_task: "Mixed nulls",
+        detail: "detail",
+        status: "IN_PROGRESS",
+        agent: "atlas",
+        severity: "HIGH",
+        lane: null,
+        project: "cortex",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const [operations] =
+      sharedClient.collectionApi.bulkWrite.mock.calls[0] ?? [];
+    const op = operations?.[0]?.updateOne;
+    expect(op?.update.$set).toMatchObject({ code: "T-MIX", project: "cortex" });
+    expect(op?.update.$set).not.toHaveProperty("lane");
+    expect(op?.update.$unset).toEqual({ lane: 1 });
   });
 
   it("creates the required task and plan indexes", async () => {
@@ -653,15 +813,20 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "tasks",
-      sharedClient: taskClient
+      sharedClient: taskClient,
     });
 
     await taskStore.ensureIndexes();
 
     expect(taskClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
+      {
+        key: { code: 1 },
+        name: "code_unique",
+        unique: true,
+        partialFilterExpression: { code: { $type: "string" } },
+      },
       { key: { plan_code: 1 }, name: "plan_code_idx" },
-      { key: { status: 1 }, name: "status_idx" }
+      { key: { status: 1 }, name: "status_idx" },
     ]);
 
     const planClient = createSharedClient([]) as unknown as SharedMongoClient;
@@ -669,14 +834,14 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "action_plans",
-      sharedClient: planClient
+      sharedClient: planClient,
     });
 
     await planStore.ensureIndexes();
 
     expect(planClient.collectionApi.createIndexes).toHaveBeenCalledWith([
       { key: { code: 1 }, name: "code_unique", unique: true },
-      { key: { status: 1 }, name: "status_idx" }
+      { key: { status: 1 }, name: "status_idx" },
     ]);
   });
 
@@ -686,7 +851,7 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "tasks",
-      sharedClient: taskClient
+      sharedClient: taskClient,
     });
 
     await taskStore.ensureIndexes();
@@ -695,10 +860,13 @@ describe("shared mongo client support", () => {
       ["tasks_code_unique"],
       ["tasks_status_created_at"],
       ["tasks_tags"],
-      ["tasks_plan_code"]
+      ["tasks_plan_code"],
     ]);
-    expect(taskClient.collectionApi.dropIndex.mock.invocationCallOrder[3]).toBeLessThan(
-      taskClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    expect(
+      taskClient.collectionApi.dropIndex.mock.invocationCallOrder[3],
+    ).toBeLessThan(
+      taskClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ??
+        Number.POSITIVE_INFINITY,
     );
   });
 
@@ -708,44 +876,533 @@ describe("shared mongo client support", () => {
       mongoUrl: "mongodb://unused",
       dbName: "cortex",
       collectionName: "notes",
-      sharedClient: noteClient
+      sharedClient: noteClient,
     });
 
     await noteStore.ensureIndexes();
 
-    expect(noteClient.collectionApi.dropIndex.mock.calls).toEqual([["notes_created_at"], ["notes_tags"]]);
-    expect(noteClient.collectionApi.dropIndex.mock.invocationCallOrder[1]).toBeLessThan(
-      noteClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    expect(noteClient.collectionApi.dropIndex.mock.calls).toEqual([
+      ["notes_created_at"],
+      ["notes_tags"],
+    ]);
+    expect(
+      noteClient.collectionApi.dropIndex.mock.invocationCallOrder[1],
+    ).toBeLessThan(
+      noteClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ??
+        Number.POSITIVE_INFINITY,
     );
+  });
+});
+
+describe("MongoTaskStore bulkUpdateTasks / deleteTasks / listTasks filter", () => {
+  it("listTasks filters by planCode", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "T1",
+        short_task: "Task 1",
+        status: "PENDING",
+        agent: "atlas",
+        severity: "LOW",
+        plan_code: "P1",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        code: "T2",
+        short_task: "Task 2",
+        status: "DONE",
+        agent: "atlas",
+        severity: "MEDIUM",
+        plan_code: "P2",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const all = await store.listTasks();
+    expect(all).toHaveLength(2);
+
+    sharedClient.collectionApi.find.mockClear();
+    await store.listTasks({ planCode: "P1" });
+    expect(sharedClient.collectionApi.find).toHaveBeenCalledWith({
+      plan_code: "P1",
+    });
+  });
+
+  it("bulkUpdateTasks applies $set/$unset via updateMany", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const result = await store.bulkUpdateTasks(["T1", "T2"], {
+      status: "DONE",
+      lane: null,
+    });
+    expect(result).toBe(2);
+    expect(sharedClient.collectionApi.updateMany).toHaveBeenCalledWith(
+      { code: { $in: ["T1", "T2"] } },
+      {
+        $set: expect.objectContaining({ status: "DONE" }),
+        $unset: { lane: 1 },
+      },
+    );
+  });
+
+  it("bulkUpdateTasks returns 0 for empty codes", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await expect(store.bulkUpdateTasks([], { status: "DONE" })).resolves.toBe(
+      0,
+    );
+    expect(sharedClient.collectionApi.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("deleteTasks removes tasks by codes via deleteMany", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const result = await store.deleteTasks(["T1", "T2"]);
+    expect(result).toBe(2);
+    expect(sharedClient.collectionApi.deleteMany).toHaveBeenCalledWith({
+      code: { $in: ["T1", "T2"] },
+    });
+  });
+
+  it("deleteTasks returns 0 for empty codes", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await expect(store.deleteTasks([])).resolves.toBe(0);
+    expect(sharedClient.collectionApi.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("action plan store insertPlan", () => {
+  it("inserts a plan with defaults and returns normalized record", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValueOnce({
+      _id: "plan-new",
+      code: "PLAN-NEW",
+      title: "New Plan",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: {
+        total: 1,
+        pending: 1,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assigned_agent: "big-pickle",
+      created_at: "2026-06-10T00:00:00.000Z",
+      updated_at: "2026-06-10T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.insertPlan({
+      code: "PLAN-NEW",
+      title: "New Plan",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: {
+        total: 1,
+        pending: 1,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assigned_agent: "big-pickle",
+    });
+
+    expect(sharedClient.collectionApi.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "PLAN-NEW",
+        title: "New Plan",
+        status: "PLANNING",
+        created_at: expect.any(String),
+        updated_at: expect.any(String),
+      }),
+    );
+    expect(result).toMatchObject({
+      code: "PLAN-NEW",
+      title: "New Plan",
+      status: "PLANNING",
+      notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
+      assignedAgent: "big-pickle",
+    });
+  });
+
+  it("throws when insertOne fails", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValueOnce(null);
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    await expect(
+      store.insertPlan({
+        code: "PLAN-FAIL",
+        title: "Fail",
+        description: "",
+        goal: "",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
+      }),
+    ).rejects.toThrow(/Plan insert failed for code PLAN-FAIL/);
+  });
+});
+
+describe("action plan store updatePlan", () => {
+  it("updates a plan with $set and returns normalized record", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "PLAN-SET",
+        title: "Original",
+        description: "desc",
+        goal: "goal",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
+      },
+    ]) as unknown as SharedMongoClient;
+    const findOneAfterUpdate = sharedClient.collectionApi.findOne;
+    findOneAfterUpdate.mockResolvedValueOnce({
+      code: "PLAN-SET",
+      title: "Updated",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "IN_PROGRESS",
+      progress: {
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
+      notes: "[2026-06-10T00:00:00.000Z] first note",
+      updated_at: "2026-06-10T12:00:00.000Z",
+      created_at: "2026-06-01T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.updatePlan("PLAN-SET", {
+      title: "Updated",
+      status: "IN_PROGRESS",
+      notes: "[2026-06-10T00:00:00.000Z] first note",
+    });
+
+    expect(sharedClient.collectionApi.updateOne).toHaveBeenCalledWith(
+      { code: "PLAN-SET" },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          title: "Updated",
+          status: "IN_PROGRESS",
+          notes: "[2026-06-10T00:00:00.000Z] first note",
+          updated_at: expect.any(String),
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      code: "PLAN-SET",
+      title: "Updated",
+      status: "IN_PROGRESS",
+    });
+  });
+
+  it("applies $unset for null fields and returns updated record", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "PLAN-UNSET",
+        title: "With notes",
+        description: "desc",
+        goal: "goal",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
+        notes: "some notes",
+      },
+    ]) as unknown as SharedMongoClient;
+    const findOneAfterUpdate = sharedClient.collectionApi.findOne;
+    findOneAfterUpdate.mockResolvedValueOnce({
+      code: "PLAN-UNSET",
+      title: "With notes",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: {
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
+      updated_at: "2026-06-10T12:00:00.000Z",
+      created_at: "2026-06-01T00:00:00.000Z",
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    await store.updatePlan("PLAN-UNSET", { notes: null });
+
+    expect(sharedClient.collectionApi.updateOne).toHaveBeenCalledWith(
+      { code: "PLAN-UNSET" },
+      expect.objectContaining({
+        $set: expect.objectContaining({ updated_at: expect.any(String) }),
+        $unset: { notes: 1 },
+      }),
+    );
+  });
+
+  it("returns null when plan code does not exist", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.updateOne.mockResolvedValue({
+      matchedCount: 0,
+      modifiedCount: 0,
+      acknowledged: true,
+      upsertedCount: 0,
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.updatePlan("NONEXISTENT", { title: "Nope" });
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("action plan store deletePlan", () => {
+  it("deletes a plan by code and returns true", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.deletePlan("PLAN-1");
+
+    expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "PLAN-1" });
+    expect(result).toBe(true);
+  });
+
+  it("returns false when plan code does not exist", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 0 });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.deletePlan("NONEXISTENT");
+
+    expect(result).toBe(false);
+  });
+});
+
+describe("ai agents catalog", () => {
+  it("seeds align con SELF_HOSTED_AGENTS y son subconjunto de TASK_AGENTS", () => {
+    const seedSlugs = AI_AGENT_SEEDS.map((seed) => seed.slug).sort();
+    const expected = [...SELF_HOSTED_AGENTS].sort();
+    expect(seedSlugs).toEqual(expected);
+
+    const taskAgents = new Set<string>(TASK_AGENTS);
+    for (const slug of SELF_HOSTED_AGENTS) {
+      expect(taskAgents.has(slug)).toBe(true);
+    }
+  });
+
+  it("findAgent normaliza el doc cuando el slug existe", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValue({
+      _id: "agent-codex",
+      slug: "codex",
+      display_name: "Codex",
+      vendor: "openai",
+      model_family: "gpt-5-codex",
+      icon_path: "codex.svg",
+      active: true,
+      created_at: "2026-06-09T00:00:00.000Z",
+      updated_at: "2026-06-09T00:00:00.000Z",
+    });
+
+    const store = new MongoAiAgentStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "ai_agents",
+      sharedClient,
+    });
+
+    const agent = await store.findAgent("codex");
+
+    expect(sharedClient.collectionApi.findOne).toHaveBeenCalledWith({
+      slug: "codex",
+    });
+    expect(agent).toMatchObject({
+      id: "agent-codex",
+      slug: "codex",
+      displayName: "Codex",
+      vendor: "openai",
+      modelFamily: "gpt-5-codex",
+      iconPath: "codex.svg",
+      active: true,
+    });
+  });
+
+  it("findAgent devuelve null cuando el slug no existe", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValue(null);
+
+    const store = new MongoAiAgentStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "ai_agents",
+      sharedClient,
+    });
+
+    const agent = await store.findAgent("unknown-slug");
+
+    expect(sharedClient.collectionApi.findOne).toHaveBeenCalledWith({
+      slug: "unknown-slug",
+    });
+    expect(agent).toBeNull();
   });
 });
 
 function createSharedClient(items: unknown[]) {
   const toArray = vi.fn().mockResolvedValue(items);
   const sort = vi.fn(() => ({
-    toArray
+    toArray,
   }));
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
-  const updateOne = vi.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0 });
+  const insertOne = vi
+    .fn()
+    .mockResolvedValue({ acknowledged: true, insertedId: "mock-id" });
+  const updateOne = vi.fn().mockResolvedValue({
+    acknowledged: true,
+    matchedCount: 1,
+    modifiedCount: 1,
+    upsertedCount: 0,
+  });
+  const updateMany = vi.fn().mockResolvedValue({
+    acknowledged: true,
+    matchedCount: 2,
+    modifiedCount: 2,
+  });
   const deleteOne = vi.fn().mockResolvedValue({ deletedCount: 0 });
+  const deleteMany = vi.fn().mockResolvedValue({ deletedCount: 2 });
   const dropIndex = vi.fn().mockResolvedValue(undefined);
   const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
     sort,
-    toArray
+    toArray,
   }));
   const findOne = vi.fn().mockResolvedValue(null);
   const collection = vi.fn(() => ({
     bulkWrite,
     createIndexes,
     deleteOne,
+    deleteMany,
     dropIndex,
     find,
     findOne,
-    updateOne
+    insertOne,
+    updateMany,
+    updateOne,
   }));
   const db = vi.fn(() => ({
-    collection
+    collection,
   }));
 
   return {
@@ -756,12 +1413,15 @@ function createSharedClient(items: unknown[]) {
       bulkWrite,
       createIndexes,
       deleteOne,
+      deleteMany,
       dropIndex,
       find,
       findOne,
+      insertOne,
       sort,
       toArray,
-      updateOne
-    }
+      updateMany,
+      updateOne,
+    },
   };
 }

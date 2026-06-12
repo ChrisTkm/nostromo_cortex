@@ -50,8 +50,21 @@ class TypeScriptFlowAnalyzer {
       source,
       ts.ScriptTarget.Latest,
       true,
-      documentPath.toLowerCase().endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+      this.resolveScriptKind(documentPath)
     );
+  }
+
+  private resolveScriptKind(documentPath: string): ts.ScriptKind {
+    switch (path.extname(documentPath).toLowerCase()) {
+      case ".tsx":
+        return ts.ScriptKind.TSX;
+      case ".js":
+        return ts.ScriptKind.JS;
+      case ".jsx":
+        return ts.ScriptKind.JSX;
+      default:
+        return ts.ScriptKind.TS;
+    }
   }
 
   analyze(): ScriptFlowSnapshot {
@@ -158,11 +171,14 @@ class TypeScriptFlowAnalyzer {
 
       const name = ts.isIdentifier(declaration.name) ? declaration.name.text : "anonymous";
       if (ts.isBlock(initializer.body)) {
-        segments.push(this.parseFunctionLike(declaration, initializer.body, name, initializer.parameters, true));
+        segments.push(this.parseFunctionLike(initializer, initializer.body, name, initializer.parameters, true));
         continue;
       }
 
       const functionId = this.createNode("function", `${name}(${this.formatParameters(initializer.parameters)})`, declaration, name);
+      if (this.isAsyncFunction(initializer)) {
+        this.setNodeMeta(functionId, { async: true });
+      }
       this.entryPoints.push(functionId);
       segments.push({
         entries: [functionId],
@@ -183,6 +199,9 @@ class TypeScriptFlowAnalyzer {
     const functionId = this.createNode("function", `${displayName}(${this.formatParameters(parameters)})`, anchorNode, displayName);
     if (isEntryPoint) {
       this.entryPoints.push(functionId);
+    }
+    if (this.isAsyncFunction(anchorNode)) {
+      this.setNodeMeta(functionId, { async: true });
     }
     if (!this.hasExplicitReturn(body)) {
       this.observations.add(`Function ${displayName} has no explicit return.`);
@@ -349,60 +368,60 @@ class TypeScriptFlowAnalyzer {
   }
 
   private parseTryStatement(statement: ts.TryStatement): FlowSegment {
-    const tryId = this.createNode("tryCatch", "try / catch", statement, "try-catch");
+    const tryId = this.createNode("tryCatch", "try", statement.tryBlock, "try");
+    this.setNodeMeta(tryId, { subKind: "try" });
     const trySegment = this.parseStatementList(statement.tryBlock.statements);
-    const catchSegment = statement.catchClause ? this.parseStatementList(statement.catchClause.block.statements) : EMPTY_SEGMENT;
-    const finallySegment = statement.finallyBlock ? this.parseStatementList(statement.finallyBlock.statements) : EMPTY_SEGMENT;
-
-    if (statement.catchClause && statement.catchClause.block.statements.length === 0) {
-      this.observations.add(`Catch block is empty near line ${this.toRange(statement.catchClause).startLine}.`);
-    }
-
     if (trySegment.entries.length > 0) {
-      this.connect([{ id: tryId, label: "try" }], trySegment.entries);
-    }
-    if (catchSegment.entries.length > 0) {
-      this.connect([{ id: tryId, label: "catch" }], catchSegment.entries);
+      this.connect([{ id: tryId }], trySegment.entries);
     }
 
-    if (statement.finallyBlock && finallySegment.entries.length > 0) {
-      const incoming: FlowEndpoint[] = [];
-      if (trySegment.exits.length > 0) {
-        incoming.push(...trySegment.exits);
-      } else {
-        incoming.push({ id: tryId, label: "try" });
-      }
-      if (catchSegment.exits.length > 0) {
-        incoming.push(...catchSegment.exits);
-      } else if (statement.catchClause) {
-        incoming.push({ id: tryId, label: "catch" });
-      }
-
-      this.connect(incoming, finallySegment.entries, "finally");
-      return {
-        entries: [tryId],
-        exits: finallySegment.exits.length > 0 ? finallySegment.exits : [{ id: tryId }]
-      };
-    }
-
-    const exits: FlowEndpoint[] = [];
-    if (trySegment.exits.length > 0) {
-      exits.push(...trySegment.exits);
-    } else {
-      exits.push({ id: tryId, label: "try" });
-    }
+    let catchId: string | undefined;
+    let catchSegment = EMPTY_SEGMENT;
     if (statement.catchClause) {
-      if (catchSegment.exits.length > 0) {
-        exits.push(...catchSegment.exits);
-      } else {
-        exits.push({ id: tryId, label: "catch" });
+      catchId = this.createNode("tryCatch", "catch", statement.catchClause, "catch");
+      this.setNodeMeta(catchId, { subKind: "catch" });
+      if (statement.catchClause.block.statements.length === 0) {
+        this.observations.add(`Catch block is empty near line ${this.toRange(statement.catchClause).startLine}.`);
+      }
+      catchSegment = this.parseStatementList(statement.catchClause.block.statements);
+      if (catchSegment.entries.length > 0) {
+        this.connect([{ id: catchId }], catchSegment.entries);
+      }
+      this.connect([{ id: tryId, label: "throws" }], [catchId]);
+    }
+
+    let finallyId: string | undefined;
+    let finallySegment = EMPTY_SEGMENT;
+    if (statement.finallyBlock) {
+      finallyId = this.createNode("tryCatch", "finally", statement.finallyBlock, "finally");
+      this.setNodeMeta(finallyId, { subKind: "finally" });
+      finallySegment = this.parseStatementList(statement.finallyBlock.statements);
+      if (finallySegment.entries.length > 0) {
+        this.connect([{ id: finallyId }], finallySegment.entries);
+      }
+      const incoming: FlowEndpoint[] = [];
+      if (trySegment.exits.length > 0) incoming.push(...trySegment.exits);
+      else incoming.push({ id: tryId, label: "after try" });
+      if (statement.catchClause) {
+        if (catchSegment.exits.length > 0) incoming.push(...catchSegment.exits);
+        else if (catchId) incoming.push({ id: catchId, label: "after catch" });
+      }
+      this.connect(incoming, [finallyId], "after");
+    }
+
+    let exits: FlowEndpoint[] = [];
+    if (finallyId) {
+      exits = finallySegment.exits.length > 0 ? finallySegment.exits : [{ id: finallyId }];
+    } else {
+      if (trySegment.exits.length > 0) exits.push(...trySegment.exits);
+      else exits.push({ id: tryId });
+      if (catchId) {
+        if (catchSegment.exits.length > 0) exits.push(...catchSegment.exits);
+        else exits.push({ id: catchId });
       }
     }
 
-    return {
-      entries: [tryId],
-      exits
-    };
+    return { entries: [tryId], exits };
   }
 
   private parseReturnStatement(statement: ts.ReturnStatement): FlowSegment {
@@ -633,5 +652,11 @@ class TypeScriptFlowAnalyzer {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "") || "node"
     );
+  }
+
+  private isAsyncFunction(node: ts.Node): boolean {
+    if (!ts.canHaveModifiers(node)) return false;
+    const modifiers = ts.getModifiers(node);
+    return Boolean(modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
   }
 }

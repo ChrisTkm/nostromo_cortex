@@ -7,15 +7,33 @@ export type FlowNodeData = {
   kindLabel: string;
   label: string;
   rangeLabel?: string;
+  async?: boolean;
+  subKind?: string;
+  searchHit?: boolean;
+  crossFile?: boolean;
+  sourceFile?: string;
+};
+
+const SUB_KIND_LABELS: Record<string, string> = {
+  try: "Try",
+  catch: "Catch",
+  finally: "Finally",
+  except: "Except",
+  else: "Else"
 };
 
 export function FlowNode({ data, selected }: NodeProps<FlowNodeData>) {
+  const displayKindLabel = data.subKind && SUB_KIND_LABELS[data.subKind] ? SUB_KIND_LABELS[data.subKind] : data.kindLabel;
   return (
     <>
       <Handle className="script-flow-node-card__handle" position={Position.Left} type="target" />
-      <div className={`script-flow-node-card script-flow-node-card--${data.kind}${selected ? " script-flow-node-card--selected" : ""}`}>
+      <div className={`script-flow-node-card script-flow-node-card--${data.kind}${selected ? " script-flow-node-card--selected" : ""}${data.searchHit ? " script-flow-node-card--search-hit" : ""}${data.crossFile ? " script-flow-node-card--cross-file" : ""}`}
+        title={data.sourceFile ? `From ${data.sourceFile}` : undefined}
+      >
         <div className="script-flow-node-card__header">
-          <span className="script-flow-node-card__kind">{data.kindLabel}</span>
+          <span className="script-flow-node-card__kind">{displayKindLabel}</span>
+          {data.async ? <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.8 }}>async</span> : null}
+          {data.crossFile && data.sourceFile ? <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.65 }}>{data.sourceFile}</span> : null}
           <span className="script-flow-node-card__accent" />
         </div>
         <div className="script-flow-node-card__label">{data.label}</div>

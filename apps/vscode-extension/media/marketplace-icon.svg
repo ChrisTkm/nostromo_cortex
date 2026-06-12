@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Cortex</title>
+  <desc id="desc">Cortex marketplace icon with a precise modular C mark.</desc>
+  <defs>
+    <linearGradient id="bg" x1="42" y1="30" x2="214" y2="230" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111820"/>
+      <stop offset="1" stop-color="#070A0E"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="54" y1="57" x2="190" y2="199" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7EDF3"/>
+      <stop offset="1" stop-color="#AEB8C4"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="79" y1="82" x2="172" y2="174" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#78E0D3"/>
+      <stop offset="1" stop-color="#3FB5C8"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="44" fill="url(#bg)"/>
+  <path d="M178 70a74 74 0 1 0 0 116" fill="none" stroke="#2A3440" stroke-width="27" stroke-linecap="round"/>
+  <path d="M175 78a62 62 0 1 0 0 100" fill="none" stroke="url(#mark)" stroke-width="21" stroke-linecap="round"/>
+  <path d="M82 102h42l27 27h37" fill="none" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M122 128v35h50" fill="none" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#0B1016" stroke="url(#mark)" stroke-width="8">
+    <rect x="67" y="87" width="31" height="31" rx="7"/>
+    <rect x="158" y="113" width="31" height="31" rx="7"/>
+    <rect x="158" y="148" width="31" height="31" rx="7"/>
+  </g>
+  <circle cx="122" cy="128" r="10" fill="#0B1016" stroke="url(#accent)" stroke-width="7"/>
+</svg>

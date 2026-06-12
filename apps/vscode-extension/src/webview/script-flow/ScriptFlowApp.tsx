@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   isScriptFlowHostMessage,
   sendDrawerClick,
+  sendOpenGlossary,
   sendReady,
   sendRefresh,
   sendSelectNode,
@@ -77,22 +78,29 @@ const defaultState: ScriptFlowViewState = {
 export function ScriptFlowApp() {
   const [state, setState] = useState<ScriptFlowViewState>(() => {
     const persisted = vscode.getState();
+    if (persisted && typeof persisted === "object" && "view" in persisted) {
+      const view = (persisted as { view?: unknown }).view;
+      return isScriptFlowState(view) ? view : defaultState;
+    }
     return isScriptFlowState(persisted) ? persisted : defaultState;
   });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
     state.status === "snapshot" ? getPreferredNodeId(state.snapshot) : null
   );
+  const [orientation, setOrientation] = useState<"LR" | "TB">(() => {
+    const persisted = vscode.getState();
+    if (persisted && typeof persisted === "object" && "orientation" in persisted) {
+      const o = (persisted as { orientation?: unknown }).orientation;
+      if (o === "LR" || o === "TB") return o;
+    }
+    return "LR";
+  });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
   const [isNarrowLayout, setIsNarrowLayout] = useState(() => window.innerWidth < 800);
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(() => window.innerWidth < 800);
-
-  const flow = useMemo(() => {
-    if (state.status !== "snapshot") {
-      return EMPTY_FLOW;
-    }
-
-    return buildFlowModel(state.snapshot, selectedNodeId);
-  }, [selectedNodeId, state]);
 
   const nodeLabels = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -101,6 +109,38 @@ export function ScriptFlowApp() {
 
     return new Map(state.snapshot.nodes.map((node) => [node.id, node.label]));
   }, [state]);
+
+  const searchMatches = useMemo(() => {
+    if (state.status !== "snapshot" || !searchQuery) {
+      return [];
+    }
+
+    const q = searchQuery.toLowerCase();
+    return state.snapshot.nodes
+      .map((node, index) => ({
+        nodeId: node.id,
+        index,
+        score:
+          (node.label.toLowerCase().includes(q) ? 2 : 0) +
+          (KIND_LABELS[node.kind]?.toLowerCase().includes(q) ? 1 : 0)
+      }))
+      .filter((m) => m.score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+  }, [searchQuery, state]);
+
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setActiveMatchIndex(0);
+  }, [state]);
+
+  const flow = useMemo(() => {
+    if (state.status !== "snapshot") {
+      return EMPTY_FLOW;
+    }
+
+    return buildFlowModel(state.snapshot, selectedNodeId, orientation, searchMatches);
+  }, [selectedNodeId, state, orientation, searchMatches]);
 
   const selectedNode =
     state.status === "snapshot"
@@ -133,13 +173,16 @@ export function ScriptFlowApp() {
       const nextState = mapMessageToState(message);
       setSelectedNodeId(nextState.status === "snapshot" ? getPreferredNodeId(nextState.snapshot) : null);
       setState(nextState);
-      vscode.setState(nextState);
     }
 
     window.addEventListener("message", onMessage);
     sendReady(vscode);
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  useEffect(() => {
+    vscode.setState({ view: state, orientation });
+  }, [state, orientation]);
 
   useEffect(() => {
     if (state.status !== "snapshot" || !flowInstance || !selectedNodeId) {
@@ -157,16 +200,80 @@ export function ScriptFlowApp() {
     });
   }, [flow.nodes, flowInstance, isNarrowLayout, selectedNodeId, state.status]);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => {
+          if (!open) {
+            setSearchQuery("");
+            setActiveMatchIndex(0);
+          }
+          return !open;
+        });
+      }
+      if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery("");
+        setActiveMatchIndex(0);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen || searchMatches.length === 0 || !flowInstance) return;
+    const matchId = searchMatches[activeMatchIndex]?.nodeId;
+    if (!matchId) return;
+    const target = flow.nodes.find((n) => n.id === matchId);
+    if (!target) return;
+    flowInstance.setCenter(target.position.x + NODE_WIDTH / 2, target.position.y + NODE_HEIGHT / 2, {
+      zoom: isNarrowLayout ? 0.9 : 1,
+      duration: 220
+    });
+  }, [activeMatchIndex, flow.nodes, flowInstance, isNarrowLayout, searchMatches, searchOpen]);
+
   return (
     <div className={`script-flow-app script-flow-app--${state.status}`}>
       <header className="script-flow-header script-flow-header--compact">
         <h1 className="script-flow-header__title">Script Flow</h1>
         <div className="script-flow-header__actions">
           {state.status === "snapshot" ? (
-            <button className="script-flow-button" onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)} type="button">
-              PNG
-            </button>
+            <>
+              <button
+                className="script-flow-button script-flow-button--icon"
+                onClick={() => setOrientation((o) => (o === "LR" ? "TB" : "LR"))}
+                title={`Switch to ${orientation === "LR" ? "top-bottom" : "left-right"} layout`}
+                type="button"
+              >
+                {orientation === "LR" ? "\u21C4" : "\u21C5"}
+              </button>
+              <button
+                className="script-flow-button script-flow-button--icon"
+                onClick={() => {
+                  setSearchOpen(true);
+                  setSearchQuery("");
+                  setActiveMatchIndex(0);
+                }}
+                title="Search nodes (Ctrl+K)"
+                type="button"
+              >
+                \u2315
+              </button>
+              <button className="script-flow-button" onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)} type="button">
+                PNG
+              </button>
+            </>
           ) : null}
+          <button
+            className="script-flow-button"
+            onClick={() => sendOpenGlossary(vscode)}
+            title="Open glossary"
+            type="button"
+          >
+            ?
+          </button>
           <button className="script-flow-button" onClick={() => sendRefresh(vscode)} type="button">
             Refresh
           </button>
@@ -201,6 +308,56 @@ export function ScriptFlowApp() {
                   <MiniMap pannable zoomable nodeColor={(node) => colorForKind((node.data as FlowNodeData).kind)} />
                   <Background color="rgba(148, 163, 184, 0.18)" gap={18} size={1} variant={BackgroundVariant.Dots} />
                 </ReactFlow>
+                {searchOpen ? (
+                  <div className="script-flow-search">
+                    <input
+                      autoFocus
+                      className="script-flow-search__input"
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setActiveMatchIndex(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (e.shiftKey) {
+                            setActiveMatchIndex(
+                              (i) => (i - 1 + searchMatches.length) % searchMatches.length
+                            );
+                          } else {
+                            setActiveMatchIndex((i) => (i + 1) % searchMatches.length);
+                          }
+                          e.preventDefault();
+                        }
+                        if (e.key === "Escape") {
+                          setSearchOpen(false);
+                          setSearchQuery("");
+                          setActiveMatchIndex(0);
+                        }
+                      }}
+                      placeholder="Search nodes by name or kind..."
+                      type="text"
+                      value={searchQuery}
+                    />
+                    <span className="script-flow-search__count">
+                      {searchQuery && searchMatches.length > 0
+                        ? `${activeMatchIndex + 1}/${searchMatches.length}`
+                        : searchQuery
+                          ? "0/0"
+                          : ""}
+                    </span>
+                    <button
+                      className="script-flow-button"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setSearchQuery("");
+                        setActiveMatchIndex(0);
+                      }}
+                      type="button"
+                    >
+                      Close
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </>
           ) : null}
@@ -326,7 +483,8 @@ function getPreferredNodeId(snapshot: ScriptFlowSnapshot) {
   return snapshot.analysis.entryPoints[0] ?? snapshot.nodes[0]?.id ?? null;
 }
 
-function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | null) {
+function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | null, orientation: "LR" | "TB", searchMatches: Array<{ nodeId: string }>) {
+  const searchHitIds = new Set(searchMatches.map((m) => m.nodeId));
   const nodes: Array<Node<FlowNodeData>> = snapshot.nodes.map((node) => ({
     id: node.id,
     type: "scriptFlow",
@@ -336,7 +494,12 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
       kind: node.kind,
       kindLabel: KIND_LABELS[node.kind],
       label: node.label,
-      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {})
+      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
+      ...(node.meta?.async === true ? { async: true } : {}),
+      ...(typeof node.meta?.subKind === "string" ? { subKind: node.meta.subKind } : {}),
+      ...(node.meta?.crossFile === true ? { crossFile: true } : {}),
+      ...(typeof node.meta?.sourceFile === "string" ? { sourceFile: node.meta.sourceFile } : {}),
+      searchHit: searchHitIds.has(node.id)
     }
   }));
 
@@ -365,13 +528,13 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
       : {})
   }));
 
-  return computeLayout(nodes, edges);
+  return computeLayout(nodes, edges, orientation);
 }
 
-function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
+function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[], orientation: "LR" | "TB") {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   graph.setGraph({
-    rankdir: "LR",
+    rankdir: orientation,
     nodesep: 36,
     ranksep: 72
   });

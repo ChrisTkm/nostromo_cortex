@@ -10,6 +10,8 @@ export type TaskNodeData = {
   lane?: string;
   direction: GraphDirection;
   isCurrentTask: boolean;
+  agent?: string;
+  agentIconUrl?: string;
 };
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -35,13 +37,23 @@ export function TaskNode({ data, selected }: NodeProps) {
   return (
     <>
       <Handle className="task-node__handle" position={targetPosition} type="target" />
-      <div className={`task-node${selected ? " task-node--selected" : ""}${data.isCurrentTask ? " current-task" : ""}`}>
+      <div className={`task-node task-node--status-${data.status.toLowerCase().replace("_", "-")}${selected ? " task-node--selected" : ""}${data.isCurrentTask ? " current-task" : ""}`}>
         <span className={`task-node__severity-dot task-node__severity-dot--${data.severity.toLowerCase()}`} title={data.severity} />
+        {data.agentIconUrl ? (
+          <img
+            className="task-node__agent-icon"
+            src={data.agentIconUrl}
+            alt={data.agent ?? "agent"}
+            title={data.agent ?? ""}
+            width={18}
+            height={18}
+          />
+        ) : null}
         <div className="task-node__header">
           <span className="task-node__code">{data.code}</span>
           <span className={`task-node__status ${STATUS_CLASS_NAMES[data.status]}`}>{STATUS_LABELS[data.status]}</span>
         </div>
-        <div className="task-node__label">{data.label}</div>
+        <div className="task-node__label" title={data.label}>{data.label}</div>
         {data.lane ? <div className="task-node__lane">{data.lane}</div> : null}
       </div>
       <Handle className="task-node__handle" position={sourcePosition} type="source" />
