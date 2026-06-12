@@ -1626,6 +1626,18 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           cortexOutput.show(true);
           return;
         }
+        if (message.type === "bootstrapDatabase") {
+          await vscode.commands.executeCommand("cortex.bootstrapDatabase");
+          return;
+        }
+        if (message.type === "selectDatabase") {
+          await vscode.commands.executeCommand("cortex.selectDatabase");
+          return;
+        }
+        if (message.type === "newTask") {
+          await vscode.commands.executeCommand("cortex.newTask");
+          return;
+        }
         if (message.type === "selectPlan") {
           if (typeof message.code === "string" && message.code.trim()) {
             await service.updateFilterState({

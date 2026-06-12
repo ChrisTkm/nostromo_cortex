@@ -221,6 +221,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "cortex.overview",
+        "contents": "Connect Cortex to MongoDB or create a sample local database to get started.\n[Create sample local database](command:cortex.bootstrapDatabase)\n[Select Mongo database](command:cortex.selectDatabase)\n[Set Mongo URL](command:cortex.setMongoUrl)\n[Open graph](command:cortex.openGraph)"
+      }
+    ],
     "keybindings": [
       {
         "command": "cortex.newNote",

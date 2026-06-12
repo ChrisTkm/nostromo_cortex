@@ -262,6 +262,18 @@ export function App() {
     vscode.postMessage({ type: "refresh" });
   }
 
+  function handleBootstrapDatabase() {
+    vscode.postMessage({ type: "bootstrapDatabase" });
+  }
+
+  function handleSelectDatabase() {
+    vscode.postMessage({ type: "selectDatabase" });
+  }
+
+  function handleCreateTask() {
+    vscode.postMessage({ type: "newTask" });
+  }
+
   function handleShowOrphanWarnings() {
     vscode.postMessage({ type: "showOrphanWarnings" });
   }
@@ -275,6 +287,7 @@ export function App() {
   }
 
   const orphanCount = snapshot?.warnings?.orphans.length ?? 0;
+  const showOnboarding = Boolean(snapshot && totalTaskCount === 0);
 
   return (
     <div className="app-shell">
@@ -306,22 +319,49 @@ export function App() {
         </button>
       ) : null}
       <div className="app-graph">
-        <Graph
-          agentIconBase={agentIconBase}
-          centerTaskCode={centerTaskCode}
-          criticalPath={criticalPath}
-          emptyMessage="No tasks match the current filters. Clear filters to show everything."
-          groupByLane={groupByLane}
-          onSelectTask={handleSelectTask}
-          onViewportChange={handleViewportChange}
-          orientation={orientation}
-          pan={viewport.pan}
-          planFocusRequest={planFocusRequest}
-          selectedTaskCode={selectedTaskCode}
-          showMiniMap={showMiniMap}
-          snapshot={snapshot}
-          zoom={viewport.zoom}
-        />
+        {showOnboarding ? (
+          <section className="onboarding-state" aria-label="Cortex setup">
+            <div className="onboarding-state__eyebrow">Cortex setup</div>
+            <h1 className="onboarding-state__title">Start with a Mongo database.</h1>
+            <p className="onboarding-state__text">
+              Connect an existing database or seed a local sample to see tasks, plans, notes, and logs in Cortex.
+            </p>
+            <div className="onboarding-state__actions">
+              <button className="onboarding-state__button onboarding-state__button--primary" onClick={handleBootstrapDatabase} type="button">
+                Create sample database
+              </button>
+              <button className="onboarding-state__button" onClick={handleSelectDatabase} type="button">
+                Select database
+              </button>
+              <button className="onboarding-state__button" onClick={handleCreateTask} type="button">
+                New task
+              </button>
+              <button className="onboarding-state__button" onClick={handleRefreshGraph} type="button">
+                Refresh
+              </button>
+            </div>
+            <p className="onboarding-state__hint">
+              Default connection: mongodb://127.0.0.1:27017
+            </p>
+          </section>
+        ) : (
+          <Graph
+            agentIconBase={agentIconBase}
+            centerTaskCode={centerTaskCode}
+            criticalPath={criticalPath}
+            emptyMessage="No tasks match the current filters. Clear filters to show everything."
+            groupByLane={groupByLane}
+            onSelectTask={handleSelectTask}
+            onViewportChange={handleViewportChange}
+            orientation={orientation}
+            pan={viewport.pan}
+            planFocusRequest={planFocusRequest}
+            selectedTaskCode={selectedTaskCode}
+            showMiniMap={showMiniMap}
+            snapshot={snapshot}
+            zoom={viewport.zoom}
+          />
+        )}
       </div>
       <StatusBar
         criticalPath={criticalPath}

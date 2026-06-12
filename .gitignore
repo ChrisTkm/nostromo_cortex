@@ -26,3 +26,5 @@ scripts/_*
 .claude/
 .codex/
 .github/
+.config/
+.pnpm-store/
