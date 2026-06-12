@@ -1052,9 +1052,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         name: a.displayName ?? a.slug,
         iconUri: a.iconPath
           ? panel.webview
-              .asWebviewUri(
-                vscode.Uri.joinPath(context.extensionUri, a.iconPath),
-              )
+              .asWebviewUri(agentIconUri(context.extensionUri, a.iconPath))
               .toString()
           : "",
       }));
@@ -1204,10 +1202,19 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         panel.webview,
         context,
       );
+      const agents = rawAgents.map((a) => ({
+        slug: a.slug,
+        displayName: a.displayName ?? a.slug,
+        iconPath: a.iconPath
+          ? panel.webview
+              .asWebviewUri(agentIconUri(context.extensionUri, a.iconPath))
+              .toString()
+          : null,
+      }));
       await panel.webview.postMessage({
         type: "plans:snapshot",
         plans,
-        agents: rawAgents,
+        agents,
         catalogAgents,
       });
     } catch (err) {
@@ -1321,9 +1328,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "planEditor:viewGraph") {
         const pCode = message.planCode as string;
         cortexOutput.appendLine(`[PlanEditor] View graph for plan: ${pCode}`);
-        void vscode.window.showInformationMessage(
-          `Open PERT graph for plan ${pCode} — not yet implemented.`,
-        );
+        await service.updateFilterState({ selectedPlanCode: pCode });
+        await openGraph();
+        await refreshView();
         return;
       }
 
@@ -1730,11 +1737,6 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         label: "Ledger",
         description: "Open the runs ledger panel",
         command: "cortex.openLedger",
-      },
-      {
-        label: "Planes",
-        description: "Open the plans panel",
-        command: "cortex.openPlans",
       },
       {
         label: "Planes",
@@ -2795,27 +2797,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     const catalogCodes = bundle.tasks.map((t) => t.code);
 
     const rawAgents = await service.listAiAgents();
-    const webview = taskEditorPanel?.webview;
-    const agents: CatalogAgent[] = rawAgents.map((a) => ({
-      slug: a.slug,
-      displayName: a.displayName ?? a.slug,
-      iconUri:
-        a.iconPath && webview
-          ? webview
-              .asWebviewUri(
-                vscode.Uri.joinPath(context.extensionUri, a.iconPath),
-              )
-              .toString()
-          : "",
-    }));
-
-    // Include "any" and "human" synthetic agents
-    const knownSlugs = new Set(agents.map((a) => a.slug));
-    const synthetic: CatalogAgent[] = [
-      { slug: "any", displayName: "Any", iconUri: "" },
-      { slug: "human", displayName: "Human", iconUri: "" },
-    ].filter((s) => !knownSlugs.has(s.slug));
-    agents.push(...synthetic);
+    const agents = mapAgentsForWebview(
+      rawAgents,
+      taskEditorPanel?.webview,
+      context,
+    );
 
     await openTaskEditorPanel(task, catalogCodes, agents);
   }
@@ -3427,6 +3413,14 @@ function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
   );
 }
 
+/**
+ * El catalogo ai_agents guarda icon_path como filename pelado (p.ej.
+ * "big-pickle.svg", ver cortex.setAiAgentIcon); los SVG viven en media/icons/.
+ */
+function agentIconUri(extensionUri: vscode.Uri, iconPath: string): vscode.Uri {
+  return vscode.Uri.joinPath(extensionUri, "media", "icons", iconPath);
+}
+
 function mapAgentsForWebview(
   rawAgents: Array<{
     slug: string;
@@ -3442,7 +3436,7 @@ function mapAgentsForWebview(
     iconUri:
       a.iconPath && webview
         ? webview
-            .asWebviewUri(vscode.Uri.joinPath(context.extensionUri, a.iconPath))
+            .asWebviewUri(agentIconUri(context.extensionUri, a.iconPath))
             .toString()
         : "",
   }));

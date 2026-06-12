@@ -24,7 +24,9 @@ export function AiAgentAvatar(props: {
   const hue = slugToHue(slug);
 
   if (iconPath) {
-    const iconUri = `icons/${iconPath}`;
+    // URIs absolutas (asWebviewUri del host) van tal cual; un filename pelado
+    // mantiene el comportamiento legacy relativo a icons/.
+    const iconUri = iconPath.includes("://") ? iconPath : `icons/${iconPath}`;
     return (
       <img
         src={iconUri}
@@ -33,7 +35,7 @@ export function AiAgentAvatar(props: {
           width: size,
           height: size,
           borderRadius: "50%",
-          objectFit: "cover"
+          objectFit: "cover",
         }}
       />
     );
@@ -53,7 +55,7 @@ export function AiAgentAvatar(props: {
         fontSize: Math.max(10, Math.round(size * 0.45)),
         fontWeight: 600,
         lineHeight: 1,
-        userSelect: "none"
+        userSelect: "none",
       }}
       title={displayName}
     >
