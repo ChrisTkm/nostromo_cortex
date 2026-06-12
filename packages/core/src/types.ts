@@ -271,10 +271,12 @@ export interface ListTasksOptions {
 }
 
 export interface TaskStore {
-  listTasks(): Promise<TaskRecord[]>;
+  listTasks(filter?: { planCode?: string }): Promise<TaskRecord[]>;
   getTask(codeOrId: string): Promise<TaskRecord | null>;
   ensureIndexes(): Promise<void>;
   upsertTasks(tasks: TaskDocumentInput[]): Promise<number>;
+  bulkUpdateTasks(codes: string[], patch: Record<string, unknown>): Promise<number>;
+  deleteTasks(codes: string[]): Promise<number>;
 }
 
 export interface NoteDocumentInput {

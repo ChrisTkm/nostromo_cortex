@@ -18,7 +18,7 @@ import {
   MongoNoteStore,
   MongoTaskStore,
   SELF_HOSTED_AGENTS,
-  SharedMongoClient,
+  type SharedMongoClient,
   stableStringify,
   TASK_AGENTS,
 } from "./index.js";
@@ -894,6 +894,115 @@ describe("shared mongo client support", () => {
   });
 });
 
+describe("MongoTaskStore bulkUpdateTasks / deleteTasks / listTasks filter", () => {
+  it("listTasks filters by planCode", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "T1",
+        short_task: "Task 1",
+        status: "PENDING",
+        agent: "atlas",
+        severity: "LOW",
+        plan_code: "P1",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        code: "T2",
+        short_task: "Task 2",
+        status: "DONE",
+        agent: "atlas",
+        severity: "MEDIUM",
+        plan_code: "P2",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const all = await store.listTasks();
+    expect(all).toHaveLength(2);
+
+    sharedClient.collectionApi.find.mockClear();
+    await store.listTasks({ planCode: "P1" });
+    expect(sharedClient.collectionApi.find).toHaveBeenCalledWith({
+      plan_code: "P1",
+    });
+  });
+
+  it("bulkUpdateTasks applies $set/$unset via updateMany", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const result = await store.bulkUpdateTasks(["T1", "T2"], {
+      status: "DONE",
+      lane: null,
+    });
+    expect(result).toBe(2);
+    expect(sharedClient.collectionApi.updateMany).toHaveBeenCalledWith(
+      { code: { $in: ["T1", "T2"] } },
+      {
+        $set: expect.objectContaining({ status: "DONE" }),
+        $unset: { lane: 1 },
+      },
+    );
+  });
+
+  it("bulkUpdateTasks returns 0 for empty codes", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await expect(store.bulkUpdateTasks([], { status: "DONE" })).resolves.toBe(
+      0,
+    );
+    expect(sharedClient.collectionApi.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("deleteTasks removes tasks by codes via deleteMany", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    const result = await store.deleteTasks(["T1", "T2"]);
+    expect(result).toBe(2);
+    expect(sharedClient.collectionApi.deleteMany).toHaveBeenCalledWith({
+      code: { $in: ["T1", "T2"] },
+    });
+  });
+
+  it("deleteTasks returns 0 for empty codes", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient,
+    });
+
+    await expect(store.deleteTasks([])).resolves.toBe(0);
+    expect(sharedClient.collectionApi.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("action plan store insertPlan", () => {
   it("inserts a plan with defaults and returns normalized record", async () => {
     const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
@@ -905,7 +1014,14 @@ describe("action plan store insertPlan", () => {
       goal: "goal",
       context: "",
       status: "PLANNING",
-      progress: { total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      progress: {
+        total: 1,
+        pending: 1,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
       notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
       assigned_agent: "big-pickle",
       created_at: "2026-06-10T00:00:00.000Z",
@@ -926,7 +1042,14 @@ describe("action plan store insertPlan", () => {
       goal: "goal",
       context: "",
       status: "PLANNING",
-      progress: { total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      progress: {
+        total: 1,
+        pending: 1,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
       notes: "[2026-06-10T00:00:00.000Z] Plan creado desde wizard PE-02",
       assigned_agent: "big-pickle",
     });
@@ -968,7 +1091,14 @@ describe("action plan store insertPlan", () => {
         goal: "",
         context: "",
         status: "PLANNING",
-        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
       }),
     ).rejects.toThrow(/Plan insert failed for code PLAN-FAIL/);
   });
@@ -984,7 +1114,14 @@ describe("action plan store updatePlan", () => {
         goal: "goal",
         context: "",
         status: "PLANNING",
-        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
       },
     ]) as unknown as SharedMongoClient;
     const findOneAfterUpdate = sharedClient.collectionApi.findOne;
@@ -995,7 +1132,14 @@ describe("action plan store updatePlan", () => {
       goal: "goal",
       context: "",
       status: "IN_PROGRESS",
-      progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      progress: {
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
       notes: "[2026-06-10T00:00:00.000Z] first note",
       updated_at: "2026-06-10T12:00:00.000Z",
       created_at: "2026-06-01T00:00:00.000Z",
@@ -1025,7 +1169,11 @@ describe("action plan store updatePlan", () => {
         }),
       }),
     );
-    expect(result).toMatchObject({ code: "PLAN-SET", title: "Updated", status: "IN_PROGRESS" });
+    expect(result).toMatchObject({
+      code: "PLAN-SET",
+      title: "Updated",
+      status: "IN_PROGRESS",
+    });
   });
 
   it("applies $unset for null fields and returns updated record", async () => {
@@ -1037,7 +1185,14 @@ describe("action plan store updatePlan", () => {
         goal: "goal",
         context: "",
         status: "PLANNING",
-        progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+        progress: {
+          total: 0,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 0,
+          failed: 0,
+        },
         notes: "some notes",
       },
     ]) as unknown as SharedMongoClient;
@@ -1049,7 +1204,14 @@ describe("action plan store updatePlan", () => {
       goal: "goal",
       context: "",
       status: "PLANNING",
-      progress: { total: 0, pending: 0, in_progress: 0, blocked: 0, done: 0, failed: 0 },
+      progress: {
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      },
       updated_at: "2026-06-10T12:00:00.000Z",
       created_at: "2026-06-01T00:00:00.000Z",
     });
@@ -1169,14 +1331,22 @@ function createSharedClient(items: unknown[]) {
     toArray,
   }));
   const bulkWrite = vi.fn().mockResolvedValue({ modifiedCount: items.length });
-  const insertOne = vi.fn().mockResolvedValue({ acknowledged: true, insertedId: "mock-id" });
+  const insertOne = vi
+    .fn()
+    .mockResolvedValue({ acknowledged: true, insertedId: "mock-id" });
   const updateOne = vi.fn().mockResolvedValue({
     acknowledged: true,
     matchedCount: 1,
     modifiedCount: 1,
     upsertedCount: 0,
   });
+  const updateMany = vi.fn().mockResolvedValue({
+    acknowledged: true,
+    matchedCount: 2,
+    modifiedCount: 2,
+  });
   const deleteOne = vi.fn().mockResolvedValue({ deletedCount: 0 });
+  const deleteMany = vi.fn().mockResolvedValue({ deletedCount: 2 });
   const dropIndex = vi.fn().mockResolvedValue(undefined);
   const createIndexes = vi.fn().mockResolvedValue(["ok"]);
   const find = vi.fn(() => ({
@@ -1188,10 +1358,12 @@ function createSharedClient(items: unknown[]) {
     bulkWrite,
     createIndexes,
     deleteOne,
+    deleteMany,
     dropIndex,
     find,
     findOne,
     insertOne,
+    updateMany,
     updateOne,
   }));
   const db = vi.fn(() => ({
@@ -1206,12 +1378,14 @@ function createSharedClient(items: unknown[]) {
       bulkWrite,
       createIndexes,
       deleteOne,
+      deleteMany,
       dropIndex,
       find,
       findOne,
       insertOne,
       sort,
       toArray,
+      updateMany,
       updateOne,
     },
   };

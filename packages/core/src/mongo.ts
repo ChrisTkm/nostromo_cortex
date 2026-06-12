@@ -116,9 +116,13 @@ export class MongoTaskStore implements TaskStore {
     };
   }
 
-  async listTasks(): Promise<TaskRecord[]> {
+  async listTasks(filter?: { planCode?: string }): Promise<TaskRecord[]> {
     const collection = await this.collection();
-    const items = await collection.find({}).toArray();
+    const query: Record<string, unknown> = {};
+    if (filter?.planCode) {
+      query.plan_code = filter.planCode;
+    }
+    const items = await collection.find(query).toArray();
     return collectValidTasks(items);
   }
 
@@ -182,6 +186,38 @@ export class MongoTaskStore implements TaskStore {
       { ordered: false }
     );
     return tasks.length;
+  }
+
+  async bulkUpdateTasks(codes: string[], patch: Record<string, unknown>): Promise<number> {
+    if (codes.length === 0) return 0;
+    const collection = await this.collection();
+    const now = new Date().toISOString();
+    const toSet: Record<string, unknown> = {};
+    const toUnset: Record<string, 1> = {};
+
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) {
+        toUnset[key] = 1;
+      } else if (value !== undefined) {
+        toSet[key] = value;
+      }
+    }
+
+    toSet.updated_at ??= now;
+
+    const update: Record<string, unknown> = Object.keys(toUnset).length > 0
+      ? { $set: toSet, $unset: toUnset }
+      : { $set: toSet };
+
+    const result = await collection.updateMany({ code: { $in: codes } }, update as never);
+    return result.modifiedCount;
+  }
+
+  async deleteTasks(codes: string[]): Promise<number> {
+    if (codes.length === 0) return 0;
+    const collection = await this.collection();
+    const result = await collection.deleteMany({ code: { $in: codes } });
+    return result.deletedCount;
   }
 
   async close(): Promise<void> {

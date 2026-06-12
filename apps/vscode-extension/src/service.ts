@@ -281,7 +281,10 @@ export class ExtensionTaskService {
     );
   }
 
-  async updatePlan(code: string, patch: Partial<ActionPlanDocument>): Promise<ActionPlanRecord | null> {
+  async updatePlan(
+    code: string,
+    patch: Partial<ActionPlanDocument>,
+  ): Promise<ActionPlanRecord | null> {
     return this.withPlanStore(this.getConnectionSettings(), (store) =>
       store.updatePlan(code, patch),
     );
@@ -332,7 +335,8 @@ export class ExtensionTaskService {
       }
 
       const inserted = await planStore.insertPlan(plan);
-      const taskCount = tasks.length > 0 ? await taskStore.upsertTasks(tasks) : 0;
+      const taskCount =
+        tasks.length > 0 ? await taskStore.upsertTasks(tasks) : 0;
 
       return { plan: inserted, taskCount };
     } finally {
@@ -341,7 +345,10 @@ export class ExtensionTaskService {
     }
   }
 
-  async appendPlanNote(code: string, text: string): Promise<ActionPlanRecord | null> {
+  async appendPlanNote(
+    code: string,
+    text: string,
+  ): Promise<ActionPlanRecord | null> {
     const plan = await this.getPlan(code);
     if (!plan) return null;
     const now = new Date().toISOString();
@@ -350,6 +357,101 @@ export class ExtensionTaskService {
       ? `${existing}\n[${now}] ${text}`
       : `[${now}] ${text}`;
     return this.updatePlan(code, { notes: appended, updated_at: now });
+  }
+
+  async loadPlanTasks(planCode: string): Promise<TaskRecord[]> {
+    return this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.listTasks({ planCode }),
+    );
+  }
+
+  async recalcPlanProgress(planCode: string): Promise<ActionPlanRecord | null> {
+    const tasks = await this.loadPlanTasks(planCode);
+    const total = tasks.length;
+    const pending = tasks.filter((t) => t.status === "PENDING").length;
+    const inProgress = tasks.filter((t) => t.status === "IN_PROGRESS").length;
+    const blocked = tasks.filter((t) => t.status === "BLOCKED").length;
+    const done = tasks.filter((t) => t.status === "DONE").length;
+    const failed = tasks.filter((t) => t.status === "FAILED").length;
+    const progress: ActionPlanRecord["progress"] = {
+      total,
+      pending,
+      in_progress: inProgress,
+      blocked,
+      done,
+      failed,
+    };
+    return this.updatePlan(planCode, {
+      progress,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async bulkUpdateTaskStatus(
+    planCode: string,
+    codes: string[],
+    status: string,
+  ): Promise<ActionPlanRecord | null> {
+    const patch: Record<string, unknown> = { status };
+    if (status === "DONE") {
+      patch.completed_at = new Date().toISOString();
+    } else {
+      patch.completed_at = null;
+    }
+    await this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.bulkUpdateTasks(codes, patch),
+    );
+    return this.recalcPlanProgress(planCode);
+  }
+
+  async bulkUpdateTaskAgent(
+    planCode: string,
+    codes: string[],
+    agent: string,
+  ): Promise<ActionPlanRecord | null> {
+    await this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.bulkUpdateTasks(codes, { agent }),
+    );
+    return this.recalcPlanProgress(planCode);
+  }
+
+  async bulkMoveTasksToPlan(
+    codes: string[],
+    targetPlanCode: string,
+  ): Promise<void> {
+    const targetPlan = await this.getPlan(targetPlanCode);
+    if (!targetPlan) throw new Error(`Target plan ${targetPlanCode} not found`);
+
+    const sourceTasks = (
+      await Promise.all(codes.map((c) => this.getTask(c)))
+    ).filter(Boolean) as TaskRecord[];
+    const sourcePlanCodes = [
+      ...new Set(
+        sourceTasks.map((t) => t.planCode).filter(Boolean) as string[],
+      ),
+    ];
+
+    await this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.bulkUpdateTasks(codes, {
+        plan_code: targetPlanCode,
+        project: targetPlan.project ?? targetPlanCode,
+      }),
+    );
+
+    for (const pc of sourcePlanCodes) {
+      await this.recalcPlanProgress(pc);
+    }
+    await this.recalcPlanProgress(targetPlanCode);
+  }
+
+  async bulkDeleteTasks(
+    planCode: string,
+    codes: string[],
+  ): Promise<ActionPlanRecord | null> {
+    await this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.deleteTasks(codes),
+    );
+    return this.recalcPlanProgress(planCode);
   }
 
   isJsonPathInArchive(rawJsonPath: string): boolean {
@@ -1294,6 +1396,12 @@ export class ExtensionTaskService {
       ...(sharedClient ? { sharedClient } : {}),
     });
     const notesStore = this.getNotesStore(settings);
+    const agentStore = createMongoAiAgentStore({
+      mongoUrl: settings.mongoUrl,
+      dbName: settings.mongoDbName,
+      collectionName: "ai_agents",
+      ...(sharedClient ? { sharedClient } : {}),
+    });
 
     const db = sharedClient?.db(settings.mongoDbName);
 
@@ -1302,6 +1410,10 @@ export class ExtensionTaskService {
         taskStore.ensureIndexes(),
         planStore.ensureIndexes(),
         notesStore.ensureIndexes(),
+        (async () => {
+          await agentStore.ensureIndexes();
+          await agentStore.ensureSeeds();
+        })(),
         this.getLogsSource().ensureIndexes(),
         ...(db ? [ensureAiAgentRuns(db)] : []),
       ]);
@@ -1310,6 +1422,7 @@ export class ExtensionTaskService {
         taskStore.close(),
         planStore.close(),
         notesStore.close(),
+        agentStore.close(),
       ]);
     }
   }
@@ -1472,4 +1585,20 @@ function stringArrayField(document: Document, key: string) {
         .filter((item): item is string => typeof item === "string")
         .sort((left, right) => left.localeCompare(right))
     : [];
+}
+
+/**
+ * Traduce un patch de plan proveniente del webview (keys camelCase del
+ * ActionPlanRecord) al shape persistible de ActionPlanDocument (snake_case).
+ * Hoy el unico campo divergente es assignedAgent -> assigned_agent; null se
+ * preserva para que updatePlan lo convierta en $unset.
+ */
+export function webviewPlanPatchToDocumentPatch(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const { assignedAgent, ...rest } = patch;
+  if (assignedAgent === undefined) {
+    return rest;
+  }
+  return { ...rest, assigned_agent: assignedAgent };
 }

@@ -17,7 +17,10 @@ import { buildBrainSnapshot, createBrainCache } from "./brain/indexer.js";
 import type { BrainCache } from "./brain/indexer.js";
 import { createDebouncedRefresh } from "./brain/watcher.js";
 import type { BrainSnapshot } from "./brain/types.js";
-import { ExtensionTaskService } from "./service.js";
+import {
+  ExtensionTaskService,
+  webviewPlanPatchToDocumentPatch,
+} from "./service.js";
 import { clampAutoRefreshSeconds, clampLogsLimit } from "./logs/autoRefresh.js";
 import {
   analyzeScriptFlowDocument,
@@ -1114,7 +1117,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "plans:create") {
         const plan = message.plan as Record<string, unknown>;
         const tasks = message.tasks as Record<string, unknown>[];
-        cortexOutput.appendLine(`[Plans] Create plan: ${String(plan.code)} with ${tasks.length} tasks`);
+        cortexOutput.appendLine(
+          `[Plans] Create plan: ${String(plan.code)} with ${tasks.length} tasks`,
+        );
         try {
           const planDoc: ActionPlanDocument = {
             code: String(plan.code),
@@ -1134,27 +1139,34 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
               failed: 0,
             },
             current_task_code: null,
-            assigned_agent: plan.assignedAgent ? String(plan.assignedAgent) : undefined,
+            assigned_agent: plan.assignedAgent
+              ? String(plan.assignedAgent)
+              : undefined,
             author: plan.author ? String(plan.author) : undefined,
             notes: `[${new Date().toISOString()}] Plan creado desde wizard PE-02`,
             completed_at: null,
           };
-          const taskDocs: TaskDocumentInput[] = tasks.map((t: Record<string, unknown>) => ({
-            code: String(t.code),
-            short_task: String(t.short_task ?? ""),
-            detail: String(t.detail ?? ""),
-            status: "PENDING",
-            agent: String(t.agent ?? "any"),
-            severity: String(t.severity ?? "MEDIUM"),
-            tags: Array.isArray(t.tags) ? t.tags.map(String) : [],
-            depends_on: [],
-            duration_estimate: typeof t.duration_estimate === "number" ? t.duration_estimate : undefined,
-            lane: t.lane ? String(t.lane) : undefined,
-            plan_code: String(plan.code),
-            prompt: undefined,
-            acceptance: undefined,
-            out_of_scope: undefined,
-          }));
+          const taskDocs: TaskDocumentInput[] = tasks.map(
+            (t: Record<string, unknown>) => ({
+              code: String(t.code),
+              short_task: String(t.short_task ?? ""),
+              detail: String(t.detail ?? ""),
+              status: "PENDING",
+              agent: String(t.agent ?? "any"),
+              severity: String(t.severity ?? "MEDIUM"),
+              tags: Array.isArray(t.tags) ? t.tags.map(String) : [],
+              depends_on: [],
+              duration_estimate:
+                typeof t.duration_estimate === "number"
+                  ? t.duration_estimate
+                  : undefined,
+              lane: t.lane ? String(t.lane) : undefined,
+              plan_code: String(plan.code),
+              prompt: undefined,
+              acceptance: undefined,
+              out_of_scope: undefined,
+            }),
+          );
           const result = await service.createPlanWithTasks(planDoc, taskDocs);
           if (plansPanel === panel) {
             await panel.webview.postMessage({
@@ -1187,7 +1199,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         service.listAiAgents(),
       ]);
       if (plansPanel !== panel) return;
-      const catalogAgents = mapAgentsForWebview(rawAgents, panel.webview, context);
+      const catalogAgents = mapAgentsForWebview(
+        rawAgents,
+        panel.webview,
+        context,
+      );
       await panel.webview.postMessage({
         type: "plans:snapshot",
         plans,
@@ -1245,7 +1261,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       }
 
       if (message?.type === "planEditor:save") {
-        const patch = message.patch as Record<string, unknown>;
+        const patch = webviewPlanPatchToDocumentPatch(
+          message.patch as Record<string, unknown>,
+        );
         const patchWithTimestamps = {
           ...patch,
           updated_at: new Date().toISOString(),
@@ -1268,6 +1286,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           plan: updated,
           agents,
         });
+        await postPlansSnapshot();
         void vscode.window.showInformationMessage(`Plan ${planCode} updated.`);
         return;
       }
@@ -1307,6 +1326,71 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         );
         return;
       }
+
+      if (message?.type === "planEditor:bulkStatus") {
+        const codes = message.codes as string[];
+        const status = message.status as string;
+        try {
+          await service.bulkUpdateTaskStatus(planCode, codes, status);
+          await postPlanEditorSnapshot(planCode);
+          await postPlansSnapshot();
+        } catch (err) {
+          void vscode.window.showWarningMessage(
+            `Bulk status update failed: ${String(err)}`,
+          );
+        }
+        return;
+      }
+
+      if (message?.type === "planEditor:bulkAgent") {
+        const codes = message.codes as string[];
+        const agent = message.agent as string;
+        try {
+          await service.bulkUpdateTaskAgent(planCode, codes, agent);
+          await postPlanEditorSnapshot(planCode);
+          await postPlansSnapshot();
+        } catch (err) {
+          void vscode.window.showWarningMessage(
+            `Bulk agent update failed: ${String(err)}`,
+          );
+        }
+        return;
+      }
+
+      if (message?.type === "planEditor:bulkMove") {
+        const codes = message.codes as string[];
+        const targetPlanCode = message.targetPlanCode as string;
+        try {
+          await service.bulkMoveTasksToPlan(codes, targetPlanCode);
+          await postPlanEditorSnapshot(planCode);
+          await postPlansSnapshot();
+        } catch (err) {
+          void vscode.window.showWarningMessage(
+            `Bulk move failed: ${String(err)}`,
+          );
+        }
+        return;
+      }
+
+      if (message?.type === "planEditor:bulkDelete") {
+        const codes = message.codes as string[];
+        const confirmed = await vscode.window.showWarningMessage(
+          `Delete ${codes.length} task(s) from ${planCode}? This cannot be undone.`,
+          { modal: true },
+          "Confirmar",
+        );
+        if (confirmed !== "Confirmar") return;
+        try {
+          await service.bulkDeleteTasks(planCode, codes);
+          await postPlanEditorSnapshot(planCode);
+          await postPlansSnapshot();
+        } catch (err) {
+          void vscode.window.showWarningMessage(
+            `Bulk delete failed: ${String(err)}`,
+          );
+        }
+        return;
+      }
     });
   }
 
@@ -1314,9 +1398,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     const panel = planEditorPanel;
     if (!panel) return;
     try {
-      const [plan, rawAgents] = await Promise.all([
+      const [plan, rawAgents, tasks, allPlans] = await Promise.all([
         service.getPlan(planCode),
         service.listAiAgents(),
+        service.loadPlanTasks(planCode),
+        service.loadPlans(),
       ]);
       if (planEditorPanel !== panel) return;
       if (!plan) {
@@ -1331,6 +1417,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         type: "planEditor:load",
         plan,
         agents,
+        tasks,
+        allPlans,
       });
     } catch (err) {
       if (planEditorPanel !== panel) return;
