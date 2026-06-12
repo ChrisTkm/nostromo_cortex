@@ -212,12 +212,13 @@ export function PlansApp() {
               <th>Autor</th>
               <th>Agente</th>
               <th>Actualizado</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {filteredPlans.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty-row">Sin planes</td>
+                <td colSpan={8} className="empty-row">Sin planes</td>
               </tr>
             )}
             {filteredPlans.map((plan) => {
@@ -255,6 +256,25 @@ export function PlansApp() {
                     )}
                   </td>
                   <td>{isoToLocal(plan.updatedAt)}</td>
+                  <td>
+                    <button
+                      className="pa-btn pa-btn--archive"
+                      disabled={plan.status !== "DONE"}
+                      onClick={(e) => { e.stopPropagation(); vscode.postMessage({ type: "plans:archive", code: plan.code }); }}
+                      title={plan.status === "DONE" ? "Archivar plan" : "Solo se puede archivar planes en estado DONE"}
+                      type="button"
+                    >
+                      &#x1f4e4;
+                    </button>
+                    <button
+                      className="pa-btn pa-btn--delete"
+                      onClick={(e) => { e.stopPropagation(); vscode.postMessage({ type: "plans:delete", code: plan.code }); }}
+                      title="Eliminar plan"
+                      type="button"
+                    >
+                      &#x1f5d1;
+                    </button>
+                  </td>
                 </tr>
               );
             })}

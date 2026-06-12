@@ -1256,6 +1256,41 @@ describe("action plan store updatePlan", () => {
   });
 });
 
+describe("action plan store deletePlan", () => {
+  it("deletes a plan by code and returns true", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.deletePlan("PLAN-1");
+
+    expect(sharedClient.collectionApi.deleteOne).toHaveBeenCalledWith({ code: "PLAN-1" });
+    expect(result).toBe(true);
+  });
+
+  it("returns false when plan code does not exist", async () => {
+    const sharedClient = createSharedClient([]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.deleteOne.mockResolvedValue({ deletedCount: 0 });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient,
+    });
+
+    const result = await store.deletePlan("NONEXISTENT");
+
+    expect(result).toBe(false);
+  });
+});
+
 describe("ai agents catalog", () => {
   it("seeds align con SELF_HOSTED_AGENTS y son subconjunto de TASK_AGENTS", () => {
     const seedSlugs = AI_AGENT_SEEDS.map((seed) => seed.slug).sort();

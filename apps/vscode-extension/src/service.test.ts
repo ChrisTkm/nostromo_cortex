@@ -11,6 +11,7 @@ const {
   planClose,
   planGetPlan,
   planUpdatePlan,
+  planDeletePlan,
   noteEnsureIndexes,
   noteClose,
   noteListNotes,
@@ -52,6 +53,7 @@ const {
   const planClose = vi.fn();
   const planGetPlan = vi.fn();
   const planUpdatePlan = vi.fn();
+  const planDeletePlan = vi.fn();
   const noteEnsureIndexes = vi.fn();
   const noteClose = vi.fn();
   const noteListNotes = vi.fn();
@@ -72,6 +74,7 @@ const {
     planClose,
     planGetPlan,
     planUpdatePlan,
+    planDeletePlan,
     noteEnsureIndexes,
     noteClose,
     noteListNotes,
@@ -93,7 +96,8 @@ const {
       ensureIndexes: planEnsureIndexes,
       getPlan: planGetPlan,
       updatePlan: planUpdatePlan,
-      close: planClose,
+      deletePlan: planDeletePlan,
+      close: planClose
     })),
     createMongoNoteStoreMock: vi.fn(() => ({
       ensureIndexes: noteEnsureIndexes,
@@ -1020,5 +1024,67 @@ describe("webviewPlanPatchToDocumentPatch", () => {
     const patch = webviewPlanPatchToDocumentPatch({ title: "T" });
 
     expect(patch).toEqual({ title: "T" });
+  });
+});
+
+describe("ExtensionTaskService.deletePlanWithTasks", () => {
+  let service: ExtensionTaskService;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    createDirectory.mockResolvedValue(undefined);
+    telemetryInitialize.mockResolvedValue(undefined);
+    sharedConnect.mockResolvedValue(undefined);
+    logsCreateIndexes.mockResolvedValue(["logs_source_timestamp"]);
+    sharedDb.mockImplementation(() => ({
+      collection: vi.fn(() => ({ createIndexes: logsCreateIndexes })),
+    }));
+    sharedClose.mockResolvedValue(undefined);
+    secretGet.mockResolvedValue(undefined);
+    secretStore.mockResolvedValue(undefined);
+    secretDelete.mockResolvedValue(undefined);
+    taskEnsureIndexes.mockResolvedValue(undefined);
+    taskClose.mockResolvedValue(undefined);
+    planEnsureIndexes.mockResolvedValue(undefined);
+    planClose.mockResolvedValue(undefined);
+    noteEnsureIndexes.mockResolvedValue(undefined);
+    noteClose.mockResolvedValue(undefined);
+    noteListNotes.mockResolvedValue([]);
+    noteGetNote.mockResolvedValue(null);
+
+    service = new ExtensionTaskService({
+      globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
+      workspaceState: { get: vi.fn(), update: vi.fn() },
+      secrets: { get: secretGet, store: secretStore, delete: secretDelete },
+    } as never);
+
+    await service.initialize();
+  });
+
+  it("deletes plan and its tasks, returns task count", async () => {
+    taskListTasks.mockResolvedValue([
+      { code: "T1", status: "PENDING" } as TaskRecord,
+      { code: "T2", status: "DONE" } as TaskRecord,
+    ]);
+    taskDeleteTasks.mockResolvedValue(2);
+    planDeletePlan.mockResolvedValue(true);
+
+    const result = await service.deletePlanWithTasks("P1");
+
+    expect(taskListTasks).toHaveBeenCalledWith({ planCode: "P1" });
+    expect(taskDeleteTasks).toHaveBeenCalledWith(["T1", "T2"]);
+    expect(planDeletePlan).toHaveBeenCalledWith("P1");
+    expect(result).toEqual({ taskCount: 2 });
+  });
+
+  it("skips task delete when plan has no tasks", async () => {
+    taskListTasks.mockResolvedValue([]);
+    planDeletePlan.mockResolvedValue(true);
+
+    const result = await service.deletePlanWithTasks("EMPTY-PLAN");
+
+    expect(taskDeleteTasks).not.toHaveBeenCalled();
+    expect(planDeletePlan).toHaveBeenCalledWith("EMPTY-PLAN");
+    expect(result).toEqual({ taskCount: 0 });
   });
 });

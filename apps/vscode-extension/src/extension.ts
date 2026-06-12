@@ -1185,6 +1185,43 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         }
         return;
       }
+
+      if (message?.type === "plans:archive") {
+        const code = message.code as string;
+        try {
+          await service.archivePlan(code);
+        } catch (err) {
+          void vscode.window.showWarningMessage(`Archive failed: ${String(err)}`);
+        }
+        await postPlansSnapshot();
+        return;
+      }
+
+      if (message?.type === "plans:delete") {
+        const code = message.code as string;
+        const plan = await service.getPlan(code);
+        if (!plan) {
+          void vscode.window.showWarningMessage(`Plan ${code} not found.`);
+          return;
+        }
+        const tasks = await service.loadPlanTasks(code);
+        const confirmed = await vscode.window.showWarningMessage(
+          `Eliminar plan ${code} y sus ${tasks.length} tasks? Esta acci\u00f3n no se puede deshacer.`,
+          { modal: true },
+          "Confirmar",
+        );
+        if (confirmed !== "Confirmar") return;
+        try {
+          await service.deletePlanWithTasks(code);
+          if (planEditorPanel && planEditorPanel.title === `Plan: ${code}`) {
+            planEditorPanel.dispose();
+          }
+        } catch (err) {
+          void vscode.window.showWarningMessage(`Delete failed: ${String(err)}`);
+        }
+        await postPlansSnapshot();
+        return;
+      }
     });
   }
 

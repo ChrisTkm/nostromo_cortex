@@ -306,6 +306,12 @@ export class MongoActionPlanStore {
     return updated ? normalizeActionPlan(updated as ActionPlanDocument) : null;
   }
 
+  async deletePlan(code: string): Promise<boolean> {
+    const collection = await this.collection();
+    const result = await collection.deleteOne({ code });
+    return result.deletedCount > 0;
+  }
+
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
     await collection.createIndexes([

@@ -98,7 +98,8 @@
 .plans-table th:nth-child(4) { width: 12%; }
 .plans-table th:nth-child(5) { width: 10%; }
 .plans-table th:nth-child(6) { width: 15%; }
-.plans-table th:nth-child(7) { width: 18%; }
+.plans-table th:nth-child(7) { width: 15%; }
+.plans-table th:nth-child(8) { width: 8%; }
 
 .plan-code {
   font-family: var(--vscode-editor-font-family), monospace;
@@ -525,4 +526,27 @@
   color: var(--vscode-dropdown-foreground);
   font-family: inherit;
   font-size: 12px;
+}
+
+/* ── Acciones column ── */
+.pa-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  line-height: 1;
+  vertical-align: middle;
+  transition: background 0.15s;
+}
+.pa-btn:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+.pa-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.pa-btn + .pa-btn {
+  margin-left: 4px;
 }

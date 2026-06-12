@@ -454,6 +454,20 @@ export class ExtensionTaskService {
     return this.recalcPlanProgress(planCode);
   }
 
+  async deletePlanWithTasks(code: string): Promise<{ taskCount: number }> {
+    const tasks = await this.loadPlanTasks(code);
+    const taskCodes = tasks.map((t) => t.code);
+    if (taskCodes.length > 0) {
+      await this.withTaskStore(this.getConnectionSettings(), (store) =>
+        store.deleteTasks(taskCodes),
+      );
+    }
+    await this.withPlanStore(this.getConnectionSettings(), (store) =>
+      store.deletePlan(code),
+    );
+    return { taskCount: taskCodes.length };
+  }
+
   isJsonPathInArchive(rawJsonPath: string): boolean {
     if (typeof rawJsonPath !== "string" || !rawJsonPath.trim()) return false;
     const candidate = path.normalize(rawJsonPath.trim());
