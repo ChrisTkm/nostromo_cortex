@@ -31,13 +31,27 @@ Variables clave:
 - `LOG_FORMAT` (default: `pretty`; usa `json` para logs estructurados)
 - `SNAPSHOT_MAX_TASKS` (default: `500`)
 
+⚠️ **Warning — split-brain de DB name.** `MONGO_DB_NAME` (.env) es la única fuente para CLI + MCP server.
+La extensión VS Code tiene su PROPIO setting `cortex.mongoDbName` en `.vscode/settings.json`.
+Ambos DEBEN coincidir. Si divergen, el CLI escribe en una DB y la extensión lee de otra, creando
+colecciones vacías en la DB default. Síntoma: la DB `cortex` queda vacía mientras los datos reales
+están en otra (ej. `nostromo_cortex`).
+
 La extensión de VS Code guarda la Mongo URL en SecretStorage mediante `Cortex: Set Mongo URL`; estas variables aplican principalmente al MCP server, scripts y configuración compartida de `@cortex/core`.
 
-## Levantar Mongo local
+## Mongo local
+
+Cortex usa por defecto el Mongo compartido `nostromo-mongo` en `mongodb://127.0.0.1:27017`.
 
 ```bash
 pnpm mongo:up
 pnpm seed
+```
+
+El `docker-compose.yml` de este repo queda solo como fallback aislado para pruebas puntuales. Si necesitas levantarlo, usa el profile `local-mongo` y configura `MONGO_URL=mongodb://127.0.0.1:27018` para esa sesion.
+
+```bash
+docker compose --profile local-mongo up -d mongo
 ```
 
 ## Dataset seed

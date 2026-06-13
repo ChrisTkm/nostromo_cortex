@@ -1,10 +1,12 @@
+import { loadConfig } from "@cortex/core";
 import { MongoClient } from "mongodb";
 
 async function main() {
-  const client = new MongoClient("mongodb://127.0.0.1:27017");
+  const config = loadConfig();
+  const client = new MongoClient(config.mongoUrl);
   try {
     await client.connect();
-    const db = client.db("cortex");
+    const db = client.db(config.mongoDbName);
 
     console.log("=== PLAN CORTEX-V015 ===");
     const plan = await db.collection("action_plans").findOne({ code: "CORTEX-V015" });

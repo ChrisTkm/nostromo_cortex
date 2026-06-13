@@ -188,7 +188,7 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 - `pnpm build`
 - `pnpm test`
 - `pnpm lint`
-- `pnpm mongo:up`
+- `pnpm mongo:up` (inicia el Mongo compartido `nostromo-mongo`)
 - `pnpm seed`
 - `pnpm check:cycles`
 - `pnpm inspect:snapshot`

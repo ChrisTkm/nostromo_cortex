@@ -8,9 +8,22 @@ coverage
 .env.local
 apps/vscode-extension/.vscode-test
 data/
+docs/*
+!docs/script-flow-kinds.md
+!docs/modules
+!docs/modules/**
 *.db
 *.db-shm
 *.db-wal
 *.jsonl
 apps/vscode-extension/*.vsix
 apps/vscode-extension/playground-*.mongodb.js
+
+# scratch / ad-hoc scripts (prefijo _)
+scripts/_*
+
+# AI
+.claude/
+.codex/
+.config/
+.pnpm-store/

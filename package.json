@@ -16,8 +16,8 @@
     "inspect:telemetry:runs": "tsx scripts/inspect-telemetry.ts recent",
     "inspect:telemetry:failures": "tsx scripts/inspect-telemetry.ts failures",
     "inspect:cost": "tsx scripts/inspect-telemetry.ts cost",
-    "mongo:up": "docker compose up -d mongo",
-    "mongo:down": "docker compose down",
+    "mongo:up": "docker start nostromo-mongo",
+    "mongo:down": "docker stop nostromo-mongo",
     "clean": "corepack pnpm -r exec rimraf dist"
   },
   "devDependencies": {
