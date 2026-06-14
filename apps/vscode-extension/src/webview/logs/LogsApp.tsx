@@ -10,8 +10,10 @@ import {
   buildProcessRows,
   coerceLogFilterValue,
   countLogsByLevel,
+  filterLogsByPeriod,
   filterLogsByTime,
   formatDuration,
+  formatLiveSince,
   formatRelativeTime,
   getLogsEmptyState,
   getOldestLogTimestamp,
@@ -41,6 +43,11 @@ type LogsMessage =
       type: "logs:append";
       logs: LogRecord[];
       hasMore: boolean;
+    }
+  | {
+      type: "logs:liveStatus";
+      live: boolean;
+      refreshAt: string;
     };
 
 declare global {
@@ -75,6 +82,9 @@ export function LogsApp() {
   const [period, setPeriod] = useState<PeriodFilter>("month");
   const [expandedProcess, setExpandedProcess] = useState<Set<string>>(() => new Set());
   const [selectedRun, setSelectedRun] = useState<RunGroup | null>(null);
+  const [live, setLive] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const liveTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -109,6 +119,11 @@ export function LogsApp() {
         setLogs((current) => mergeLogPages(current, message.logs));
         setHasMore(Boolean(message.hasMore));
         setLoadingOlder(false);
+        return;
+      }
+      if (message?.type === "logs:liveStatus") {
+        setLive(Boolean(message.live));
+        setLastRefreshAt(message.refreshAt);
       }
     }
 
@@ -140,7 +155,10 @@ export function LogsApp() {
 
   const baseFilteredLogs = useMemo(() => {
     const timeFiltered = filterLogsByTime(logs, timeRange);
-    return timeFiltered.filter((entry) => {
+    const periodFiltered = viewMode === "historico" && period !== "all"
+      ? filterLogsByPeriod(timeFiltered, period)
+      : timeFiltered;
+    return periodFiltered.filter((entry) => {
       if (source !== "all" && entry.source !== source) return false;
       if (folder !== "all" && entry.folder !== folder) return false;
       if (tag !== "all" && (entry.tag ?? entry.event ?? "untagged") !== tag) return false;
@@ -166,7 +184,7 @@ export function LogsApp() {
         .toLowerCase();
       return haystack.includes(deferredSearch);
     });
-  }, [deferredSearch, folder, logs, process, source, tag, timeRange]);
+  }, [deferredSearch, folder, logs, period, process, source, tag, timeRange, viewMode]);
 
   const filteredLogs = useMemo(() => {
     if (level === "all") return baseFilteredLogs;
@@ -212,6 +230,7 @@ export function LogsApp() {
     setTag("all");
     setProcess("all");
     setTimeRange("all");
+    setPeriod("all");
   }
 
   useEffect(() => {
@@ -219,6 +238,21 @@ export function LogsApp() {
       if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!live) {
+      if (liveTickRef.current) clearInterval(liveTickRef.current);
+      liveTickRef.current = null;
+      return;
+    }
+    liveTickRef.current = setInterval(() => {
+      setLastRefreshAt((current) => current ? current.slice(0) : current);
+    }, 5000);
+    return () => {
+      if (liveTickRef.current) clearInterval(liveTickRef.current);
+      liveTickRef.current = null;
+    };
+  }, [live]);
 
   function copyValue(value: string, key: string) {
     if (!value) return;
@@ -289,6 +323,24 @@ export function LogsApp() {
             <span className="logs-toolbar__count">
               {filteredLogs.length} events
             </span>
+            {live ? (
+              <span className="logs-live-badge">
+                <span className="logs-live-badge__dot" />
+                LIVE
+                {lastRefreshAt ? ` · ${formatLiveSince(lastRefreshAt)}` : ""}
+              </span>
+            ) : null}
+            <button
+              className={`logs-button${live ? " logs-button--active" : ""}`}
+              onClick={() => {
+                const next = !live;
+                setLive(next);
+                vscode.postMessage({ type: "logs:toggleLive", live: next });
+              }}
+              type="button"
+            >
+              {live ? "LIVE ON" : "LIVE"}
+            </button>
             <button
               className="logs-button"
               onClick={() => vscode.postMessage({ type: "logs:refresh" })}
@@ -323,6 +375,26 @@ export function LogsApp() {
             {orderedLevelKeys.map((lvl) => {
               const active = level === lvl;
               const count = levelCounts[lvl] ?? 0;
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  className={`logs-counter-chip${active ? " logs-counter-chip--active" : ""}`}
+                  onClick={() => setLevel(active ? "all" : lvl)}
+                  aria-pressed={active}
+                >
+                  <span className={`log-pill log-pill--${lvl.toLowerCase()}`}>{lvl}</span>
+                  <span className="logs-counter-chip__count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        {viewMode === "historico" ? (
+          <div className="logs-counters">
+            {(["ERROR", "WARN", "INFO"] as const).map((lvl) => {
+              const count = levelCounts[lvl] ?? 0;
+              const active = level === lvl;
               return (
                 <button
                   key={lvl}

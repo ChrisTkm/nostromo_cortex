@@ -797,6 +797,24 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       ) {
         await postLogsOlder(message.beforeTimestamp);
       }
+      if (message?.type === "logs:toggleLive" && typeof message.live === "boolean") {
+        if (message.live) {
+          const liveMs = vscode.workspace
+            .getConfiguration("cortex")
+            .get<number>("logsLivePollMs", 4000);
+          startLogsPoll(Math.max(1, Math.trunc(liveMs / 1000)));
+        } else {
+          stopLogsPoll();
+          refreshLogsPollFromConfig();
+        }
+        if (logsPanel) {
+          await logsPanel.webview.postMessage({
+            type: "logs:liveStatus",
+            live: message.live,
+            refreshAt: new Date().toISOString(),
+          });
+        }
+      }
     });
   }
 

@@ -8,7 +8,9 @@ import {
   buildProcessRows,
   countLogsByLevel,
   detectRuns,
+  filterLogsByPeriod,
   formatDuration,
+  formatLiveSince,
   formatRelativeTime,
   getOldestLogTimestamp,
   LOGS_PYTHON_SNIPPET,
@@ -708,5 +710,42 @@ describe("mergeLogPages", () => {
     ];
     const result = mergeLogPages(existing, incoming);
     expect(result).toHaveLength(1);
+  });
+
+  describe("filterLogsByPeriod", () => {
+    it("with period='all' returns all logs unchanged", () => {
+      const logs = [
+        mockLog({ timestamp: "2026-01-01T00:00:00.000Z" }),
+        mockLog({ timestamp: "2026-06-01T00:00:00.000Z" }),
+      ];
+      expect(filterLogsByPeriod(logs, "all")).toEqual(logs);
+    });
+
+    it("with period='month' keeps only logs from last 30 days", () => {
+      const recent = mockLog({ timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString() });
+      const old = mockLog({ timestamp: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() });
+      expect(filterLogsByPeriod([recent, old], "month")).toEqual([recent]);
+    });
+  });
+
+  describe("formatLiveSince", () => {
+    it("returns 'now' for < 2s difference", () => {
+      expect(formatLiveSince(new Date().toISOString())).toBe("now");
+    });
+
+    it("returns seconds for < 60s", () => {
+      const past = new Date(Date.now() - 10_000).toISOString();
+      expect(formatLiveSince(past)).toBe("10s");
+    });
+
+    it("returns minutes for < 60m", () => {
+      const past = new Date(Date.now() - 5 * 60_000).toISOString();
+      expect(formatLiveSince(past)).toBe("5m");
+    });
+
+    it("returns hours for >= 60m", () => {
+      const past = new Date(Date.now() - 3 * 3600_000).toISOString();
+      expect(formatLiveSince(past)).toBe("3h");
+    });
   });
 });

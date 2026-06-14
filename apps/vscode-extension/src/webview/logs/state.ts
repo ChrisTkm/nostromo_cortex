@@ -466,6 +466,29 @@ function matchesTag(entry: LogRecord, tag: string) {
   return entry.tag === tag || entry.event === tag;
 }
 
+export const PERIOD_MS: Record<"month" | "semester" | "year", number> = {
+  month: 30 * 24 * 60 * 60 * 1000,
+  semester: 182 * 24 * 60 * 60 * 1000,
+  year: 365 * 24 * 60 * 60 * 1000,
+};
+
+export function filterLogsByPeriod(
+  logs: LogRecord[],
+  period: PeriodFilter,
+): LogRecord[] {
+  if (period === "all") return logs;
+  const cutoff = Date.now() - PERIOD_MS[period];
+  return logs.filter((entry) => new Date(entry.timestamp).getTime() >= cutoff);
+}
+
+export function formatLiveSince(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 2000) return "now";
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s`;
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m`;
+  return `${Math.floor(diff / 3600_000)}h`;
+}
+
 // ---------------------------------------------------------------------------
 // LOGS-V2-03: Historical view types and helpers
 // ---------------------------------------------------------------------------

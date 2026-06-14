@@ -367,6 +367,13 @@
           "maximum": 600,
           "description": "Auto-refresh interval for the Cortex Logs panel, in seconds. 0 disables it."
         },
+        "cortex.logsLivePollMs": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Poll interval in milliseconds when LIVE mode is toggled on. Lower values update more frequently but increase I/O."
+        },
         "cortex.logsSources": {
           "type": "array",
           "items": {
