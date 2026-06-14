@@ -5,9 +5,10 @@ import { formatDuration, runStatusClass, runStatusIcon } from "../state";
 type RunDrawerProps = {
   run: RunGroup | null;
   onClose: () => void;
+  tz?: string;
 };
 
-export function RunDrawer({ run, onClose }: RunDrawerProps) {
+export function RunDrawer({ run, onClose, tz = "UTC" }: RunDrawerProps) {
   if (!run) return null;
 
   const events = [...run.events].sort((a, b) =>
@@ -45,11 +46,11 @@ export function RunDrawer({ run, onClose }: RunDrawerProps) {
             {runStatusIcon(run.status)}
           </span>
           <span className="logs-run-drawer__time">
-            {formatLogTimestamp(run.startedAt)}
+            {formatLogTimestamp(run.startedAt, tz)}
           </span>
           {run.endedAt ? (
             <span className="logs-run-drawer__time">
-              &rarr; {formatLogTimestamp(run.endedAt)}
+              &rarr; {formatLogTimestamp(run.endedAt, tz)}
             </span>
           ) : null}
           <span className="logs-run-drawer__duration">
@@ -75,7 +76,7 @@ export function RunDrawer({ run, onClose }: RunDrawerProps) {
           <h3 className="logs-run-drawer__section-title">Timeline</h3>
           <div className="logs-run-drawer__timeline">
             {events.map((event, i) => (
-              <TimelineNode key={i} event={event} isLast={i === events.length - 1} />
+              <TimelineNode key={i} event={event} isLast={i === events.length - 1} tz={tz} />
             ))}
           </div>
         </section>
@@ -197,9 +198,9 @@ export function RunDrawer({ run, onClose }: RunDrawerProps) {
   );
 }
 
-function TimelineNode({ event, isLast }: { event: LogRecord; isLast: boolean }) {
+function TimelineNode({ event, isLast, tz }: { event: LogRecord; isLast: boolean; tz: string }) {
   const levelClass = event.level.toLowerCase();
-  const time = formatLogTimestamp(event.timestamp);
+  const time = formatLogTimestamp(event.timestamp, tz);
   return (
     <div className="logs-run-drawer__timeline-node">
       <div className="logs-run-drawer__timeline-line">
@@ -257,8 +258,11 @@ function extractBagFields(events: LogRecord[]) {
   return fields;
 }
 
-function formatLogTimestamp(iso: string) {
+function formatLogTimestamp(iso: string, tz: string = "UTC") {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+  return d.toLocaleString(undefined, {
+    hour12: false,
+    ...(tz === "local" ? {} : { timeZone: tz }),
+  });
 }

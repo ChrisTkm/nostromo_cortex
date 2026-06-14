@@ -37,6 +37,7 @@ export function LogsApp() {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
   const [period, setPeriod] = useState<PeriodFilter>("month");
+  const [tz, setTz] = useState<string>("UTC");
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null);
   const [selectedRunIndex, setSelectedRunIndex] = useState(0);
   const [live, setLive] = useState(false);
@@ -164,6 +165,12 @@ export function LogsApp() {
           <option value="year">Year</option>
           <option value="all">All time</option>
         </select>
+        <select className="logs-select" value={tz} onChange={(e) => setTz(e.target.value)} title="Zona horaria de visualización">
+          <option value="UTC">UTC (log)</option>
+          <option value="America/Santiago">Chile</option>
+          <option value="America/New_York">New York</option>
+          <option value="local">Local</option>
+        </select>
         <div className="logs-levelchips">
           {(["ERROR", "WARN", "INFO"] as const).map((lvl) => {
             const active = level === lvl;
@@ -254,7 +261,7 @@ export function LogsApp() {
                           className={`logs-runs__row${sel ? " logs-runs__row--sel" : ""}`}
                           onClick={() => setSelectedRunIndex(i)}
                         >
-                          <td>{formatStart(run.startedAt)}</td>
+                          <td>{formatStart(run.startedAt, tz)}</td>
                           <td>{formatDuration(run.durationMs)}</td>
                           <td>
                             <span className={`logs-run-status ${runStatusClass(run.status)}`}>
@@ -270,7 +277,7 @@ export function LogsApp() {
                 </table>
                 <div className="logs-pane__detail">
                   {currentRun ? (
-                    <RunDrawer run={currentRun} onClose={() => {}} />
+                    <RunDrawer run={currentRun} tz={tz} onClose={() => {}} />
                   ) : (
                     <div className="logs-pane__empty">Seleccioná una corrida.</div>
                   )}
@@ -284,13 +291,15 @@ export function LogsApp() {
   );
 }
 
-function formatStart(value: string) {
+function formatStart(value: string, tz: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString(undefined, {
+    hour12: false,
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    ...(tz === "local" ? {} : { timeZone: tz }),
   });
 }
