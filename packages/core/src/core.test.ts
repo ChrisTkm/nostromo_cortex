@@ -676,7 +676,7 @@ describe("shared mongo client support", () => {
     await planStore.ensureIndexes();
 
     expect(planClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { status: 1 }, name: "status_idx" }
     ]);
   });
@@ -718,6 +718,91 @@ describe("shared mongo client support", () => {
     expect(noteClient.collectionApi.dropIndex.mock.invocationCallOrder[1]).toBeLessThan(
       noteClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
     );
+  });
+
+  it("drops legacy plan indexes before recreating the supported set", async () => {
+    const planClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const planStore = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient: planClient
+    });
+
+    await planStore.ensureIndexes();
+
+    expect(planClient.collectionApi.dropIndex.mock.calls).toEqual([["action_plans_code_unique"]]);
+    expect(planClient.collectionApi.dropIndex.mock.invocationCallOrder[0]).toBeLessThan(
+      planClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    );
+  });
+
+  it("looks up a task by code with surrounding whitespace", async () => {
+    const sharedClient = createSharedClient([
+      {
+        ...sampleTasks[0]!,
+        _id: "task-space",
+        code: "SPACE-CODE"
+      }
+    ]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValue({
+      _id: "task-space",
+      code: "SPACE-CODE",
+      short_task: "Spaced",
+      detail: "",
+      status: "PENDING",
+      agent: "tester",
+      severity: "MEDIUM",
+      created_at: "2026-04-12T00:00:00.000Z",
+      updated_at: "2026-04-12T01:00:00.000Z"
+    });
+
+    const store = new MongoTaskStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "tasks",
+      sharedClient
+    });
+
+    const task = await store.getTask("  SPACE-CODE  ");
+    expect(task?.code).toBe("SPACE-CODE");
+    expect(sharedClient.collectionApi.findOne).toHaveBeenCalledWith({ code: "SPACE-CODE" });
+  });
+
+  it("looks up a plan by code with surrounding whitespace", async () => {
+    const sharedClient = createSharedClient([
+      {
+        code: "SPACE-PLAN",
+        title: "Spaced title",
+        description: "desc",
+        goal: "goal",
+        context: "",
+        status: "PLANNING",
+        progress: {
+          total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0
+        }
+      }
+    ]) as unknown as SharedMongoClient;
+    sharedClient.collectionApi.findOne.mockResolvedValue({
+      code: "SPACE-PLAN",
+      title: "Spaced title",
+      description: "desc",
+      goal: "goal",
+      context: "",
+      status: "PLANNING",
+      progress: { total: 1, pending: 1, in_progress: 0, blocked: 0, done: 0, failed: 0 }
+    });
+
+    const store = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient
+    });
+
+    const plan = await store.getPlan("  SPACE-PLAN  ");
+    expect(plan?.code).toBe("SPACE-PLAN");
+    expect(sharedClient.collectionApi.findOne).toHaveBeenCalledWith({ code: "SPACE-PLAN" });
   });
 });
 

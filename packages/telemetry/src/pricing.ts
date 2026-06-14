@@ -25,6 +25,31 @@ export const PRICING_CATALOGS: Record<string, PricingCatalog> = {
         cachedInputPerMillion: 0.3
       }
     }
+  },
+  "2026-06-13": {
+    version: "2026-06-13",
+    models: {
+      "claude-haiku-4.5": {
+        inputPerMillion: 1,
+        outputPerMillion: 5,
+        cachedInputPerMillion: 0.1
+      },
+      "claude-sonnet-4.6": {
+        inputPerMillion: 3,
+        outputPerMillion: 15,
+        cachedInputPerMillion: 0.3
+      },
+      "claude-opus-4.8": {
+        inputPerMillion: 5,
+        outputPerMillion: 25,
+        cachedInputPerMillion: 0.5
+      },
+      "claude-fable-5": {
+        inputPerMillion: 10,
+        outputPerMillion: 50,
+        cachedInputPerMillion: 1
+      }
+    }
   }
 };
 
@@ -51,7 +76,7 @@ export function estimateRunCost(input: EstimateRunCostInput): EstimateRunCostRes
     };
   }
 
-  const pricingVersion = input.pricingVersion ?? "2026-04-01";
+  const pricingVersion = input.pricingVersion ?? "2026-06-13";
   const catalog = PRICING_CATALOGS[pricingVersion];
   const modelPricing = input.model ? catalog?.models[input.model] : undefined;
   if (!catalog || !modelPricing) {

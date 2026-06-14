@@ -264,6 +264,12 @@ export interface NoteRecord {
   updatedAt: string;
 }
 
+export interface PlanStore {
+  listPlans(): Promise<ActionPlanRecord[]>;
+  getPlan(codeOrId: string): Promise<ActionPlanRecord | null>;
+  ensureIndexes(): Promise<void>;
+}
+
 export interface NoteStore {
   listNotes(): Promise<NoteRecord[]>;
   getNote(code: string): Promise<NoteRecord | null>;

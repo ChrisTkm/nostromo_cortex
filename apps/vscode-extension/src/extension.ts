@@ -2,22 +2,16 @@ import {
   buildTaskGraph,
   TASK_SEVERITIES,
   TASK_STATUSES,
-  type NoteDocumentInput,
   type TaskDocumentInput,
-  type TaskFilter,
   type TaskRecord,
 } from "@cortex/core";
-import { MongoClient } from "mongodb";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
 import { buildMdxGraphSnapshot } from "./mdGraph/indexer.js";
 import type { MdxGraphSnapshot } from "./mdGraph/types.js";
 import { ExtensionTaskService } from "./service.js";
-import {
-  analyzeScriptFlowDocument,
-  resolveScriptFlowLanguage,
-} from "./scriptFlow/analyzers/index.js";
+
 import {
   isScriptFlowWebviewMessage,
   sendError,
@@ -27,8 +21,56 @@ import {
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
 import {
+  buildFilterCatalog,
+  buildPlanTasks,
+  buildSnapshotFilter,
+  isNoteDocumentInput,
+  normalizePlanStatusFilter,
+  PLAN_STATUS_FILTER_KEY,
+  resolveSelectedPlanCode,
+  resolveSelectedTaskCode,
+  sameFilterState,
+  sanitizeFilterState,
+  splitCsv,
+  parseOptionalNumber,
+  titleForPlanStatusFilter,
+} from "./filterState.js";
+import {
+  canConnectToMongoUrl,
+  formatCollectionMessage,
+  migrateLegacyMongoUrlSetting,
+  MONGO_URL_SECRET_KEY,
+  pickConnectionSettings,
+  safeList,
+} from "./commands/connection.js";
+import {
+  handleClearFilters,
+  handleSelectPlan,
+  handleSetGroupFilter,
+  handleSetProjectFilter,
+  handleSetSearchQuery,
+  handleSetTagFilter,
+} from "./commands/filters.js";
+import {
+  pickNoteCode as pickNoteCodeFromNotes,
+  pickPendingReminderCode as pickPendingReminderCodeFromNotes,
+  type NoteQuickPickItem,
+  type NotesPanelMode,
+  type NotesPanelRequest,
+} from "./commands/notes.js";
+import {
+  resolveArchivePlanCode,
+  postArchiveList as postArchiveListToPanel,
+} from "./commands/archive.js";
+
+import type {
+  ScriptFlowDelivery,
+  ScriptFlowRequest,
+  ScriptFlowScope,
+} from "./commands/scriptFlow.js";
+import { buildScriptFlowDelivery } from "./commands/scriptFlow.js";
+import {
   CortexTreeProvider,
-  type GroupTreeNode,
   type PlanStatusFilter,
   type TaskTreeNode,
 } from "./tree.js";
@@ -39,46 +81,9 @@ import { getMdxGraphHtml } from "./webview/md-graph/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 
-type ConnectionSettings = ReturnType<
-  ExtensionTaskService["getConnectionSettings"]
->;
-type NoteQuickPickItem = vscode.QuickPickItem & { code: string };
-type NotesPanelMode = "list" | "new" | { type: "edit"; code: string };
-type NotesPanelRequest = {
-  mode: NotesPanelMode;
-  search?: string;
-};
-type PlanQuickPickItem = vscode.QuickPickItem & {
-  planCode?: string | undefined;
-};
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
-type ScriptFlowScope = "file" | "selection";
-type ScriptFlowRequest = {
-  scope: ScriptFlowScope;
-  documentUri?: vscode.Uri;
-  selection?: vscode.Range;
-};
-type FilterCatalog = {
-  projects: string[];
-  groups: string[];
-  tags: string[];
-  statuses: string[];
-  severities: string[];
-};
-type ScriptFlowDelivery =
-  | {
-      type: "snapshot";
-      snapshot: ScriptFlowSnapshot;
-      parseMs: number;
-      documentUri: vscode.Uri;
-    }
-  | { type: "error"; error: string }
-  | { type: "unsupported"; language?: string };
-
 let activeService: ExtensionTaskService | undefined;
-const PLAN_STATUS_FILTER_KEY = "cortex.planStatusFilter";
-const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -291,20 +296,8 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  async function postArchiveList() {
-    const panel = archivePanel;
-    if (!panel) {
-      return;
-    }
-
-    const plans = await service.listArchivedPlans();
-    if (archivePanel !== panel) {
-      return;
-    }
-    await panel.webview.postMessage({
-      type: "archive:list",
-      plans,
-    });
+  function postArchiveList() {
+    return postArchiveListToPanel(service, () => archivePanel);
   }
 
   async function postMdxGraphSnapshot(rootUri: vscode.Uri) {
@@ -727,32 +720,12 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  async function pickNoteCode(options: {
+  function pickNoteCode(options: {
     title: string;
     placeHolder: string;
     emptyMessage: string;
   }): Promise<string | undefined> {
-    const notes = await service.listNotes();
-    if (notes.length === 0) {
-      void vscode.window.showInformationMessage(options.emptyMessage);
-      return undefined;
-    }
-
-    const items: NoteQuickPickItem[] = [...notes]
-      .sort((left, right) => left.code.localeCompare(right.code))
-      .map((note) => ({
-        label: note.code,
-        description: note.title,
-        ...(note.body ? { detail: note.body } : {}),
-        code: note.code,
-      }));
-    const picked = await vscode.window.showQuickPick(items, {
-      title: options.title,
-      placeHolder: options.placeHolder,
-      matchOnDescription: true,
-      matchOnDetail: true,
-    });
-    return picked?.code;
+    return pickNoteCodeFromNotes(service, options);
   }
 
   async function openGraph(selectedTaskCode?: string) {
@@ -1212,91 +1185,21 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       },
     ),
-    vscode.commands.registerCommand("cortex.setSearchQuery", async () => {
-      const current = service.getFilterState().searchQuery ?? "";
-      const search = await vscode.window.showInputBox({
-        prompt: "Search by task code or text",
-        value: current,
-      });
-      await service.updateFilterState({ searchQuery: search || undefined });
-      treeProvider.refresh();
-      await postSnapshot();
-    }),
-    vscode.commands.registerCommand("cortex.setTagFilter", async () => {
-      const tasks = await service.loadTasks();
-      const tags = [...new Set(tasks.flatMap((task) => task.tags))].sort(
-        (left, right) => left.localeCompare(right),
-      );
-      const picked = await vscode.window.showQuickPick(tags, {
-        title: "Select task tags",
-        canPickMany: true,
-      });
-      await service.updateFilterState({ selectedTags: picked ?? [] });
-      treeProvider.refresh();
-      await postSnapshot();
-    }),
-    vscode.commands.registerCommand("cortex.setProjectFilter", async () => {
-      const tasks = await service.loadTasks();
-      const projects = [
-        ...new Set(tasks.map((task) => task.project).filter(Boolean)),
-      ].sort((left, right) =>
-        String(left).localeCompare(String(right)),
-      ) as string[];
-      if (projects.length === 0) {
-        void vscode.window.showInformationMessage(
-          "No tasks with project field found yet.",
-        );
-        return;
-      }
-      const picked = await vscode.window.showQuickPick(projects, {
-        title: "Select projects",
-        canPickMany: true,
-      });
-      await service.updateFilterState({ selectedProjects: picked ?? [] });
-      treeProvider.refresh();
-      await postSnapshot();
-    }),
-    vscode.commands.registerCommand("cortex.setGroupFilter", async () => {
-      const tasks = await service.loadTasks();
-      const groups = [
-        ...new Set(tasks.map((task) => task.lane).filter(Boolean)),
-      ].sort((left, right) =>
-        String(left).localeCompare(String(right)),
-      ) as string[];
-      if (groups.length === 0) {
-        void vscode.window.showInformationMessage(
-          "No task groups/lane values found yet.",
-        );
-        return;
-      }
-      const picked = await vscode.window.showQuickPick(groups, {
-        title: "Select groups",
-        canPickMany: true,
-      });
-      await service.updateFilterState({ selectedGroups: picked ?? [] });
-      treeProvider.refresh();
-      await postSnapshot();
-    }),
-    vscode.commands.registerCommand("cortex.selectPlan", async () => {
-      const plans = await service.loadPlans();
-      const items: PlanQuickPickItem[] = [
-        { label: "$(close) Clear plan filter" },
-        ...plans.map((plan) => ({
-          label: plan.code,
-          description: plan.title,
-          detail: `${plan.progress.done}/${plan.progress.total} done · ${plan.status}`,
-          planCode: plan.code,
-        })),
-      ];
-      const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: "Select an action plan to focus the graph",
-      });
-      if (picked === undefined) {
-        return;
-      }
-      await service.updateFilterState({ selectedPlanCode: picked.planCode });
-      await refreshView();
-    }),
+    vscode.commands.registerCommand("cortex.setSearchQuery", () =>
+      handleSetSearchQuery(service, treeProvider, postSnapshot),
+    ),
+    vscode.commands.registerCommand("cortex.setTagFilter", () =>
+      handleSetTagFilter(service, treeProvider, postSnapshot),
+    ),
+    vscode.commands.registerCommand("cortex.setProjectFilter", () =>
+      handleSetProjectFilter(service, treeProvider, postSnapshot),
+    ),
+    vscode.commands.registerCommand("cortex.setGroupFilter", () =>
+      handleSetGroupFilter(service, treeProvider, postSnapshot),
+    ),
+    vscode.commands.registerCommand("cortex.selectPlan", () =>
+      handleSelectPlan(service, treeProvider, postSnapshot),
+    ),
     vscode.commands.registerCommand(
       "cortex.archivePlan",
       async (
@@ -1427,17 +1330,9 @@ export async function activate(context: vscode.ExtensionContext) {
         await editTask(code ?? service.getFilterState().selectedTaskCode);
       },
     ),
-    vscode.commands.registerCommand("cortex.clearFilters", async () => {
-      const current = service.getFilterState();
-      await service.updateFilterState({
-        ...DEFAULT_FILTER_STATE,
-        graphOrientation: current.graphOrientation,
-        showMiniMap: current.showMiniMap,
-        selectedPlanCode: undefined,
-      });
-      treeProvider.refresh();
-      await postSnapshot();
-    }),
+    vscode.commands.registerCommand("cortex.clearFilters", () =>
+      handleClearFilters(service, treeProvider, postSnapshot),
+    ),
     vscode.commands.registerCommand("cortex.listCycles", async () => {
       const graph = buildTaskGraph(await service.loadTasks());
       if (graph.cycles.length === 0) {
@@ -1497,258 +1392,6 @@ export async function deactivate() {
   activeService = undefined;
 }
 
-function buildSnapshotFilter(
-  state: ReturnType<ExtensionTaskService["getFilterState"]>,
-): TaskFilter {
-  return {
-    ...(state.selectedPlanCode ? { planCode: state.selectedPlanCode } : {}),
-    ...(state.selectedProjects.length > 0
-      ? { project: state.selectedProjects }
-      : {}),
-    ...(state.selectedGroups.length > 0 ? { group: state.selectedGroups } : {}),
-    ...(state.searchQuery ? { search: state.searchQuery } : {}),
-  };
-}
-
-function buildFilterCatalog(tasks: TaskRecord[]): FilterCatalog {
-  return {
-    projects: [...new Set(tasks.map((task) => task.project).filter(Boolean))]
-      .map(String)
-      .sort((left, right) => left.localeCompare(right)),
-    groups: [...new Set(tasks.map((task) => task.lane).filter(Boolean))]
-      .map(String)
-      .sort((left, right) => left.localeCompare(right)),
-    tags: [...new Set(tasks.flatMap((task) => task.tags))].sort((left, right) =>
-      left.localeCompare(right),
-    ),
-    statuses: [...new Set(tasks.map((task) => task.status))].sort(
-      (left, right) => left.localeCompare(right),
-    ),
-    severities: [...new Set(tasks.map((task) => task.severity))].sort(
-      (left, right) => left.localeCompare(right),
-    ),
-  };
-}
-
-function buildPlanTasks(
-  plans: readonly { code: string }[],
-  tasks: readonly TaskRecord[],
-) {
-  const knownPlans = new Set(plans.map((plan) => plan.code));
-  const grouped: Record<
-    string,
-    Array<{
-      code: string;
-      durationEstimate?: number;
-      label: string;
-      lane?: string;
-      severity: TaskRecord["severity"];
-      status: TaskRecord["status"];
-    }>
-  > = {};
-
-  for (const task of tasks) {
-    const planCode = task.planCode;
-    if (!planCode || !knownPlans.has(planCode)) {
-      continue;
-    }
-    const bucket = (grouped[planCode] ??= []);
-    bucket.push({
-      code: task.code,
-      ...(typeof task.durationEstimate === "number"
-        ? { durationEstimate: task.durationEstimate }
-        : {}),
-      label: task.shortTask,
-      ...(task.lane ? { lane: task.lane } : {}),
-      severity: task.severity,
-      status: task.status,
-    });
-  }
-
-  for (const code of Object.keys(grouped)) {
-    const bucket = grouped[code];
-    if (bucket) {
-      grouped[code] = bucket.sort((left, right) =>
-        left.code.localeCompare(right.code),
-      );
-    }
-  }
-
-  return grouped;
-}
-
-function sanitizeFilterState(
-  state: ReturnType<ExtensionTaskService["getFilterState"]>,
-  catalog: FilterCatalog,
-  planCodes: ReadonlySet<string>,
-): ReturnType<ExtensionTaskService["getFilterState"]> {
-  const nextState = {
-    ...state,
-    selectedProjects: state.selectedProjects.filter((value) =>
-      catalog.projects.includes(value),
-    ),
-    selectedGroups: state.selectedGroups.filter((value) =>
-      catalog.groups.includes(value),
-    ),
-    selectedTags: state.selectedTags.filter((value) =>
-      catalog.tags.includes(value),
-    ),
-    selectedStatuses: state.selectedStatuses.filter((value) =>
-      catalog.statuses.includes(value),
-    ),
-    selectedSeverities: state.selectedSeverities.filter((value) =>
-      catalog.severities.includes(value),
-    ),
-  };
-
-  if (state.selectedPlanCode && !planCodes.has(state.selectedPlanCode)) {
-    delete nextState.selectedPlanCode;
-  }
-
-  return nextState;
-}
-
-function sameFilterState(
-  left: ReturnType<ExtensionTaskService["getFilterState"]>,
-  right: ReturnType<ExtensionTaskService["getFilterState"]>,
-) {
-  return (
-    left.searchQuery === right.searchQuery &&
-    left.graphOrientation === right.graphOrientation &&
-    left.showMiniMap === right.showMiniMap &&
-    left.selectedTaskCode === right.selectedTaskCode &&
-    left.selectedPlanCode === right.selectedPlanCode &&
-    left.zoom === right.zoom &&
-    left.pan.x === right.pan.x &&
-    left.pan.y === right.pan.y &&
-    sameArray(left.selectedProjects, right.selectedProjects) &&
-    sameArray(left.selectedGroups, right.selectedGroups) &&
-    sameArray(left.selectedTags, right.selectedTags) &&
-    sameArray(left.selectedStatuses, right.selectedStatuses) &&
-    sameArray(left.selectedSeverities, right.selectedSeverities)
-  );
-}
-
-function resolveSelectedPlanCode(
-  tasks: TaskRecord[],
-  state: ReturnType<ExtensionTaskService["getFilterState"]>,
-  planCodes: ReadonlySet<string>,
-  nextSelectedTaskCode?: string,
-) {
-  if (nextSelectedTaskCode) {
-    const selectedTask = tasks.find(
-      (task) =>
-        task.code === nextSelectedTaskCode || task.id === nextSelectedTaskCode,
-    );
-    const selectedTaskPlanCode = selectedTask?.planCode;
-    return selectedTaskPlanCode && planCodes.has(selectedTaskPlanCode)
-      ? selectedTaskPlanCode
-      : undefined;
-  }
-
-  const current = state.selectedPlanCode;
-  if (!current || !planCodes.has(current)) {
-    return undefined;
-  }
-
-  if (state.selectedProjects.length > 0) {
-    const hasProjectOutsidePlan = tasks.some(
-      (task) => task.project && state.selectedProjects.includes(task.project),
-    );
-    const hasProjectInsidePlan = tasks.some(
-      (task) =>
-        task.planCode === current &&
-        task.project &&
-        state.selectedProjects.includes(task.project),
-    );
-    if (hasProjectOutsidePlan && !hasProjectInsidePlan) {
-      return undefined;
-    }
-  }
-
-  return current;
-}
-
-function resolveSelectedTaskCode(
-  tasks: TaskRecord[],
-  state: ReturnType<ExtensionTaskService["getFilterState"]>,
-  selectedPlanCode?: string,
-  nextSelectedTaskCode?: string,
-) {
-  const taskCode = nextSelectedTaskCode ?? state.selectedTaskCode;
-  if (!taskCode) {
-    return undefined;
-  }
-
-  const selectedTask = tasks.find(
-    (task) => task.code === taskCode || task.id === taskCode,
-  );
-  if (!selectedTask) {
-    return undefined;
-  }
-
-  if (selectedPlanCode && selectedTask.planCode !== selectedPlanCode) {
-    return undefined;
-  }
-
-  return taskCode;
-}
-
-function sameArray(left: readonly string[], right: readonly string[]) {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
-function normalizePlanStatusFilter(
-  value: PlanStatusFilter | undefined,
-): PlanStatusFilter {
-  return value === "done" ? "done" : "active";
-}
-
-function titleForPlanStatusFilter(filter: PlanStatusFilter) {
-  return filter === "done" ? "Cortex · Cerrados" : "Cortex · En curso";
-}
-
-async function resolveArchivePlanCode(
-  service: ExtensionTaskService,
-  arg?: string | { planCode?: string; kind?: string; label?: string },
-) {
-  if (typeof arg === "string" && arg.trim()) {
-    return arg.trim();
-  }
-
-  const candidate = arg as Partial<GroupTreeNode> | undefined;
-  if (candidate?.planCode?.trim()) {
-    return candidate.planCode.trim();
-  }
-
-  const donePlans = (await service.loadPlans())
-    .filter((plan) => String(plan.status).toUpperCase() === "DONE")
-    .sort((left, right) => left.code.localeCompare(right.code));
-  if (donePlans.length === 0) {
-    void vscode.window.showInformationMessage(
-      "No DONE plans available to archive.",
-    );
-    return undefined;
-  }
-
-  const picked = await vscode.window.showQuickPick(
-    donePlans.map((plan) => ({
-      label: plan.code,
-      description: plan.title,
-      detail: `${plan.progress.done}/${plan.progress.total} done`,
-      planCode: plan.code,
-    })),
-    {
-      title: "Archive DONE plan",
-      placeHolder: "Select a completed plan to archive",
-    },
-  );
-  return picked?.planCode;
-}
-
 async function pickMdxGraphRoot() {
   const picked = await vscode.window.showOpenDialog({
     canSelectFiles: false,
@@ -1780,231 +1423,7 @@ async function resolveConfiguredBrainRoot() {
   }
 }
 
-async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
-  const config = vscode.workspace.getConfiguration("cortex");
-  const legacyMongoUrl = config.get<string>("mongoUrl")?.trim();
-  if (!legacyMongoUrl || (await context.secrets.get(MONGO_URL_SECRET_KEY))) {
-    return;
-  }
 
-  await context.secrets.store(MONGO_URL_SECRET_KEY, legacyMongoUrl);
-  await Promise.all([
-    config.update("mongoUrl", undefined, vscode.ConfigurationTarget.Workspace),
-    config.update("mongoUrl", undefined, vscode.ConfigurationTarget.Global),
-  ]);
-  void vscode.window.showInformationMessage(
-    "Cortex migrated the Mongo URL to secure storage. Use 'Cortex: Set Mongo URL' to update it.",
-  );
-}
-
-async function canConnectToMongoUrl(url: string) {
-  const client = new MongoClient(url, { serverSelectionTimeoutMS: 3000 });
-  try {
-    await client.connect();
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await client.close().catch(() => undefined);
-  }
-}
-
-async function pickConnectionSettings(
-  service: ExtensionTaskService,
-  options?: {
-    title?: string;
-  },
-): Promise<ConnectionSettings | undefined> {
-  const current = service.getConnectionSettings();
-  const mongoUrl =
-    (await vscode.window.showInputBox({
-      prompt: options?.title ?? "Mongo connection string",
-      value: current.mongoUrl,
-      ignoreFocusOut: true,
-    })) ?? current.mongoUrl;
-
-  const databaseOptions = await safeList(
-    service.listDatabaseNames.bind(service),
-  );
-  const dbPick = await vscode.window.showQuickPick(
-    [
-      ...databaseOptions.map((database) => ({
-        label: database,
-        description: "existing database",
-      })),
-      {
-        label: "$(add) Create / type a new database",
-        description: "manual entry",
-      },
-    ],
-    {
-      title: "Select Mongo database",
-      placeHolder: current.mongoDbName,
-      ignoreFocusOut: true,
-    },
-  );
-  if (!dbPick) {
-    return undefined;
-  }
-
-  const mongoDbName =
-    dbPick.label === "$(add) Create / type a new database"
-      ? ((await vscode.window.showInputBox({
-          prompt: "Mongo database name",
-          value: current.mongoDbName,
-          ignoreFocusOut: true,
-        })) ?? current.mongoDbName)
-      : dbPick.label;
-
-  const collectionOptions = await safeList(() =>
-    service.listCollectionNames({
-      mongoUrl,
-      mongoDbName,
-      mongoTasksCollection: current.mongoTasksCollection,
-    }),
-  );
-  const collectionPick = await vscode.window.showQuickPick(
-    [
-      ...collectionOptions.map((collection) => ({
-        label: collection,
-        description: "existing collection",
-      })),
-      {
-        label: "$(add) Create / type a new collection",
-        description: "manual entry",
-      },
-    ],
-    {
-      title: "Select tasks collection",
-      placeHolder: current.mongoTasksCollection,
-      ignoreFocusOut: true,
-    },
-  );
-  if (!collectionPick) {
-    return undefined;
-  }
-
-  const mongoTasksCollection =
-    collectionPick.label === "$(add) Create / type a new collection"
-      ? ((await vscode.window.showInputBox({
-          prompt: "Mongo tasks collection",
-          value: current.mongoTasksCollection,
-          ignoreFocusOut: true,
-        })) ?? current.mongoTasksCollection)
-      : collectionPick.label;
-
-  return {
-    mongoUrl,
-    mongoDbName,
-    mongoTasksCollection,
-    mongoPlansCollection: current.mongoPlansCollection,
-  };
-}
-
-async function buildScriptFlowDelivery(
-  request: ScriptFlowRequest,
-): Promise<ScriptFlowDelivery> {
-  const document = await resolveScriptFlowDocument(request);
-  if (!document) {
-    return { type: "unsupported" };
-  }
-
-  const documentPath = document.uri.fsPath;
-  const language = resolveScriptFlowLanguage(documentPath);
-
-  if (
-    request.scope === "selection" &&
-    (!request.selection || request.selection.isEmpty)
-  ) {
-    return {
-      type: "error",
-      error:
-        "Select a code range before opening Script Flow for the current selection.",
-    };
-  }
-
-  if (!language) {
-    return {
-      type: "unsupported",
-      language: document.languageId,
-    };
-  }
-
-  try {
-    const source =
-      request.scope === "selection" && request.selection
-        ? document.getText(request.selection)
-        : document.getText();
-    const startedAt = Date.now();
-    const snapshot = await analyzeScriptFlowDocument({
-      documentPath,
-      source,
-    });
-    if (!snapshot) {
-      return {
-        type: "unsupported",
-        language,
-      };
-    }
-    return {
-      type: "snapshot",
-      snapshot,
-      parseMs: Date.now() - startedAt,
-      documentUri: document.uri,
-    };
-  } catch (error) {
-    return {
-      type: "error",
-      error: String(error),
-    };
-  }
-}
-
-async function resolveScriptFlowDocument(
-  request: ScriptFlowRequest,
-): Promise<vscode.TextDocument | undefined> {
-  if (request.documentUri) {
-    try {
-      return await vscode.workspace.openTextDocument(request.documentUri);
-    } catch {
-      // fall through to active editor
-    }
-  }
-  const editor = vscode.window.activeTextEditor;
-  return editor?.document;
-}
-
-function formatCollectionMessage(
-  prefix: string,
-  settings: ConnectionSettings,
-  inspection: {
-    documentCount: number;
-    validTaskCount: number;
-    skippedCount: number;
-  },
-) {
-  if (inspection.documentCount === 0) {
-    return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} is empty.`;
-  }
-  if (inspection.validTaskCount === 0) {
-    return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} has ${inspection.documentCount} docs but 0 valid Cortex tasks.`;
-  }
-  if (inspection.skippedCount > 0) {
-    return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} loaded ${inspection.validTaskCount} tasks and ignored ${inspection.skippedCount} non-task docs.`;
-  }
-  return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} loaded ${inspection.validTaskCount} tasks.`;
-}
-
-async function safeList(loader: () => Promise<string[]>) {
-  try {
-    return await loader();
-  } catch (error) {
-    void vscode.window.showWarningMessage(
-      `Cortex could not list options automatically: ${String(error)}`,
-    );
-    return [];
-  }
-}
 
 async function promptForTaskEdits(
   task: TaskRecord,
@@ -2125,61 +1544,10 @@ async function promptForTaskEdits(
 }
 
 async function pickPendingReminderCode() {
-  const notes = await activeService?.listNotes();
-  const reminderNotes = (notes ?? []).filter(
-    (note) => note.remindAt && !note.remindedAt,
-  );
-  if (reminderNotes.length === 0) {
-    void vscode.window.showInformationMessage(
-      "No pending reminders available to snooze.",
-    );
+  if (!activeService) {
     return undefined;
   }
-
-  const picked = await vscode.window.showQuickPick(
-    reminderNotes
-      .sort((left, right) => left.code.localeCompare(right.code))
-      .map((note) => ({
-        label: note.code,
-        description: note.title,
-        detail: note.remindAt,
-      })),
-    {
-      title: "Select a reminder to snooze",
-      placeHolder: "Choose a note code",
-      matchOnDescription: true,
-      matchOnDetail: true,
-    },
-  );
-
-  return picked?.label;
+  return pickPendingReminderCodeFromNotes(activeService);
 }
 
-function splitCsv(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
 
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Partial<NoteDocumentInput>;
-  return (
-    typeof candidate.code === "string" &&
-    candidate.code.trim().length > 0 &&
-    typeof candidate.title === "string" &&
-    candidate.title.trim().length > 0
-  );
-}

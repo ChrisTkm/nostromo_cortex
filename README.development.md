@@ -48,6 +48,15 @@ pnpm mongo:up
 pnpm seed
 ```
 
+> **🧊 Clon fresco sin el ecosistema Nostromo.** `pnpm mongo:up` ejecuta `docker start nostromo-mongo` y asume que el contenedor ya existe. Si no lo tienes, levanta Mongo con el compose del repo en un puerto alternativo:
+>
+> ```bash
+> docker compose --profile local-mongo up -d mongo
+> MONGO_URL=mongodb://127.0.0.1:27018 pnpm seed
+> ```
+>
+> Luego configura `cortex.mongoUrl` en VS Code via `Cortex: Set Mongo URL`
+
 El `docker-compose.yml` de este repo queda solo como fallback aislado para pruebas puntuales. Si necesitas levantarlo, usa el profile `local-mongo` y configura `MONGO_URL=mongodb://127.0.0.1:27018` para esa sesion.
 
 ```bash

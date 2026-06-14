@@ -7,6 +7,7 @@ import type {
   NoteDocumentInput,
   NoteRecord,
   NoteStore,
+  PlanStore,
   TaskDocumentInput,
   TaskRecord,
   TaskStore
@@ -37,6 +38,7 @@ type MongoClientLike = Pick<MongoClient, "connect" | "db" | "close">;
 
 const LEGACY_TASK_INDEX_NAMES = ["tasks_code_unique", "tasks_status_created_at", "tasks_tags", "tasks_plan_code"] as const;
 const LEGACY_NOTE_INDEX_NAMES = ["notes_created_at", "notes_tags"] as const;
+const LEGACY_PLAN_INDEX_NAMES = ["action_plans_code_unique"] as const;
 
 export class SharedMongoClient {
   readonly mongoUrl: string;
@@ -118,7 +120,7 @@ export class MongoTaskStore implements TaskStore {
 
   async getTask(codeOrId: string): Promise<TaskRecord | null> {
     const collection = await this.collection();
-    const byCode = await collection.findOne({ code: codeOrId });
+    const byCode = await collection.findOne({ code: codeOrId.trim() });
     if (byCode) {
       return normalizeTaskDocument(byCode as TaskDocumentInput);
     }
@@ -174,7 +176,7 @@ export class MongoTaskStore implements TaskStore {
   }
 }
 
-export class MongoActionPlanStore {
+export class MongoActionPlanStore implements PlanStore {
   private readonly client: MongoClientLike;
 
   constructor(private readonly options: MongoActionPlanStoreOptions) {
@@ -194,7 +196,7 @@ export class MongoActionPlanStore {
 
   async getPlan(codeOrId: string): Promise<ActionPlanRecord | null> {
     const collection = await this.collection();
-    const byCode = await collection.findOne({ code: codeOrId });
+    const byCode = await collection.findOne({ code: codeOrId.trim() });
     if (byCode) {
       return normalizeActionPlan(byCode as ActionPlanDocument);
     }
@@ -209,8 +211,9 @@ export class MongoActionPlanStore {
 
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
+    await dropLegacyIndexes(collection, LEGACY_PLAN_INDEX_NAMES);
     await collection.createIndexes([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { status: 1 }, name: "status_idx" }
     ]);
   }

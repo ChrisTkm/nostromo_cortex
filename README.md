@@ -11,7 +11,7 @@ En términos de categoría, Cortex vive en la intersección de:
 - **Developer operations cockpit** para notas operativas, logs, recordatorios, archivo y telemetría.
 - **Documentation architecture tool** para detectar documentos huérfanos, referencias rotas y zonas poco conectadas del conocimiento técnico.
 
-Todo corre cerca del workspace: archivos locales, VS Code, MongoDB local cuando aplica, snapshots en memoria y webviews React Flow.
+Todo corre cerca del workspace: archivos locales, VS Code, MongoDB local (por defecto el contenedor compartido `nostromo-mongo` del ecosistema Nostromo; ver [desarrollo local](./README.development.md) para la alternativa con compose), snapshots en memoria y webviews React Flow.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
@@ -188,7 +188,7 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 - `pnpm build`
 - `pnpm test`
 - `pnpm lint`
-- `pnpm mongo:up` (inicia el Mongo compartido `nostromo-mongo`)
+- `pnpm mongo:up` (inicia el Mongo compartido `nostromo-mongo`; clon fresco → ver [README.development.md](./README.development.md))
 - `pnpm seed`
 - `pnpm check:cycles`
 - `pnpm inspect:snapshot`
