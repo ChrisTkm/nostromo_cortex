@@ -196,6 +196,33 @@ Panel read-only que muestra los últimos 500 eventos persistidos en Mongo.
 - `pnpm inspect:telemetry:failures`
 - `pnpm inspect:cost`
 
+## Distribución
+
+Cortex se distribuye en tres canales independientes:
+
+| Canal | Contenido | Se empaqueta en el VSIX |
+|-------|-----------|------------------------|
+| **Extensión VS Code** (`apps/vscode-extension`) | Visualizador standalone: PERT graph, Notes, Logs, Archive, Cortex Brain, Script Flow. Habla directo a MongoDB via el driver `mongodb` bundleado. | ✅ Sí |
+| **MCP server** (`apps/mcp-server`) | Servidor MCP local con tools/resources sobre tareas y telemetría para Claude Code / Codex. No lo lanza la extensión; se registra aparte. | ❌ No ([CHD-10](../../issues/)) |
+| **Skills Claude** (`plan`, `tareas`) | Prompts reutilizables para gestión de tareas y planes desde el asistente. Viven en `~/.claude/skills/`. | ❌ No ([CHD-11](../../issues/)) |
+
+El VSIX es solo el **visualizador**. El **agent integration pack** (MCP + skills) se instala por separado y es opcional.
+
+```mermaid
+flowchart LR
+  subgraph VSIX["VS Code Extension (VSIX)"]
+    UI[Paneles React\nPERT / Notes / Logs / Archive / Brain]
+    DB[(MongoDB local)]
+    UI --> DB
+  end
+  subgraph AP["Agent Pack (instalación manual)"]
+    MCP[MCP server\napps/mcp-server]
+    SK[Skills Claude\nplan + tareas]
+  end
+  MCP --> DB
+  SK --> MCP
+```
+
 ## Documentación
 
 - [Arquitectura](./README.architecture.md)

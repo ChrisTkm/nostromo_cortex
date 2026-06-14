@@ -9,6 +9,7 @@
   "files": [
     "dist/**",
     "media/**",
+    "skills/**",
     "package.json",
     "LICENSE.txt"
   ],
@@ -26,7 +27,8 @@
     "onCommand:cortex.openScriptFlowForSelection",
     "onCommand:cortex.archivePlan",
     "onCommand:cortex.setMongoUrl",
-    "onCommand:cortex.clearMongoUrl"
+    "onCommand:cortex.clearMongoUrl",
+    "onCommand:cortex.installSkills"
   ],
   "contributes": {
     "commands": [
@@ -150,6 +152,10 @@
       {
         "command": "cortex.listCycles",
         "title": "Cortex: List dependency cycles"
+      },
+      {
+        "command": "cortex.installSkills",
+        "title": "Cortex: Install agent skills (plan/tareas)"
       }
     ],
     "viewsContainers": {

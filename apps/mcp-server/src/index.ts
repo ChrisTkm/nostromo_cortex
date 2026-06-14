@@ -40,7 +40,7 @@ function resourceContents(uri: string, data: unknown) {
   };
 }
 
-async function main() {
+export async function main() {
   const config = loadConfig();
   const taskStore = createMongoTaskStore({
     mongoUrl: config.mongoUrl,

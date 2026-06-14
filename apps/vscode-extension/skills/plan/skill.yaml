@@ -1,0 +1,7 @@
+name: plan
+scope: global-user
+categories: [planning, tasks, nostromo, mongo, mcp]
+targets: [codex, claude, copilot, agents]
+requires:
+  - mongodb://localhost:27017/nostromo_cortex
+source: migrated-from-claude-user-skill

@@ -5,6 +5,7 @@ import {
   type TaskDocumentInput,
   type TaskRecord,
 } from "@cortex/core";
+import * as os from "node:os";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -1348,6 +1349,41 @@ export async function activate(context: vscode.ExtensionContext) {
         output.appendLine(`- ${cycle.path.join(" -> ")}`);
       }
       output.show(true);
+    }),
+    vscode.commands.registerCommand("cortex.installSkills", async () => {
+      const source = vscode.Uri.joinPath(context.extensionUri, "skills");
+      const target = vscode.Uri.joinPath(
+        vscode.Uri.file(os.homedir()),
+        ".claude",
+        "skills",
+      );
+      try {
+        try {
+          await vscode.workspace.fs.stat(target);
+        } catch {
+          await vscode.workspace.fs.createDirectory(target);
+        }
+        for (const skill of ["plan", "tareas"]) {
+          const srcDir = vscode.Uri.joinPath(source, skill);
+          const dstDir = vscode.Uri.joinPath(target, skill);
+          await vscode.workspace.fs.createDirectory(dstDir);
+          for (const file of ["SKILL.md", "skill.yaml"]) {
+            const srcFile = vscode.Uri.joinPath(srcDir, file);
+            const content = await vscode.workspace.fs.readFile(srcFile);
+            await vscode.workspace.fs.writeFile(
+              vscode.Uri.joinPath(dstDir, file),
+              content,
+            );
+          }
+        }
+        void vscode.window.showInformationMessage(
+          "Skills plan/tareas installed to ~/.claude/skills/",
+        );
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `Failed to install skills: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }),
   );
 

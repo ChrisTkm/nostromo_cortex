@@ -1,22 +1,31 @@
 {
   "name": "@cortex/mcp-server",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "cortex-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm",
+    "build": "tsup",
     "lint": "eslint src --ext .ts"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@cortex/core": "workspace:*",
-    "@cortex/telemetry": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "mongodb": "^6.16.0",
     "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@cortex/core": "workspace:*",
+    "@cortex/telemetry": "workspace:*",
     "tsup": "^8.5.0"
   }
 }
