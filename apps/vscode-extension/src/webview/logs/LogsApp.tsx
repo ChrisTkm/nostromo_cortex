@@ -2,8 +2,6 @@ import type { LogRecord } from "../../logs/normalize";
 import type { RunGroup } from "../../logs/runModel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  buildLogsCsvExport,
-  buildLogsJsonExport,
   buildProcessRows,
   countLogsByLevel,
   filterLogsByPeriod,
@@ -113,19 +111,6 @@ export function LogsApp() {
     setSelectedRunIndex(0);
   }
 
-  function exportLogs(format: "csv" | "json") {
-    if (filteredLogs.length === 0) return;
-    const content =
-      format === "csv" ? buildLogsCsvExport(filteredLogs) : buildLogsJsonExport(filteredLogs);
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    vscode.postMessage({
-      type: "logs:export",
-      format,
-      content,
-      defaultFilename: `cortex-logs-${ts}.${format}`,
-    });
-  }
-
   function processStatus(row: ProcessRow): "ok" | "err" | "open" {
     if (row.errorCount > 0) return "err";
     if (row.runs.some((r) => r.status === "abierta")) return "open";
@@ -160,12 +145,6 @@ export function LogsApp() {
           </button>
           <button className="logs-btn" type="button" onClick={() => vscode.postMessage({ type: "logs:refresh" })}>
             Refresh
-          </button>
-          <button className="logs-btn" type="button" disabled={filteredLogs.length === 0} onClick={() => exportLogs("csv")}>
-            CSV
-          </button>
-          <button className="logs-btn" type="button" disabled={filteredLogs.length === 0} onClick={() => exportLogs("json")}>
-            JSON
           </button>
         </div>
       </header>

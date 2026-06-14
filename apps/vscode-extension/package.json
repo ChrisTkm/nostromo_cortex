@@ -348,10 +348,10 @@
         },
         "cortex.logsLimit": {
           "type": "number",
-          "default": 500,
+          "default": 5000,
           "minimum": 50,
           "maximum": 5000,
-          "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
+          "description": "Max number of most recent log events read from the source folder per refresh. Higher values surface more processes/runs at the cost of memory."
         },
         "cortex.scriptFlowMaxDepth": {
           "type": "number",

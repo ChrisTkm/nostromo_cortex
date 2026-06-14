@@ -1429,7 +1429,11 @@ export class ExtensionTaskService {
   }
 
   private getLogsSource(): LogsSource {
-    const sources = this.config.get<string[]>("logsSources", ["C:\\dev\\Nostromo\\logs"]);
+    // Read fresh config each call: this.config is a one-time snapshot and would
+    // not reflect a folder change made via the "Change" button (logs:selectFolder).
+    const sources = vscode.workspace
+      .getConfiguration("cortex")
+      .get<string[]>("logsSources", ["C:\\dev\\Nostromo\\logs"]);
     const key = `file:${sources.join(",")}`;
     if (this.logsSourceCache?.key === key) {
       return this.logsSourceCache.source;
