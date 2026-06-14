@@ -110,15 +110,16 @@ export async function activate(context: vscode.ExtensionContext) {
   service.logger.debug("activate", {
     extensionMode: vscode.ExtensionMode[context.extensionMode],
   });
+  let initOk = false;
   try {
     await service.initialize();
     service.logger.debug("initialize succeeded", {});
+    initOk = true;
   } catch (err) {
-    await service.dispose();
-    activeService = undefined;
-    service.logger.error("initialize failed", { error: String(err) });
-    throw err;
+    service.logger.error("initialize failed (non-fatal)", { error: String(err) });
   }
+
+  showOnboardingIfNeeded(context, service, initOk);
 
   const reminderStatusBar = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
@@ -1426,6 +1427,38 @@ export async function deactivate() {
   disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
+}
+
+const ONBOARDING_DONE_KEY = "cortex.onboardingDone";
+
+function showOnboardingIfNeeded(
+  context: vscode.ExtensionContext,
+  service: ExtensionTaskService,
+  initOk: boolean,
+) {
+  if (!context.globalState || context.globalState.get<boolean>(ONBOARDING_DONE_KEY)) {
+    return;
+  }
+
+  const setUrl = "Set Mongo URL";
+  const sampleDb = "Create Sample Database";
+  const dismiss = "Dismiss";
+
+  const message = initOk
+    ? "Cortex is connected to MongoDB. Start by creating a sample database or configuring your own connection."
+    : "Cortex needs a MongoDB connection. Set your Mongo URL or create a sample database to get started.";
+  const buttons = initOk ? [sampleDb, dismiss] : [setUrl, sampleDb, dismiss];
+
+  void context.globalState.update(ONBOARDING_DONE_KEY, true);
+  if (typeof vscode.window.showInformationMessage === "function") {
+    void vscode.window.showInformationMessage(message, ...buttons).then((pick) => {
+      if (pick === setUrl) {
+        void vscode.commands.executeCommand("cortex.setMongoUrl");
+      } else if (pick === sampleDb) {
+        void vscode.commands.executeCommand("cortex.bootstrapDatabase");
+      }
+    });
+  }
 }
 
 async function pickMdxGraphRoot() {
