@@ -74,3 +74,76 @@ describe("buildSummary extra keys", () => {
     expect(result.summary).not.toContain("file=");
   });
 });
+
+describe("canonical event synonyms", () => {
+  it("maps severity -> level", () => {
+    const result = normalizeLogDocument({ severity: "ERROR", message: "fail", process: "test" });
+    expect(result.level).toBe("ERROR");
+  });
+
+  it("maps proc -> process", () => {
+    const result = normalizeLogDocument({ proc: "worker", message: "x" });
+    expect(result.process).toBe("worker");
+  });
+
+  it("maps created_at -> timestamp", () => {
+    const result = normalizeLogDocument({ created_at: "2026-06-07T10:00:00Z", message: "x", source: "a" });
+    expect(result.timestamp).toBe("2026-06-07T10:00:00.000Z");
+  });
+
+  it("original key wins over synonym when both present", () => {
+    const result = normalizeLogDocument({ level: "WARN", severity: "ERROR", message: "test", source: "a" });
+    expect(result.level).toBe("WARN");
+  });
+});
+
+describe("canonical event duration_ms", () => {
+  it("duration_ms as number is captured", () => {
+    const result = normalizeLogDocument({ event: "END", duration_ms: 1234, message: "done", process: "test" });
+    expect(result.durationMs).toBe(1234);
+  });
+
+  it("duration_ms as string is parsed", () => {
+    const result = normalizeLogDocument({ event: "END", duration_ms: "5678", message: "done", process: "test" });
+    expect(result.durationMs).toBe(5678);
+  });
+});
+
+describe("canonical event facets", () => {
+  it("populates facets object when facet fields present", () => {
+    const result = normalizeLogDocument({
+      event: "END", message: "loaded", process: "test",
+      source: "db", target: "csv", operation: "extract",
+      rows_read: 100, rows_inserted: 50, entity: "users",
+    });
+    expect(result.facets?.source).toBe("db");
+    expect(result.facets?.target).toBe("csv");
+    expect(result.facets?.operation).toBe("extract");
+    expect(result.facets?.rowsRead).toBe(100);
+    expect(result.facets?.rowsInserted).toBe(50);
+    expect(result.facets?.entity).toBe("users");
+  });
+
+  it("omits facets when no facet fields present", () => {
+    const result = normalizeLogDocument({ message: "plain", process: "x" });
+    expect(result.facets).toBeUndefined();
+  });
+});
+
+describe("canonical event context", () => {
+  it("populates context object when context fields present", () => {
+    const result = normalizeLogDocument({
+      message: "run", process: "test",
+      host: "server01", project: "cortex", script: "loader.py", env: "production",
+    });
+    expect(result.context?.host).toBe("server01");
+    expect(result.context?.project).toBe("cortex");
+    expect(result.context?.script).toBe("loader.py");
+    expect(result.context?.env).toBe("production");
+  });
+
+  it("omits context when no context fields present", () => {
+    const result = normalizeLogDocument({ message: "plain", process: "x" });
+    expect(result.context).toBeUndefined();
+  });
+});

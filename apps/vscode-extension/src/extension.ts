@@ -713,14 +713,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           refreshLogsPollFromConfig();
         }
         if (
-          e.affectsConfiguration("cortex.logsSource") ||
-          e.affectsConfiguration("cortex.logsFilePath") ||
+          e.affectsConfiguration("cortex.logsSources") ||
           e.affectsConfiguration("cortex.logsLimit")
         ) {
-          postLogsList();
-        }
-        if (e.affectsConfiguration("cortex.logsChangeStreams")) {
-          await setupLogsChangeStream();
           postLogsList();
         }
         if (e.affectsConfiguration("cortex.brainAccountPattern")) {

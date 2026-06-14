@@ -34,9 +34,8 @@ import * as vscode from "vscode";
 
 import { type LogRecord } from "./logs/normalize.js";
 import { clampLogsLimit } from "./logs/autoRefresh.js";
-import { resolveLogsFilePath } from "./logs/filePath.js";
-import { LOGS_INDEX_DEFINITIONS, type LogsSource } from "./logs/source.js";
-import { MongoLogsSource } from "./logs/mongoSource.js";
+
+import { type LogsSource } from "./logs/source.js";
 import { FileLogsSource } from "./logs/fileSource.js";
 import { DEFAULT_FILTER_STATE, type ExtensionFilterState } from "./state.js";
 
@@ -523,17 +522,6 @@ export class ExtensionTaskService {
       })
       .toArray();
 
-    const logsCollection = await this.getLogsCollection(settings);
-    const logs = await logsCollection
-      .find({
-        $or: [
-          { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
-        ],
-      })
-      .sort({ timestamp: 1 })
-      .toArray();
-
     const archivedAt = new Date().toISOString();
     const archivePath = this.resolveArchivePath();
     const plansArchivePath = path.join(archivePath, "plans");
@@ -547,7 +535,6 @@ export class ExtensionTaskService {
           plan,
           tasks,
           notes,
-          logs,
         },
         null,
         2,
@@ -1441,52 +1428,19 @@ export class ExtensionTaskService {
     }
   }
 
-  private async getLogsCollection(
-    settings: ConnectionSettings = this.getConnectionSettings(),
-  ) {
-    const sharedClient = await this.requireSharedClient(settings);
-    return sharedClient
-      .db(settings.mongoDbName)
-      .collection<Record<string, unknown>>(settings.mongoLogsCollection);
-  }
-
   private getLogsSource(): LogsSource {
-    const kind = this.config.get<string>("logsSource", "mongo");
-    const rawPath = this.config.get<string>("logsFilePath", "");
-    const changeStreamsEnabled = this.config.get<boolean>(
-      "logsChangeStreams",
-      false,
-    );
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const resolvedPath = resolveLogsFilePath({
-      configured: rawPath,
-      workspaceRoot,
-    });
-    const key = `${kind}:${resolvedPath ?? ""}:cs=${changeStreamsEnabled}`;
+    const sources = this.config.get<string[]>("logsSources", ["C:\\dev\\Nostromo\\logs"]);
+    const key = `file:${sources.join(",")}`;
     if (this.logsSourceCache?.key === key) {
       return this.logsSourceCache.source;
     }
     this.logsSourceCache?.source.dispose();
-    let source: LogsSource;
-    if (kind === "file" && resolvedPath) {
-      source = new FileLogsSource({
-        filePath: resolvedPath,
-        log: (event) => {
-          this.logger[event.type](event.message, event.meta);
-        },
-      });
-    } else {
-      source = new MongoLogsSource(
-        () => this.getLogsCollection(),
-        LOGS_INDEX_DEFINITIONS,
-        {
-          changeStreamsEnabled,
-          log: (event) => {
-            this.logger[event.type](event.message, event.meta);
-          },
-        },
-      );
-    }
+    const source = new FileLogsSource({
+      sources,
+      log: (event) => {
+        this.logger[event.type](event.message, event.meta);
+      },
+    });
     this.logsSourceCache = { source, key };
     return source;
   }

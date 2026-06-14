@@ -1600,90 +1600,19 @@ function fireConfigChange(affectedKeys: string[]) {
   });
 }
 
-describe("logs panel change stream", () => {
-  beforeEach(() => {
-    listLogsMock.mockReset();
-    listLogsMock.mockResolvedValue([]);
-  });
-
-  it("subscribe returning cleanup is called on panel dispose", async () => {
-    const cleanup = vi.fn();
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(cleanup) });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    panelState.disposeHandler?.();
-    expect(cleanup).toHaveBeenCalled();
-  });
-
-  it("subscribe returning null does not set up cleanup", async () => {
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(null) });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    expect(() => panelState.disposeHandler?.()).not.toThrow();
-  });
-
-  it("config change logsChangeStreams re-suscribes and refetches", async () => {
-    getLogsSourceMock.mockReturnValue({ subscribe: undefined });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-    await panelState.messageHandler?.({ type: "ready" });
-    getLogsSourceMock.mockClear();
-    listLogsMock.mockClear();
-
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(vi.fn()) });
-    fireConfigChange(["cortex.logsChangeStreams"]);
-    expect(getLogsSourceMock).toHaveBeenCalled();
-    await vi.waitFor(() => {
-      expect(listLogsMock).toHaveBeenCalled();
-    });
-  });
-
-  it("stream append event posts logs:append to webview", async () => {
-    const onAppendRef: { current?: (logs: unknown[]) => void } = {};
-    const subscribeMock = vi.fn(async (onAppend: (logs: unknown[]) => void) => {
-      onAppendRef.current = onAppend;
-      return vi.fn();
-    });
-    getLogsSourceMock.mockReturnValue({ subscribe: subscribeMock });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    const testLog = { timestamp: "2026-06-07T12:00:00.000Z", level: "INFO", source: "test", message: "streamed" };
-    onAppendRef.current!([testLog]);
-
-    expect(panelState.panel!.webview.postMessage).toHaveBeenCalledWith({
-      type: "logs:append",
-      logs: [testLog],
-      hasMore: false,
-    });
-  });
-});
-
 describe("logs panel config changes", () => {
   beforeEach(() => {
     listLogsMock.mockReset();
     listLogsMock.mockResolvedValue([]);
   });
 
-  it("re-fetches logs when logsSource changes", async () => {
+  it("re-fetches logs when logsSources changes", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openLogs");
     await panelState.messageHandler?.({ type: "ready" });
     listLogsMock.mockClear();
 
-    fireConfigChange(["cortex.logsSource"]);
-    expect(listLogsMock).toHaveBeenCalled();
-  });
-
-  it("re-fetches logs when logsFilePath changes", async () => {
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-    await panelState.messageHandler?.({ type: "ready" });
-    listLogsMock.mockClear();
-
-    fireConfigChange(["cortex.logsFilePath"]);
+    fireConfigChange(["cortex.logsSources"]);
     expect(listLogsMock).toHaveBeenCalled();
   });
 
