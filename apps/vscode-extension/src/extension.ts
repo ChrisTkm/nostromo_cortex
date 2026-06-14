@@ -353,9 +353,13 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
     lastLogsHasMore = logs.length === limit;
+    const logsSources = vscode.workspace
+      .getConfiguration("cortex")
+      .get<string[]>("logsSources", ["C:\\dev\\Nostromo\\logs"]);
     await panel.webview.postMessage({
       type: "logs:list",
       logs,
+      sources: logsSources,
       autoRefreshSeconds: clampAutoRefreshSeconds(
         vscode.workspace
           .getConfiguration("cortex")
@@ -752,6 +756,21 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         logsPanelReady = true;
         await postLogsList();
         refreshLogsPollFromConfig();
+        return;
+      }
+      if (message?.type === "logs:selectFolder") {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true,
+          canSelectFiles: false,
+          canSelectMany: false,
+          openLabel: "Usar como carpeta de logs",
+        });
+        if (picked && picked[0]) {
+          await vscode.workspace
+            .getConfiguration("cortex")
+            .update("logsSources", [picked[0].fsPath], vscode.ConfigurationTarget.Global);
+          await postLogsList();
+        }
         return;
       }
       if (
