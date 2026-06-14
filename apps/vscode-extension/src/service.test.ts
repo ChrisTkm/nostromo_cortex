@@ -142,6 +142,7 @@ const {
 
 vi.mock("@cortex/core", async () => {
   const actual =
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
     await vi.importActual<typeof import("@cortex/core")>("@cortex/core");
   return {
     ...actual,
@@ -414,8 +415,6 @@ describe("ExtensionTaskService.isJsonPathInArchive", () => {
     expect(service.isJsonPathInArchive("   ")).toBe(false);
   });
 });
-
-import type { Document } from "mongodb";
 
 function fakeCollection(initial: Document[] = []) {
   const box = { docs: [...initial] };

@@ -48,20 +48,8 @@ export function PlanWizard(props: {
 
   const prefix = codePrefix || codePrefixDefault;
 
-  const taskRows = useMemo<TaskRow[]>(() => {
-    return Array.from({ length: taskCount }, (_, i) => ({
-      code: `${prefix}${String(i + 1).padStart(2, "0")}`,
-      short_task: "",
-      lane: "",
-      severity: "MEDIUM" as Severity,
-      duration_estimate: 0,
-      agent: assignedAgent || "any",
-    }));
-  }, [taskCount, prefix, assignedAgent]);
-
   const [tasks, setTasks] = useState<TaskRow[]>([]);
 
-  const prevTaskCount = useMemo(() => taskCount, []);
   if (tasks.length !== taskCount || (taskCount > 0 && tasks[0]?.code !== `${prefix}01`)) {
     const fresh = Array.from({ length: taskCount }, (_, i) => ({
       code: `${prefix}${String(i + 1).padStart(2, "0")}`,

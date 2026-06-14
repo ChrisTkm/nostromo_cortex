@@ -43,7 +43,7 @@ const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
 const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
 const EDGE_FILTERS = ["link", "upstream", "downstream", "references", "standards", "account", "tag", "unresolved"] as const;
-const nodeTypes = { brain: BrainNode };
+const nodeTypes = { brain: BrainNodeComponent };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
 type LayoutMode = "flow" | "orbit";
 type RelatedLink = {
@@ -372,7 +372,7 @@ function KindFilter({
   );
 }
 
-function BrainNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
+function BrainNodeComponent({ data, selected }: NodeProps<Node<GraphNodeData>>) {
   return (
     <div
       className={`brain-node brain-node--${data.kind}${data.issue ? ` brain-node--${data.issue}` : ""}${selected ? " brain-node--selected" : ""}`}

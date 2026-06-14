@@ -142,14 +142,6 @@ export function ScriptFlowApp() {
     return buildFlowModel(state.snapshot, selectedNodeId, orientation, searchMatches);
   }, [selectedNodeId, state, orientation, searchMatches]);
 
-  const selectedNode =
-    state.status === "snapshot"
-      ? state.snapshot.nodes.find((node) => node.id === selectedNodeId) ??
-        state.snapshot.nodes.find((node) => node.id === state.snapshot.analysis.entryPoints[0]) ??
-        state.snapshot.nodes[0] ??
-        null
-      : null;
-
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 800px)");
     const syncLayout = (matches: boolean) => {
