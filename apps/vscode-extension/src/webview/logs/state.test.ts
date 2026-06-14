@@ -5,13 +5,19 @@ import {
   buildLogJson,
   buildLogsCsvExport,
   buildLogsJsonExport,
+  buildProcessRows,
   countLogsByLevel,
   detectRuns,
+  formatDuration,
+  formatRelativeTime,
   getOldestLogTimestamp,
   LOGS_PYTHON_SNIPPET,
   mergeLogPages,
+  runStatusClass,
+  runStatusIcon,
   shouldShowFilter,
   sortLogLevelKeys,
+  sparklinePath,
 } from "./state";
 import type { LogRecord } from "../../logs/normalize";
 
@@ -553,6 +559,84 @@ describe("getOldestLogTimestamp", () => {
       mockLog({ timestamp: "2026-06-04T10:00:00.000Z" }),
     ];
     expect(getOldestLogTimestamp(logs)).toBe("2026-06-04T10:00:00.000Z");
+  });
+});
+
+describe("buildProcessRows", () => {
+  it("returns empty array for empty input", () => {
+    expect(buildProcessRows([])).toEqual([]);
+  });
+
+  it("groups logs into process rows with aggregations", () => {
+    const logs = [
+      mockLog({ timestamp: "2026-06-07T10:00:00.000Z", process: "cargas_sii", event: "BEGIN" }),
+      mockLog({ timestamp: "2026-06-07T10:10:00.000Z", process: "cargas_sii", event: "END" }),
+      mockLog({ timestamp: "2026-06-07T11:00:00.000Z", process: "sii_loader", event: "BEGIN" }),
+    ];
+    const rows = buildProcessRows(logs);
+    expect(rows).toHaveLength(2);
+    const cargas = rows.find((r) => r.process === "cargas_sii")!;
+    expect(cargas.runCount).toBe(1);
+    expect(cargas.errorCount).toBe(0);
+    const sii = rows.find((r) => r.process === "sii_loader")!;
+    expect(sii.runs).toHaveLength(1);
+  });
+});
+
+describe("formatDuration", () => {
+  it("returns — for undefined", () => {
+    expect(formatDuration(undefined)).toBe("—");
+  });
+
+  it("formats ms under 1s", () => {
+    expect(formatDuration(500)).toBe("500ms");
+  });
+
+  it("formats seconds", () => {
+    expect(formatDuration(5_000)).toBe("5.0s");
+  });
+
+  it("formats minutes and seconds", () => {
+    expect(formatDuration(125_000)).toBe("2m 5s");
+  });
+
+  it("formats hours", () => {
+    expect(formatDuration(7_200_000)).toBe("2.0h");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("returns — for undefined", () => {
+    expect(formatRelativeTime(undefined)).toBe("—");
+  });
+});
+
+describe("runStatusIcon / runStatusClass", () => {
+  it("ok status", () => {
+    expect(runStatusIcon("ok")).toBe("✓");
+    expect(runStatusClass("ok")).toBe("logs-run-status--ok");
+  });
+
+  it("error status", () => {
+    expect(runStatusIcon("error")).toBe("✗");
+    expect(runStatusClass("error")).toBe("logs-run-status--error");
+  });
+
+  it("abierta status", () => {
+    expect(runStatusIcon("abierta")).toBe("◷");
+    expect(runStatusClass("abierta")).toBe("logs-run-status--abierta");
+  });
+});
+
+describe("sparklinePath", () => {
+  it("empty for empty buckets", () => {
+    expect(sparklinePath([])).toBe("");
+  });
+
+  it("generates SVG path for non-empty buckets", () => {
+    const path = sparklinePath([1, 3, 2, 0, 4]);
+    expect(path).toContain("M0,");
+    expect(path).toContain(" L");
   });
 });
 
