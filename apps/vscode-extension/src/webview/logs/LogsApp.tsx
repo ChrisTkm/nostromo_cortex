@@ -1,4 +1,5 @@
 import type { LogRecord } from "../../logs/normalize";
+import type { RunGroup } from "../../logs/runModel";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildExecutionGroups,
@@ -26,6 +27,7 @@ import {
   type ProcessRow,
   type ViewMode,
 } from "./state";
+import { RunDrawer } from "./components/RunDrawer";
 import { highlightLogText } from "./highlightText";
 
 type LogsMessage =
@@ -72,6 +74,7 @@ export function LogsApp() {
   const [viewMode, setViewMode] = useState<ViewMode>("historico");
   const [period, setPeriod] = useState<PeriodFilter>("month");
   const [expandedProcess, setExpandedProcess] = useState<Set<string>>(() => new Set());
+  const [selectedRun, setSelectedRun] = useState<RunGroup | null>(null);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -254,6 +257,14 @@ export function LogsApp() {
     });
   }
 
+  function handleRunClick(run: RunGroup) {
+    setSelectedRun(run);
+  }
+
+  function handleDrawerClose() {
+    setSelectedRun(null);
+  }
+
   function toggleProcess(processName: string) {
     setExpandedProcess((current) => {
       const next = new Set(current);
@@ -265,7 +276,7 @@ export function LogsApp() {
 
   return (
     <div
-      className={`logs-app${detailOpen && selectedLog && viewMode === "eventos" ? "" : " logs-app--list-only"}`}
+      className={`logs-app${selectedRun || (detailOpen && selectedLog && viewMode === "eventos") ? "" : " logs-app--list-only"}`}
     >
       <section className="logs-list-panel">
         {/* Toolbar */}
@@ -463,7 +474,12 @@ export function LogsApp() {
                           {isExpanded && (
                             <div className="logs-process-table__runs">
                               {row.runs.map((run, ri) => (
-                                <div key={ri} className="logs-process-table__run">
+                                <button
+                                  key={ri}
+                                  type="button"
+                                  className="logs-process-table__run"
+                                  onClick={() => handleRunClick(run)}
+                                >
                                   <span className={`logs-run-status ${runStatusClass(run.status)}`}>
                                     {runStatusIcon(run.status)}
                                   </span>
@@ -480,7 +496,7 @@ export function LogsApp() {
                                       R{run.rowsRead ?? "–"} I{run.rowsInserted ?? "–"}
                                     </span>
                                   ) : null}
-                                </div>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -711,7 +727,9 @@ export function LogsApp() {
         </div>
       </section>
 
-      {detailOpen && selectedLog && viewMode === "eventos" ? (
+      {selectedRun ? (
+        <RunDrawer run={selectedRun} onClose={handleDrawerClose} />
+      ) : detailOpen && selectedLog && viewMode === "eventos" ? (
         <aside className="logs-detail">
           <header className="logs-detail__header">
             <div>

@@ -702,9 +702,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 4px 8px;
+  border: none;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
 }
 
 .logs-process-table__run:hover {
@@ -779,4 +787,235 @@
 .logs-sparkline {
   display: block;
   flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* LOGS-V2-04: Run detail drawer */
+/* ------------------------------------------------------------------ */
+
+.logs-run-drawer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 16px 18px;
+  overflow: hidden;
+  border-left: 1px solid color-mix(in srgb, var(--vscode-panel-border) 62%, transparent);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 84%, transparent);
+}
+
+.logs-run-drawer__header {
+  display: grid;
+  gap: 8px;
+}
+
+.logs-run-drawer__header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.logs-run-drawer__process-name {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.logs-run-drawer__close {
+  flex: 0 0 auto;
+}
+
+.logs-run-drawer__header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.logs-run-drawer__time {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.logs-run-drawer__duration {
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  color: var(--vscode-editor-foreground);
+}
+
+.logs-run-drawer__badge {
+  font-size: 11px;
+}
+
+.logs-run-drawer__body {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  overflow: auto;
+}
+
+.logs-run-drawer__section {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 68%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 95%, transparent);
+  padding: 14px;
+}
+
+.logs-run-drawer__section-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Timeline */
+.logs-run-drawer__timeline {
+  display: grid;
+  gap: 0;
+}
+
+.logs-run-drawer__timeline-node {
+  display: flex;
+  gap: 10px;
+}
+
+.logs-run-drawer__timeline-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 14px;
+  flex: 0 0 auto;
+}
+
+.logs-run-drawer__timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+
+.logs-run-drawer__timeline-dot--info {
+  background: #60a5fa;
+}
+
+.logs-run-drawer__timeline-dot--warning {
+  background: #f59e0b;
+}
+
+.logs-run-drawer__timeline-dot--warn {
+  background: #f59e0b;
+}
+
+.logs-run-drawer__timeline-dot--error {
+  background: #ef4444;
+}
+
+.logs-run-drawer__timeline-dot--begin {
+  background: #34d399;
+}
+
+.logs-run-drawer__timeline-dot--end {
+  background: #34d399;
+}
+
+.logs-run-drawer__timeline-dot--step {
+  background: #60a5fa;
+}
+
+.logs-run-drawer__timeline-connector {
+  width: 1px;
+  flex: 1;
+  min-height: 8px;
+  background: color-mix(in srgb, var(--vscode-panel-border) 50%, transparent);
+}
+
+.logs-run-drawer__timeline-content {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 12px;
+}
+
+.logs-run-drawer__timeline-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.logs-run-drawer__timeline-time {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.logs-run-drawer__timeline-message {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--vscode-editor-foreground);
+  word-break: break-word;
+}
+
+.logs-run-drawer__timeline-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* Facets */
+.logs-run-drawer__facets,
+.logs-run-drawer__context {
+  display: grid;
+  gap: 6px;
+}
+
+.logs-run-drawer__facet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border) 24%, transparent);
+}
+
+.logs-run-drawer__facet-row:last-child {
+  border-bottom: none;
+}
+
+.logs-run-drawer__facet-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex: 0 0 auto;
+}
+
+.logs-run-drawer__facet-value {
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+/* Detail bag grid */
+.logs-run-drawer__details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.logs-run-drawer__detail-item {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 50%, transparent);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 980px) {
+  .logs-run-drawer__details-grid {
+    grid-template-columns: 1fr;
+  }
 }
