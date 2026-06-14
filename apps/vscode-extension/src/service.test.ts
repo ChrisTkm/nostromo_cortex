@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as CortexCore from "@cortex/core";
+
 const {
   taskEnsureIndexes,
   taskClose,
@@ -27,7 +29,7 @@ const {
   createDirectory,
   getConfig,
   updateConfig,
-  telemetryInitialize
+  telemetryInitialize,
 } = vi.hoisted(() => {
   const taskEnsureIndexes = vi.fn();
   const taskClose = vi.fn();
@@ -52,11 +54,11 @@ const {
     noteDeleteNote,
     createMongoTaskStoreMock: vi.fn(() => ({
       ensureIndexes: taskEnsureIndexes,
-      close: taskClose
+      close: taskClose,
     })),
     createMongoActionPlanStoreMock: vi.fn(() => ({
       ensureIndexes: planEnsureIndexes,
-      close: planClose
+      close: planClose,
     })),
     createMongoNoteStoreMock: vi.fn(() => ({
       ensureIndexes: noteEnsureIndexes,
@@ -64,18 +66,18 @@ const {
       getNote: noteGetNote,
       upsertNote: noteUpsertNote,
       deleteNote: noteDeleteNote,
-      close: noteClose
+      close: noteClose,
     })),
     createLoggerMock: vi.fn(() => ({
       debug: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
-      error: vi.fn()
+      error: vi.fn(),
     })),
     jsonlTelemetryStoreMock: vi.fn().mockImplementation(() => ({})),
     telemetryRecorderMock: vi.fn().mockImplementation(() => ({
       initialize: telemetryInitialize,
-      startRun: vi.fn()
+      startRun: vi.fn(),
     })),
     logsCreateIndexes: vi.fn(),
     secretGet: vi.fn(),
@@ -87,12 +89,12 @@ const {
     createDirectory: vi.fn(),
     getConfig: vi.fn((_: string, fallback?: string) => fallback),
     updateConfig: vi.fn(),
-    telemetryInitialize: vi.fn()
+    telemetryInitialize: vi.fn(),
   };
 });
 
 vi.mock("@cortex/core", async () => {
-  const actual = await vi.importActual<typeof import("@cortex/core")>("@cortex/core");
+  const actual = await vi.importActual<typeof CortexCore>("@cortex/core");
   return {
     ...actual,
     SharedMongoClient: class FakeSharedMongoClient {
@@ -111,33 +113,33 @@ vi.mock("@cortex/core", async () => {
     createMongoNoteStore: createMongoNoteStoreMock,
     loadConfig: vi.fn(() => ({
       logLevel: "info",
-      logFormat: "pretty"
-    }))
+      logFormat: "pretty",
+    })),
   };
 });
 
 vi.mock("vscode", () => ({
   workspace: {
     fs: {
-      createDirectory
+      createDirectory,
     },
     getConfiguration: vi.fn(() => ({
       get: getConfig,
-      update: updateConfig
-    }))
+      update: updateConfig,
+    })),
   },
   ConfigurationTarget: {
-    Workspace: 1
+    Workspace: 1,
   },
   env: {
-    sessionId: "session-id"
-  }
+    sessionId: "session-id",
+  },
 }));
 
 vi.mock("@cortex/telemetry", () => ({
   createLogger: createLoggerMock,
   JsonlTelemetryStore: jsonlTelemetryStoreMock,
-  TelemetryRecorder: telemetryRecorderMock
+  TelemetryRecorder: telemetryRecorderMock,
 }));
 
 import { ExtensionTaskService } from "./service.js";
@@ -148,11 +150,15 @@ describe("ExtensionTaskService.initialize", () => {
     createDirectory.mockResolvedValue(undefined);
     telemetryInitialize.mockResolvedValue(undefined);
     sharedConnect.mockResolvedValue(undefined);
-    logsCreateIndexes.mockResolvedValue(["logs_source_timestamp", "logs_level_timestamp", "logs_process_timestamp"]);
+    logsCreateIndexes.mockResolvedValue([
+      "logs_source_timestamp",
+      "logs_level_timestamp",
+      "logs_process_timestamp",
+    ]);
     sharedDb.mockImplementation(() => ({
       collection: vi.fn(() => ({
-        createIndexes: logsCreateIndexes
-      }))
+        createIndexes: logsCreateIndexes,
+      })),
     }));
     sharedClose.mockResolvedValue(undefined);
     secretGet.mockResolvedValue(undefined);
@@ -173,7 +179,7 @@ describe("ExtensionTaskService.initialize", () => {
       tags: [],
       pinned: false,
       createdAt: "2026-04-17T00:00:00.000Z",
-      updatedAt: "2026-04-17T00:00:00.000Z"
+      updatedAt: "2026-04-17T00:00:00.000Z",
     });
     noteDeleteNote.mockResolvedValue(true);
   });
@@ -183,13 +189,13 @@ describe("ExtensionTaskService.initialize", () => {
       globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
       workspaceState: {
         get: vi.fn(),
-        update: vi.fn()
+        update: vi.fn(),
       },
       secrets: {
         get: secretGet,
         store: secretStore,
-        delete: secretDelete
-      }
+        delete: secretDelete,
+      },
     } as never);
 
     await service.initialize();
@@ -212,9 +218,15 @@ describe("ExtensionTaskService.initialize", () => {
     expect(taskOptions.sharedClient).toBe(planOptions.sharedClient);
     expect(taskOptions.sharedClient).toBe(noteOptions.sharedClient);
     expect(noteOptions.collectionName).toBe("notes");
-    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(taskEnsureIndexes.mock.invocationCallOrder[0]);
-    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(planEnsureIndexes.mock.invocationCallOrder[0]);
-    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(noteEnsureIndexes.mock.invocationCallOrder[0]);
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(
+      taskEnsureIndexes.mock.invocationCallOrder[0],
+    );
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(
+      planEnsureIndexes.mock.invocationCallOrder[0],
+    );
+    expect(sharedConnect.mock.invocationCallOrder[0]).toBeLessThan(
+      noteEnsureIndexes.mock.invocationCallOrder[0],
+    );
   });
 
   it("delegates note operations and propagates mongoNotesCollection updates", async () => {
@@ -229,19 +241,19 @@ describe("ExtensionTaskService.initialize", () => {
       globalStorageUri: { fsPath: "C:\\temp\\cortex-storage" },
       workspaceState: {
         get: vi.fn(),
-        update: vi.fn()
+        update: vi.fn(),
       },
       secrets: {
         get: secretGet,
         store: secretStore,
-        delete: secretDelete
-      }
+        delete: secretDelete,
+      },
     } as never);
 
     await service.initialize();
 
     expect(service.getConnectionSettings()).toMatchObject({
-      mongoNotesCollection: "notes_custom"
+      mongoNotesCollection: "notes_custom",
     });
 
     await service.listNotes();
@@ -251,12 +263,22 @@ describe("ExtensionTaskService.initialize", () => {
 
     expect(noteListNotes).toHaveBeenCalledTimes(1);
     expect(noteGetNote).toHaveBeenCalledWith("N-1");
-    expect(noteUpsertNote).toHaveBeenCalledWith({ code: "N-1", title: "Note 1", body: "Body" });
+    expect(noteUpsertNote).toHaveBeenCalledWith({
+      code: "N-1",
+      title: "Note 1",
+      body: "Body",
+    });
     expect(noteDeleteNote).toHaveBeenCalledWith("N-1");
 
-    await service.updateConnectionSettings({ mongoNotesCollection: "notes_v2" });
+    await service.updateConnectionSettings({
+      mongoNotesCollection: "notes_v2",
+    });
 
-    expect(updateConfig).toHaveBeenCalledWith("mongoNotesCollection", "notes_v2", 1);
+    expect(updateConfig).toHaveBeenCalledWith(
+      "mongoNotesCollection",
+      "notes_v2",
+      1,
+    );
     expect(createMongoNoteStoreMock).toHaveBeenCalledTimes(2);
     const [updatedNoteOptions] = createMongoNoteStoreMock.mock.calls[1] ?? [];
     expect(updatedNoteOptions.collectionName).toBe("notes_v2");

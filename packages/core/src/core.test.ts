@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type {
+  SharedMongoClient} from "./index.js";
 import {
   buildGraphSnapshot,
   buildTaskGraph,
@@ -15,7 +17,6 @@ import {
   MongoActionPlanStore,
   MongoNoteStore,
   MongoTaskStore,
-  SharedMongoClient,
   stableStringify
 } from "./index.js";
 

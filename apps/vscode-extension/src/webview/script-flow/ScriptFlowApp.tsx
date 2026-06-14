@@ -8,7 +8,7 @@ import {
   ReactFlow,
   type Edge,
   type Node,
-  type ReactFlowInstance
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { toPng } from "html-to-image";
 import { useEffect, useMemo, useState } from "react";
@@ -19,14 +19,22 @@ import {
   sendReady,
   sendRefresh,
   sendSelectNode,
-  type ScriptFlowHostMessage
+  type ScriptFlowHostMessage,
 } from "../../scriptFlow/bridge.js";
-import { isScriptFlowSnapshot, type ScriptFlowNode, type ScriptFlowNodeKind, type ScriptFlowSnapshot } from "../../scriptFlow/types.js";
+import {
+  isScriptFlowSnapshot,
+  type ScriptFlowNode,
+  type ScriptFlowNodeKind,
+  type ScriptFlowSnapshot,
+} from "../../scriptFlow/types.js";
 import { AnalysisDrawer } from "./components/AnalysisDrawer";
 import { FlowNode, type FlowNodeData } from "./components/FlowNode";
 import { vscode } from "./vscodeApi";
 const nodeTypes = { scriptFlow: FlowNode };
-const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = { nodes: [], edges: [] };
+const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = {
+  nodes: [],
+  edges: [],
+};
 const NODE_WIDTH = 226;
 const NODE_HEIGHT = 100;
 
@@ -41,7 +49,7 @@ const KIND_LABELS: Record<ScriptFlowNodeKind, string> = {
   cte: "CTE",
   select: "Select",
   join: "Join",
-  subquery: "Subquery"
+  subquery: "Subquery",
 };
 
 type ScriptFlowViewState =
@@ -71,7 +79,8 @@ type ScriptFlowViewState =
 const defaultState: ScriptFlowViewState = {
   status: "empty",
   title: "Waiting for Script Flow",
-  description: "Open a TypeScript, Python, or SQL file to inspect its flow in the extension host."
+  description:
+    "Open a TypeScript, Python, or SQL file to inspect its flow in the extension host.",
 };
 
 export function ScriptFlowApp() {
@@ -80,11 +89,18 @@ export function ScriptFlowApp() {
     return isScriptFlowState(persisted) ? persisted : defaultState;
   });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
-    state.status === "snapshot" ? getPreferredNodeId(state.snapshot) : null
+    state.status === "snapshot" ? getPreferredNodeId(state.snapshot) : null,
   );
-  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
-  const [isNarrowLayout, setIsNarrowLayout] = useState(() => window.innerWidth < 800);
-  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(() => window.innerWidth < 800);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<
+    Node<FlowNodeData>,
+    Edge
+  > | null>(null);
+  const [isNarrowLayout, setIsNarrowLayout] = useState(
+    () => window.innerWidth < 800,
+  );
+  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(
+    () => window.innerWidth < 800,
+  );
 
   const flow = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -101,14 +117,6 @@ export function ScriptFlowApp() {
 
     return new Map(state.snapshot.nodes.map((node) => [node.id, node.label]));
   }, [state]);
-
-  const selectedNode =
-    state.status === "snapshot"
-      ? state.snapshot.nodes.find((node) => node.id === selectedNodeId) ??
-        state.snapshot.nodes.find((node) => node.id === state.snapshot.analysis.entryPoints[0]) ??
-        state.snapshot.nodes[0] ??
-        null
-      : null;
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 800px)");
@@ -131,7 +139,11 @@ export function ScriptFlowApp() {
       }
 
       const nextState = mapMessageToState(message);
-      setSelectedNodeId(nextState.status === "snapshot" ? getPreferredNodeId(nextState.snapshot) : null);
+      setSelectedNodeId(
+        nextState.status === "snapshot"
+          ? getPreferredNodeId(nextState.snapshot)
+          : null,
+      );
       setState(nextState);
       vscode.setState(nextState);
     }
@@ -151,10 +163,14 @@ export function ScriptFlowApp() {
       return;
     }
 
-    flowInstance.setCenter(target.position.x + NODE_WIDTH / 2, target.position.y + NODE_HEIGHT / 2, {
-      zoom: isNarrowLayout ? 0.9 : 1,
-      duration: 220
-    });
+    flowInstance.setCenter(
+      target.position.x + NODE_WIDTH / 2,
+      target.position.y + NODE_HEIGHT / 2,
+      {
+        zoom: isNarrowLayout ? 0.9 : 1,
+        duration: 220,
+      },
+    );
   }, [flow.nodes, flowInstance, isNarrowLayout, selectedNodeId, state.status]);
 
   return (
@@ -163,11 +179,19 @@ export function ScriptFlowApp() {
         <h1 className="script-flow-header__title">Script Flow</h1>
         <div className="script-flow-header__actions">
           {state.status === "snapshot" ? (
-            <button className="script-flow-button" onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)} type="button">
+            <button
+              className="script-flow-button"
+              onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)}
+              type="button"
+            >
               PNG
             </button>
           ) : null}
-          <button className="script-flow-button" onClick={() => sendRefresh(vscode)} type="button">
+          <button
+            className="script-flow-button"
+            onClick={() => sendRefresh(vscode)}
+            type="button"
+          >
             Refresh
           </button>
         </div>
@@ -178,10 +202,21 @@ export function ScriptFlowApp() {
           {state.status === "snapshot" ? (
             <>
               <div className="script-flow-stats">
-                <span className="script-flow-stats__file" title={state.snapshot.metadata.path}>{shortFilename(state.snapshot.metadata.path)}</span>
-                <span className="script-flow-stats__chip">{state.snapshot.metadata.language}</span>
-                <span className="script-flow-stats__chip">{state.snapshot.nodes.length} nodes</span>
-                <span className="script-flow-stats__chip">{state.snapshot.edges.length} edges</span>
+                <span
+                  className="script-flow-stats__file"
+                  title={state.snapshot.metadata.path}
+                >
+                  {shortFilename(state.snapshot.metadata.path)}
+                </span>
+                <span className="script-flow-stats__chip">
+                  {state.snapshot.metadata.language}
+                </span>
+                <span className="script-flow-stats__chip">
+                  {state.snapshot.nodes.length} nodes
+                </span>
+                <span className="script-flow-stats__chip">
+                  {state.snapshot.edges.length} edges
+                </span>
               </div>
               <div className="script-flow-canvas">
                 <ReactFlow
@@ -198,21 +233,39 @@ export function ScriptFlowApp() {
                   proOptions={{ hideAttribution: true }}
                 >
                   <Controls />
-                  <MiniMap pannable zoomable nodeColor={(node) => colorForKind((node.data as FlowNodeData).kind)} />
-                  <Background color="rgba(148, 163, 184, 0.18)" gap={18} size={1} variant={BackgroundVariant.Dots} />
+                  <MiniMap
+                    pannable
+                    zoomable
+                    nodeColor={(node) =>
+                      colorForKind((node.data as FlowNodeData).kind)
+                    }
+                  />
+                  <Background
+                    color="rgba(148, 163, 184, 0.18)"
+                    gap={18}
+                    size={1}
+                    variant={BackgroundVariant.Dots}
+                  />
                 </ReactFlow>
               </div>
             </>
           ) : null}
           {state.status === "empty" ? (
             <>
-              <h3 className="script-flow-panel__title">Open a supported source file to render its flow.</h3>
-              <p className="script-flow-panel__text">The panel parses in the extension host and renders the flow through React Flow.</p>
+              <h3 className="script-flow-panel__title">
+                Open a supported source file to render its flow.
+              </h3>
+              <p className="script-flow-panel__text">
+                The panel parses in the extension host and renders the flow
+                through React Flow.
+              </p>
             </>
           ) : null}
           {state.status === "unsupported" ? (
             <>
-              <h3 className="script-flow-panel__title">Script Flow does not support this source yet.</h3>
+              <h3 className="script-flow-panel__title">
+                Script Flow does not support this source yet.
+              </h3>
               <p className="script-flow-panel__text">
                 {state.language
                   ? `The active source resolved to ${state.language}, but Script Flow currently analyzes TypeScript, Python, and SQL files only.`
@@ -222,7 +275,9 @@ export function ScriptFlowApp() {
           ) : null}
           {state.status === "error" ? (
             <>
-              <h3 className="script-flow-panel__title">The host failed to deliver a valid Script Flow snapshot.</h3>
+              <h3 className="script-flow-panel__title">
+                The host failed to deliver a valid Script Flow snapshot.
+              </h3>
               <p className="script-flow-panel__text">{state.description}</p>
             </>
           ) : null}
@@ -246,7 +301,9 @@ export function ScriptFlowApp() {
           />
         ) : (
           <section className="script-flow-state-card">
-            <div className="script-flow-state-card__label">{formatStatusLabel(state.status)}</div>
+            <div className="script-flow-state-card__label">
+              {formatStatusLabel(state.status)}
+            </div>
             <h2 className="script-flow-state-card__title">{state.title}</h2>
             <p className="script-flow-state-card__text">{state.description}</p>
             {state.status === "unsupported" ? (
@@ -270,8 +327,9 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
     return {
       status: "snapshot",
       title: "Script Flow snapshot ready",
-      description: "The host parsed the active file and streamed the resulting Script Flow snapshot into the panel.",
-      snapshot: message.snapshot
+      description:
+        "The host parsed the active file and streamed the resulting Script Flow snapshot into the panel.",
+      snapshot: message.snapshot,
     } satisfies ScriptFlowViewState;
   }
 
@@ -279,15 +337,16 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
     return {
       status: "error",
       title: "Bridge delivery failed",
-      description: message.error
+      description: message.error,
     } satisfies ScriptFlowViewState;
   }
 
   return {
     status: "unsupported",
     title: "Script Flow language not supported yet",
-    description: "The bridge is active, but only the TypeScript, Python, and SQL analyzers are implemented right now.",
-    ...(message.language ? { language: message.language } : {})
+    description:
+      "The bridge is active, but only the TypeScript, Python, and SQL analyzers are implemented right now.",
+    ...(message.language ? { language: message.language } : {}),
   } satisfies ScriptFlowViewState;
 }
 
@@ -311,13 +370,23 @@ function isScriptFlowState(value: unknown): value is ScriptFlowViewState {
 
   const candidate = value as Partial<ScriptFlowViewState>;
   if (candidate.status === "empty" || candidate.status === "error") {
-    return typeof candidate.title === "string" && typeof candidate.description === "string";
+    return (
+      typeof candidate.title === "string" &&
+      typeof candidate.description === "string"
+    );
   }
   if (candidate.status === "unsupported") {
-    return typeof candidate.title === "string" && typeof candidate.description === "string";
+    return (
+      typeof candidate.title === "string" &&
+      typeof candidate.description === "string"
+    );
   }
   if (candidate.status === "snapshot") {
-    return typeof candidate.title === "string" && typeof candidate.description === "string" && isScriptFlowSnapshot(candidate.snapshot);
+    return (
+      typeof candidate.title === "string" &&
+      typeof candidate.description === "string" &&
+      isScriptFlowSnapshot(candidate.snapshot)
+    );
   }
   return false;
 }
@@ -326,7 +395,10 @@ function getPreferredNodeId(snapshot: ScriptFlowSnapshot) {
   return snapshot.analysis.entryPoints[0] ?? snapshot.nodes[0]?.id ?? null;
 }
 
-function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | null) {
+function buildFlowModel(
+  snapshot: ScriptFlowSnapshot,
+  selectedNodeId: string | null,
+) {
   const nodes: Array<Node<FlowNodeData>> = snapshot.nodes.map((node) => ({
     id: node.id,
     type: "scriptFlow",
@@ -336,8 +408,8 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
       kind: node.kind,
       kindLabel: KIND_LABELS[node.kind],
       label: node.label,
-      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {})
-    }
+      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
+    },
   }));
 
   const edges: Edge[] = snapshot.edges.map((edge, index) => ({
@@ -348,21 +420,21 @@ function buildFlowModel(snapshot: ScriptFlowSnapshot, selectedNodeId: string | n
     animated: edge.label === "loop",
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: edge.label === "loop" ? "#a855f7" : "#526279"
+      color: edge.label === "loop" ? "#a855f7" : "#526279",
     },
     style: {
       stroke: edge.label === "loop" ? "#a855f7" : "#526279",
-      strokeWidth: 2.1
+      strokeWidth: 2.1,
     },
     ...(edge.label
       ? {
           labelStyle: {
             fill: "var(--vscode-editor-foreground)",
             fontSize: 11,
-            fontWeight: 600
-          }
+            fontWeight: 600,
+          },
         }
-      : {})
+      : {}),
   }));
 
   return computeLayout(nodes, edges);
@@ -373,7 +445,7 @@ function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
   graph.setGraph({
     rankdir: "LR",
     nodesep: 36,
-    ranksep: 72
+    ranksep: 72,
   });
 
   for (const node of nodes) {
@@ -392,11 +464,11 @@ function computeLayout(nodes: Array<Node<FlowNodeData>>, edges: Edge[]) {
         ...node,
         position: {
           x: position.x - NODE_WIDTH / 2,
-          y: position.y - NODE_HEIGHT / 2
-        }
+          y: position.y - NODE_HEIGHT / 2,
+        },
       };
     }),
-    edges
+    edges,
   };
 }
 
@@ -406,8 +478,13 @@ function shortFilename(p: string) {
 }
 
 async function downloadFlowAsPng(sourcePath: string) {
-  const viewport = document.querySelector(".script-flow-canvas .react-flow__viewport") as HTMLElement | null;
-  const container = (document.querySelector(".script-flow-canvas .react-flow") as HTMLElement | null) ?? viewport;
+  const viewport = document.querySelector(
+    ".script-flow-canvas .react-flow__viewport",
+  ) as HTMLElement | null;
+  const container =
+    (document.querySelector(
+      ".script-flow-canvas .react-flow",
+    ) as HTMLElement | null) ?? viewport;
   if (!container) return;
 
   const bg = getComputedStyle(document.body).backgroundColor || "#0c1724";
@@ -415,7 +492,7 @@ async function downloadFlowAsPng(sourcePath: string) {
     const dataUrl = await toPng(container, {
       backgroundColor: bg,
       pixelRatio: 2,
-      cacheBust: true
+      cacheBust: true,
     });
     const link = document.createElement("a");
     const base = shortFilename(sourcePath).replace(/\.[^.]+$/, "");

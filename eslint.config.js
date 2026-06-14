@@ -5,7 +5,16 @@ const prettier = require("eslint-config-prettier");
 
 module.exports = [
   {
-    ignores: ["dist/**", "**/dist/**", "coverage/**", "**/coverage/**", "node_modules/**", "**/node_modules/**", "apps/vscode-extension/media/**"]
+    ignores: [
+      "dist/**",
+      "**/dist/**",
+      "coverage/**",
+      "**/coverage/**",
+      "node_modules/**",
+      "**/node_modules/**",
+      "apps/vscode-extension/media/**",
+      "apps/vscode-extension/fixtures/**",
+    ],
   },
   js.configs.recommended,
   {
@@ -15,9 +24,9 @@ module.exports = [
         console: "readonly",
         process: "readonly",
         module: "readonly",
-        require: "readonly"
-      }
-    }
+        require: "readonly",
+      },
+    },
   },
   {
     files: ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
@@ -25,7 +34,7 @@ module.exports = [
       parser: tsParser,
       parserOptions: {
         project: false,
-        sourceType: "module"
+        sourceType: "module",
       },
       globals: {
         console: "readonly",
@@ -34,11 +43,11 @@ module.exports = [
         window: "readonly",
         document: "readonly",
         HTMLButtonElement: "readonly",
-        HTMLSelectElement: "readonly"
-      }
+        HTMLSelectElement: "readonly",
+      },
     },
     plugins: {
-      "@typescript-eslint": tseslint
+      "@typescript-eslint": tseslint,
     },
     rules: {
       "no-undef": "off",
@@ -49,10 +58,10 @@ module.exports = [
         "error",
         {
           argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_"
-        }
-      ]
-    }
+          varsIgnorePattern: "^_",
+        },
+      ],
+    },
   },
-  prettier
+  prettier,
 ];

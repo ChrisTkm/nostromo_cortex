@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { Language, Node, Parser } from "web-tree-sitter";
+import type { Node} from "web-tree-sitter";
+import { Language, Parser } from "web-tree-sitter";
 
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
