@@ -2,6 +2,7 @@
   "name": "cortex",
   "displayName": "Cortex",
   "publisher": "cortex-local",
+  "description": "Local-first knowledge and execution cockpit: PERT graph, notes, logs, archive, Script Flow, and Cortex Brain for VS Code.",
   "version": "0.1.5",
   "private": true,
   "type": "module",
@@ -11,8 +12,34 @@
     "media/**",
     "skills/**",
     "package.json",
+    "README.md",
     "LICENSE.txt"
   ],
+  "categories": [
+    "Programming Languages",
+    "Data Science",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "cortex",
+    "pert",
+    "graph",
+    "plan",
+    "tasks",
+    "knowledge",
+    "notes",
+    "logs",
+    "mongo",
+    "script-flow",
+    "markdown"
+  ],
+  "icon": "media/cortex.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anomalyco/cortex.git"
+  },
+  "license": "SEE LICENSE IN LICENSE.txt",
   "engines": {
     "vscode": "^1.100.0"
   },
