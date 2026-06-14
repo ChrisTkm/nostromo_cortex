@@ -1,0 +1,120 @@
+<svg width="960" height="600" viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono','SFMono-Regular','Consolas',monospace">
+  <style>
+    .brand { fill: #f2ce7e; }
+    .text  { fill: #e5e5e5; }
+    .muted { fill: #8a8a8a; }
+    .ok    { fill: #34d399; }
+    .warn  { fill: #fbbf24; }
+    .err   { fill: #f87171; }
+    .info  { fill: #38bdf8; }
+    .lbl   { font-size: 11px; letter-spacing: 2px; }
+  </style>
+
+  <!-- Panel -->
+  <rect x="0.5" y="0.5" width="959" height="599" rx="14" fill="#171717" stroke="#262626"/>
+
+  <!-- ===== Header ===== -->
+  <text x="28" y="40" font-size="16" font-weight="bold"><tspan class="muted">/// </tspan><tspan class="brand">CORTEX LOGS</tspan></text>
+
+  <!-- folder chip + change -->
+  <rect x="560" y="22" width="260" height="28" rx="14" fill="none" stroke="#2f2f2f"/>
+  <text x="576" y="40" font-size="12" class="muted">📁 …\Nostromo\logs</text>
+  <rect x="832" y="22" width="100" height="28" rx="6" fill="#f2ce7e"/>
+  <text x="850" y="40" font-size="11" font-weight="bold" fill="#171717">CHANGE</text>
+
+  <line x1="28" y1="62" x2="932" y2="62" stroke="#262626"/>
+
+  <!-- ===== Filter row ===== -->
+  <rect x="28" y="74" width="300" height="28" rx="6" fill="none" stroke="#2f2f2f"/>
+  <text x="44" y="92" font-size="12" class="muted">Search messages…</text>
+
+  <rect x="340" y="74" width="120" height="28" rx="6" fill="none" stroke="#2f2f2f"/>
+  <text x="354" y="92" font-size="12" class="text">Month ▾</text>
+
+  <rect x="472" y="74" width="64" height="28" rx="14" fill="none" stroke="#f87171"/>
+  <text x="486" y="92" font-size="11" class="err">ERROR</text>
+  <rect x="544" y="74" width="60" height="28" rx="14" fill="none" stroke="#fbbf24"/>
+  <text x="557" y="92" font-size="11" class="warn">WARN</text>
+  <rect x="612" y="74" width="56" height="28" rx="14" fill="none" stroke="#38bdf8"/>
+  <text x="624" y="92" font-size="11" class="info">INFO</text>
+
+  <rect x="852" y="74" width="80" height="28" rx="14" fill="none" stroke="#34d399"/>
+  <circle cx="872" cy="88" r="4" class="ok"/>
+  <text x="884" y="92" font-size="11" class="ok">LIVE</text>
+
+  <line x1="28" y1="114" x2="932" y2="114" stroke="#262626"/>
+
+  <!-- ===== LEFT: processes ===== -->
+  <text x="28" y="138" class="muted lbl">PROCESSES</text>
+
+  <!-- selected row -->
+  <rect x="22" y="150" width="282" height="42" rx="6" fill="#221d12" stroke="#f2ce7e"/>
+  <circle cx="38" cy="166" r="4" class="ok"/>
+  <text x="52" y="170" font-size="13" class="text">cargas_sii</text>
+  <text x="52" y="185" font-size="11" class="muted">12 runs · hace 2h</text>
+
+  <circle cx="38" cy="216" r="4" class="warn"/>
+  <text x="52" y="220" font-size="13" class="text">sii_loader</text>
+  <text x="52" y="235" font-size="11" class="muted">8 runs · abierta (sin END)</text>
+
+  <circle cx="38" cy="266" r="4" class="ok"/>
+  <text x="52" y="270" font-size="13" class="text">load_previred</text>
+  <text x="52" y="285" font-size="11" class="muted">5 runs · hace 1d</text>
+
+  <circle cx="38" cy="316" r="4" class="err"/>
+  <text x="52" y="320" font-size="13" class="text">banco_estado_loader</text>
+  <text x="52" y="335" font-size="11" class="err">3 runs · 2 errores</text>
+
+  <circle cx="38" cy="366" r="4" class="ok"/>
+  <text x="52" y="370" font-size="13" class="text">currency_loader</text>
+  <text x="52" y="385" font-size="11" class="muted">9 runs · hace 3h</text>
+
+  <line x1="316" y1="124" x2="316" y2="576" stroke="#262626"/>
+
+  <!-- ===== RIGHT: runs of selected process ===== -->
+  <text x="336" y="138" font-size="13" font-weight="bold" class="brand">cargas_sii — corridas</text>
+
+  <!-- table header -->
+  <text x="336" y="166" class="muted" font-size="11">INICIO</text>
+  <text x="560" y="166" class="muted" font-size="11">DURACIÓN</text>
+  <text x="680" y="166" class="muted" font-size="11">ESTADO</text>
+  <text x="820" y="166" class="muted" font-size="11">FILAS</text>
+  <line x1="336" y1="174" x2="932" y2="174" stroke="#262626"/>
+
+  <!-- selected run -->
+  <rect x="330" y="182" width="606" height="26" rx="4" fill="#1d1d1d"/>
+  <text x="336" y="200" font-size="12" class="text">2026-02-18 03:10</text>
+  <text x="560" y="200" font-size="12" class="text">4m 12s</text>
+  <circle cx="686" cy="195" r="4" class="ok"/><text x="698" y="200" font-size="12" class="ok">ok</text>
+  <text x="820" y="200" font-size="12" class="text">1.407</text>
+
+  <text x="336" y="230" font-size="12" class="text">2026-02-17 03:08</text>
+  <text x="560" y="230" font-size="12" class="text">3m 55s</text>
+  <circle cx="686" cy="225" r="4" class="ok"/><text x="698" y="230" font-size="12" class="ok">ok</text>
+  <text x="820" y="230" font-size="12" class="text">1.388</text>
+
+  <text x="336" y="260" font-size="12" class="text">2026-02-16 03:11</text>
+  <text x="560" y="260" font-size="12" class="muted">—</text>
+  <circle cx="686" cy="255" r="4" class="muted"/><text x="698" y="260" font-size="12" class="muted">abierta</text>
+  <text x="820" y="260" font-size="12" class="muted">—</text>
+
+  <!-- ===== RUN DETAIL timeline ===== -->
+  <text x="336" y="312" class="muted lbl">DETALLE DE CORRIDA · 2026-02-18 03:10</text>
+  <line x1="344" y1="330" x2="344" y2="520" stroke="#3a3a3a"/>
+
+  <circle cx="344" cy="344" r="5" class="ok"/>
+  <text x="362" y="342" font-size="12" class="text">03:10:02  BEGIN</text>
+  <text x="362" y="357" font-size="11" class="muted">Iniciando carga · periodo=2024-09 · dry_run=False</text>
+
+  <circle cx="344" cy="392" r="5" class="info"/>
+  <text x="362" y="390" font-size="12" class="text">03:11:20  STEP</text>
+  <text x="362" y="405" font-size="11" class="muted">Archivos a procesar: 1.407 filas</text>
+
+  <circle cx="344" cy="440" r="5" class="warn"/>
+  <text x="362" y="438" font-size="12" class="text">03:12:48  WARN</text>
+  <text x="362" y="453" font-size="11" class="muted">2 filas con formato inesperado (omitidas)</text>
+
+  <circle cx="344" cy="488" r="5" class="ok"/>
+  <text x="362" y="486" font-size="12" class="text">03:14:14  END</text>
+  <text x="362" y="501" font-size="11" class="muted">Done · 1.407 filas · 4m 12s</text>
+</svg>
