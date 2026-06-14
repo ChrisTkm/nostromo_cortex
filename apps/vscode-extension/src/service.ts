@@ -8,6 +8,7 @@ import {
   buildGraphSnapshot,
   createMongoTaskStore,
   loadConfig,
+  type CortexConfig,
   type MongoNoteStore,
   type NoteDocumentInput,
   type NoteRecord,
@@ -18,7 +19,7 @@ import {
   type TaskDocumentInput,
   type TaskRecord
 } from "@cortex/core";
-import { createLogger, JsonlTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
+import { createLogger, createTelemetryStore, TelemetryRecorder } from "@cortex/telemetry";
 import type { ClientSession, Collection, Document } from "mongodb";
 import * as vscode from "vscode";
 
@@ -72,26 +73,26 @@ export type ArchivedPlanSummary = {
 export class ExtensionTaskService {
   readonly logger;
   telemetry!: TelemetryRecorder;
-  private readonly telemetryJsonlPath: string;
+  private readonly telemetryConfig: CortexConfig;
   private readonly config = vscode.workspace.getConfiguration("cortex");
   private mongoUrl = DEFAULT_MONGO_URL;
   private sharedClient: SharedMongoClient | undefined;
   private notesStore: MongoNoteStore | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    const runtimeConfig = loadConfig({
+    this.telemetryConfig = loadConfig({
       ...process.env,
       MONGO_URL: DEFAULT_MONGO_URL,
       MONGO_DB_NAME: this.config.get("mongoDbName", "cortex"),
       MONGO_TASKS_COLLECTION: this.config.get("mongoTasksCollection", "tasks"),
       TELEMETRY_BACKEND: this.config.get("telemetryBackend", "sqlite"),
-      TELEMETRY_SQLITE_PATH: this.config.get("telemetrySqlitePath", path.join(context.globalStorageUri.fsPath, "telemetry.db"))
+      TELEMETRY_SQLITE_PATH: this.config.get("telemetrySqlitePath", "./data/telemetry/cortex-telemetry.db"),
+      TELEMETRY_JSONL_PATH: this.config.get("telemetryJsonlPath", "./data/telemetry/cortex-telemetry.jsonl")
     });
 
-    this.telemetryJsonlPath = path.join(context.globalStorageUri.fsPath, "cortex-telemetry.jsonl");
     this.logger = createLogger({
-      level: runtimeConfig.logLevel,
-      format: runtimeConfig.logFormat,
+      level: this.telemetryConfig.logLevel,
+      format: this.telemetryConfig.logFormat,
       context: { app: "cortex-vscode-extension" }
     });
   }
@@ -99,7 +100,11 @@ export class ExtensionTaskService {
   async initialize() {
     await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
     await this.refreshMongoUrlFromSecrets();
-    const telemetryStore = new JsonlTelemetryStore(this.telemetryJsonlPath);
+    const telemetryStore = await createTelemetryStore({
+      backend: this.telemetryConfig.telemetryBackend,
+      sqlitePath: this.telemetryConfig.telemetrySqlitePath,
+      jsonlPath: this.telemetryConfig.telemetryJsonlPath
+    });
     this.telemetry = new TelemetryRecorder(telemetryStore);
     await this.telemetry.initialize();
     await this.refreshSharedClient();

@@ -109,6 +109,24 @@ node apps/mcp-server/dist/index.js
    - `Cortex: Set tag filter`
    - `Cortex: List dependency cycles`
 
+## Telemetría
+
+La extensión de VS Code y los scripts de inspección (`inspect:telemetry:runs`, `inspect:cost`)
+comparten el **mismo backend y ruta** definidos por `loadConfig` de `@cortex/core`:
+
+| Fuente | Backend | Ruta |
+|---|---|---|
+| CLI / scripts | `TELEMETRY_BACKEND` (`.env`) | `TELEMETRY_SQLITE_PATH` / `TELEMETRY_JSONL_PATH` |
+| Extensión VS Code | `cortex.telemetryBackend` (`.vscode/settings.json`) | `cortex.telemetrySqlitePath` / `cortex.telemetryJsonlPath` |
+
+Ambos deben apuntar al mismo archivo para que las interacciones del extension
+sean visibles via `pnpm inspect:cost`. El default es sqlite en
+`./data/telemetry/cortex-telemetry.db`.
+
+⚠️ Si cambias el backend en un lado, cámbialo también en el otro.
+Síntoma de drift: el extension graba interacciones pero `inspect:telemetry:runs`
+no muestra nada.
+
 ## Inspección y debugging
 
 ```bash

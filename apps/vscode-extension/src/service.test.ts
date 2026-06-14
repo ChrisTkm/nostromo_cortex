@@ -17,6 +17,7 @@ const {
   createMongoActionPlanStoreMock,
   createMongoNoteStoreMock,
   createLoggerMock,
+  createTelemetryStoreMock,
   jsonlTelemetryStoreMock,
   telemetryRecorderMock,
   sharedConnect,
@@ -74,6 +75,10 @@ const {
       warn: vi.fn(),
       error: vi.fn(),
     })),
+    telemetryInitialize: vi.fn(),
+    createTelemetryStoreMock: vi.fn().mockImplementation(() => ({
+      initialize: telemetryInitialize,
+    })),
     jsonlTelemetryStoreMock: vi.fn().mockImplementation(() => ({})),
     telemetryRecorderMock: vi.fn().mockImplementation(() => ({
       initialize: telemetryInitialize,
@@ -89,7 +94,6 @@ const {
     createDirectory: vi.fn(),
     getConfig: vi.fn((_: string, fallback?: string) => fallback),
     updateConfig: vi.fn(),
-    telemetryInitialize: vi.fn(),
   };
 });
 
@@ -114,6 +118,9 @@ vi.mock("@cortex/core", async () => {
     loadConfig: vi.fn(() => ({
       logLevel: "info",
       logFormat: "pretty",
+      telemetryBackend: "sqlite" as const,
+      telemetrySqlitePath: "./data/telemetry/cortex-telemetry.db",
+      telemetryJsonlPath: "./data/telemetry/cortex-telemetry.jsonl",
     })),
   };
 });
@@ -138,6 +145,7 @@ vi.mock("vscode", () => ({
 
 vi.mock("@cortex/telemetry", () => ({
   createLogger: createLoggerMock,
+  createTelemetryStore: createTelemetryStoreMock,
   JsonlTelemetryStore: jsonlTelemetryStoreMock,
   TelemetryRecorder: telemetryRecorderMock,
 }));
@@ -201,7 +209,7 @@ describe("ExtensionTaskService.initialize", () => {
     await service.initialize();
 
     expect(createLoggerMock).toHaveBeenCalledTimes(1);
-    expect(jsonlTelemetryStoreMock).toHaveBeenCalledTimes(1);
+    expect(createTelemetryStoreMock).toHaveBeenCalledTimes(1);
     expect(telemetryRecorderMock).toHaveBeenCalledTimes(1);
     expect(sharedConnect).toHaveBeenCalledTimes(1);
     expect(createMongoTaskStoreMock).toHaveBeenCalledTimes(1);

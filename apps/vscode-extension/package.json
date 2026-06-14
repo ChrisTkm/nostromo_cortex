@@ -297,6 +297,11 @@
           "type": "string",
           "default": "./data/telemetry/cortex-telemetry.db",
           "description": "Local SQLite path for telemetry."
+        },
+        "cortex.telemetryJsonlPath": {
+          "type": "string",
+          "default": "./data/telemetry/cortex-telemetry.jsonl",
+          "description": "Local JSONL path for telemetry."
         }
       }
     }

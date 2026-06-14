@@ -1,6 +1,7 @@
 {
-  "cortex.telemetryBackend": "jsonl",
+  "cortex.telemetryBackend": "sqlite",
   "cortex.telemetrySqlitePath": "./data/telemetry/cortex-telemetry.db",
+  "cortex.telemetryJsonlPath": "./data/telemetry/cortex-telemetry.jsonl",
   "cortex.mongoUrl": "mongodb://127.0.0.1:27017",
   "cortex.mongoDbName": "nostromo_cortex",
   "cortex.mongoTasksCollection": "tasks",
