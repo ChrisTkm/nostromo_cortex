@@ -7,10 +7,6 @@ import {
 } from "./runModel.js";
 import { normalizeLogDocument, type LogRecord } from "./normalize.js";
 
-function makeRecord(overrides: Partial<LogRecord> & { timestamp: string }): LogRecord {
-  return normalizeLogDocument(overrides as Record<string, unknown>);
-}
-
 function makeRaw(overrides: Record<string, unknown>): LogRecord {
   return normalizeLogDocument(overrides);
 }

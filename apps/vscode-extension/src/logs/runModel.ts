@@ -78,21 +78,6 @@ function parseISODate(iso: string): Date {
   return isNaN(d.getTime()) ? new Date(0) : d;
 }
 
-function computeDurationMs(
-  targetedDurationMs: number | undefined,
-  endedAt: string | undefined,
-  startedAt: string,
-): number | undefined {
-  if (targetedDurationMs !== undefined && targetedDurationMs >= 0) {
-    return targetedDurationMs;
-  }
-  if (endedAt) {
-    const diff = parseISODate(endedAt).getTime() - parseISODate(startedAt).getTime();
-    return diff >= 0 ? diff : undefined;
-  }
-  return undefined;
-}
-
 export function groupIntoRuns(
   records: LogRecord[],
   gapMinutes = 15,

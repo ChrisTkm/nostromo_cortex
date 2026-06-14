@@ -74,7 +74,6 @@ export function LogsApp() {
   const [process, setProcess] = useState("all");
   const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
-  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -93,7 +92,6 @@ export function LogsApp() {
       const message = event.data;
       if (message?.type === "logs:list" && Array.isArray(message.logs)) {
         setLogs(message.logs);
-        setAutoRefreshSeconds(message.autoRefreshSeconds ?? 0);
         setHasMore(Boolean(message.hasMore));
         setLoadingOlder(false);
         setLevel((current) =>
@@ -132,22 +130,6 @@ export function LogsApp() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const levels = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.level))],
-    [logs],
-  );
-  const sources = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.source))],
-    [logs],
-  );
-  const folders = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.folder))],
-    [logs],
-  );
-  const tags = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.tag ?? entry.event ?? "untagged"))],
-    [logs],
-  );
   const processes = useMemo(
     () => ["all", ...new Set(logs.map((entry) => entry.process ?? "unknown"))],
     [logs],
@@ -347,6 +329,22 @@ export function LogsApp() {
               type="button"
             >
               Refresh
+            </button>
+            <button
+              className="logs-button"
+              onClick={() => exportLogs("csv")}
+              disabled={filteredLogs.length === 0}
+              type="button"
+            >
+              Export CSV
+            </button>
+            <button
+              className="logs-button"
+              onClick={() => exportLogs("json")}
+              disabled={filteredLogs.length === 0}
+              type="button"
+            >
+              Export JSON
             </button>
           </div>
         </header>
