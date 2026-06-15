@@ -1613,6 +1613,7 @@ describe("logs panel config changes", () => {
     listLogsMock.mockClear();
 
     fireConfigChange(["cortex.logsSources"]);
+    await new Promise(r => setTimeout(r, 0));
     expect(listLogsMock).toHaveBeenCalled();
   });
 
@@ -1623,6 +1624,7 @@ describe("logs panel config changes", () => {
     listLogsMock.mockClear();
 
     fireConfigChange(["cortex.logsLimit"]);
+    await new Promise(r => setTimeout(r, 0));
     expect(listLogsMock).toHaveBeenCalled();
   });
 

@@ -17,7 +17,6 @@
     "vscode": "^1.100.0"
   },
   "activationEvents": [
-    "onStartupFinished",
     "onView:cortex.overview",
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openArchive",

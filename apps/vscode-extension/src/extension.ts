@@ -116,6 +116,9 @@ function setWebviewPanelIcon(
   );
 }
 
+let initPromise: Promise<void> | undefined;
+let initDone = false;
+
 export async function activate(context: vscode.ExtensionContext) {
   await migrateLegacyMongoUrlSetting(context);
   const service = new ExtensionTaskService(context);
@@ -123,15 +126,7 @@ export async function activate(context: vscode.ExtensionContext) {
   service.logger.debug("activate", {
     extensionMode: vscode.ExtensionMode[context.extensionMode],
   });
-  try {
-    await service.initialize();
-    service.logger.debug("initialize succeeded", {});
-  } catch (err) {
-    await service.dispose();
-    activeService = undefined;
-    service.logger.error("initialize failed", { error: String(err) });
-    throw err;
-  }
+  let planStatusFilter: PlanStatusFilter = "active";
 
   const reminderStatusBar = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
@@ -141,10 +136,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(reminderStatusBar, {
     dispose: disposeReminderTimers,
   });
-  await fireDue(service, reminderStatusBar, "startup");
-  await scheduleAll(service, reminderStatusBar);
 
-  let planStatusFilter = normalizePlanStatusFilter(
+  planStatusFilter = normalizePlanStatusFilter(
     context.workspaceState.get<PlanStatusFilter>(
       PLAN_STATUS_FILTER_KEY,
       "active",
@@ -157,6 +150,37 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   treeView.title = titleForPlanStatusFilter(planStatusFilter);
   context.subscriptions.push(treeView);
+
+  treeView.onDidChangeSelection(async (event) => {
+    const selected = event.selection[0] as TaskTreeNode | undefined;
+    if (selected?.kind === "task") {
+      await openGraph(selected.task.code);
+    }
+  });
+
+  async function lazyInit(): Promise<void> {
+    if (initDone) return;
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      try {
+        await service.initialize();
+        service.logger.debug("initialize succeeded", {});
+      } catch (err) {
+        await service.dispose();
+        activeService = undefined;
+        service.logger.error("initialize failed", { error: String(err) });
+        throw err;
+      }
+
+      await fireDue(service, reminderStatusBar, "startup");
+      await scheduleAll(service, reminderStatusBar);
+
+      treeProvider.refresh();
+
+      initDone = true;
+    })();
+    return initPromise;
+  }
 
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
@@ -213,6 +237,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(cortexOutput, { dispose: disposeBrainWatcher });
 
   async function postSnapshot(selectedTaskCode?: string) {
+    await lazyInit();
     if (!graphPanel) {
       return;
     }
@@ -321,11 +346,13 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function refreshView() {
+    await lazyInit();
     treeProvider.refresh();
     await postSnapshot();
   }
 
   async function postNotesList(search?: string) {
+    await lazyInit();
     const panel = notesPanel;
     if (!panel) {
       return;
@@ -342,6 +369,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function postLogsList() {
+    await lazyInit();
     const panel = logsPanel;
     if (!panel) {
       return;
@@ -393,6 +421,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function postArchiveList() {
+    await lazyInit();
     const panel = archivePanel;
     if (!panel) {
       return;
@@ -626,6 +655,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 `;
 
   async function openLogsPanel() {
+    await lazyInit();
     if (logsPanel) {
       logsPanel.reveal(vscode.ViewColumn.One);
       if (logsPanelReady) {
@@ -838,6 +868,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openArchivePanel() {
+    await lazyInit();
     if (archivePanel) {
       archivePanel.reveal(vscode.ViewColumn.One);
       if (archivePanelReady) {
@@ -926,6 +957,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     rootUri?: vscode.Uri,
     options?: { promptWhenMissing?: boolean },
   ) {
+    await lazyInit();
     const selectedRoot =
       rootUri ??
       currentBrainRoot ??
@@ -1034,6 +1066,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openLedgerPanel() {
+    await lazyInit();
     if (ledgerPanel) {
       ledgerPanel.reveal(vscode.ViewColumn.One);
       if (ledgerPanelReady) {
@@ -1103,6 +1136,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openPlansPanel() {
+    await lazyInit();
     if (plansPanel) {
       plansPanel.reveal(vscode.ViewColumn.One);
       if (plansPanelReady) {
@@ -1296,6 +1330,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openPlanEditorPanel(planCode: string) {
+    await lazyInit();
     const plan = await service.getPlan(planCode);
     if (!plan) {
       void vscode.window.showWarningMessage(`Plan ${planCode} not found.`);
@@ -1506,6 +1541,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openScriptFlowPanel(request: ScriptFlowRequest) {
+    await lazyInit();
     pendingScriptFlowRequest = request;
 
     if (scriptFlowPanel) {
@@ -1624,6 +1660,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openGraph(selectedTaskCode?: string) {
+    await lazyInit();
     if (!graphPanel) {
       graphPanel = vscode.window.createWebviewPanel(
         "cortex.graph",
@@ -1859,6 +1896,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           PLAN_STATUS_FILTER_KEY,
           planStatusFilter,
         );
+        await lazyInit();
         treeProvider.setPlanStatusFilter(planStatusFilter);
         treeView.title = titleForPlanStatusFilter(planStatusFilter);
       },
@@ -2219,6 +2257,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
         try {
           const result = await service.archivePlan(planCode);
+          await lazyInit();
           treeProvider.refresh();
           await postSnapshot();
           const picked = await vscode.window.showInformationMessage(
@@ -2395,6 +2434,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       }
 
       await service.saveMongoUrl(mongoUrl);
+      await lazyInit();
       treeProvider.refresh();
       void vscode.window.showInformationMessage("Mongo URL guardada.");
     }),
@@ -2599,14 +2639,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     ),
   );
 
-  treeView.onDidChangeSelection(async (event) => {
-    const selected = event.selection[0] as TaskTreeNode | undefined;
-    if (selected?.kind === "task") {
-      await openGraph(selected.task.code);
-    }
-  });
 
-  treeProvider.refresh();
 
   async function markTaskStatus(
     arg: TaskTreeNode | { kind?: string; task?: { code?: string } } | undefined,
@@ -2637,6 +2670,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       created_at: task.createdAt,
       updated_at: new Date().toISOString(),
     });
+    await lazyInit();
     treeProvider.refresh();
     await postSnapshot(task.code);
     void vscode.window.showInformationMessage(
@@ -2779,6 +2813,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       updated_at: now,
     });
 
+    await lazyInit();
     treeProvider.refresh();
     await postSnapshot(code);
     void vscode.window.showInformationMessage(`Task ${code} created.`);
@@ -2845,6 +2880,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         isTaskDocumentInput(message.input)
       ) {
         await service.saveTask(message.input);
+        await lazyInit();
         treeProvider.refresh();
         await postSnapshot(message.input.code);
         void vscode.window.showInformationMessage(
@@ -2886,6 +2922,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
     await openTaskEditorPanel(task, catalogCodes, agents);
   }
+
+  // Fire lazy init but don't block activation
+  void lazyInit();
 }
 
 export async function deactivate() {
