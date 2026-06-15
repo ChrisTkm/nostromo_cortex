@@ -17,7 +17,12 @@ import { RunDrawer } from "./components/RunDrawer";
 import { PageHeader } from "../components/PageHeader";
 
 type LogsMessage =
-  | { type: "logs:list"; logs: LogRecord[]; sources?: string[]; hasMore: boolean }
+  | {
+      type: "logs:list";
+      logs: LogRecord[];
+      sources?: string[];
+      hasMore: boolean;
+    }
   | { type: "logs:liveStatus"; live: boolean; refreshAt: string };
 
 declare global {
@@ -81,10 +86,17 @@ export function LogsApp() {
   const deferredSearch = search.trim().toLowerCase();
 
   const baseFilteredLogs = useMemo(() => {
-    const periodFiltered = period !== "all" ? filterLogsByPeriod(logs, period) : logs;
+    const periodFiltered =
+      period !== "all" ? filterLogsByPeriod(logs, period) : logs;
     if (!deferredSearch) return periodFiltered;
     return periodFiltered.filter((entry) => {
-      const haystack = [entry.summary, entry.message, entry.process, entry.event, entry.executionId]
+      const haystack = [
+        entry.summary,
+        entry.message,
+        entry.process,
+        entry.event,
+        entry.executionId,
+      ]
         .filter(Boolean)
         .join("\n")
         .toLowerCase();
@@ -93,20 +105,32 @@ export function LogsApp() {
   }, [logs, period, deferredSearch]);
 
   const filteredLogs = useMemo(
-    () => (level === "all" ? baseFilteredLogs : baseFilteredLogs.filter((e) => e.level === level)),
+    () =>
+      level === "all"
+        ? baseFilteredLogs
+        : baseFilteredLogs.filter((e) => e.level === level),
     [baseFilteredLogs, level],
   );
 
-  const levelCounts = useMemo(() => countLogsByLevel(baseFilteredLogs), [baseFilteredLogs]);
-  const processRows = useMemo(() => buildProcessRows(filteredLogs), [filteredLogs]);
+  const levelCounts = useMemo(
+    () => countLogsByLevel(baseFilteredLogs),
+    [baseFilteredLogs],
+  );
+  const processRows = useMemo(
+    () => buildProcessRows(filteredLogs),
+    [filteredLogs],
+  );
 
   const currentProcess: ProcessRow | null = useMemo(() => {
     if (processRows.length === 0) return null;
-    return processRows.find((p) => p.process === selectedProcess) ?? processRows[0];
+    return (
+      processRows.find((p) => p.process === selectedProcess) ?? processRows[0]
+    );
   }, [processRows, selectedProcess]);
 
   const currentRuns: RunGroup[] = currentProcess?.runs ?? [];
-  const currentRun: RunGroup | null = currentRuns[selectedRunIndex] ?? currentRuns[0] ?? null;
+  const currentRun: RunGroup | null =
+    currentRuns[selectedRunIndex] ?? currentRuns[0] ?? null;
 
   function pickProcess(name: string) {
     setSelectedProcess(name);
@@ -119,7 +143,8 @@ export function LogsApp() {
     return "ok";
   }
 
-  const folderLabel = sources.length > 0 ? sources[0] : "Sin carpeta configurada";
+  const folderLabel =
+    sources.length > 0 ? sources[0] : "Sin carpeta configurada";
 
   return (
     <div className="logs-shell">
@@ -128,8 +153,14 @@ export function LogsApp() {
         title="CORTEX LOGS"
         actions={
           <>
-            <span className="logs-head__folder" title={sources.join(", ")}>📁 {folderLabel}</span>
-            <button className="logs-btn logs-btn--accent" type="button" onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}>
+            <span className="logs-head__folder" title={sources.join(", ")}>
+              📁 {folderLabel}
+            </span>
+            <button
+              className="logs-btn"
+              type="button"
+              onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
+            >
               Change
             </button>
             <button
@@ -142,9 +173,15 @@ export function LogsApp() {
               }}
             >
               {live ? "● LIVE" : "LIVE"}
-              {live && lastRefreshAt ? ` · ${formatLiveSince(lastRefreshAt)}` : ""}
+              {live && lastRefreshAt
+                ? ` · ${formatLiveSince(lastRefreshAt)}`
+                : ""}
             </button>
-            <button className="logs-btn" type="button" onClick={() => vscode.postMessage({ type: "logs:refresh" })}>
+            <button
+              className="logs-btn"
+              type="button"
+              onClick={() => vscode.postMessage({ type: "logs:refresh" })}
+            >
               Refresh
             </button>
           </>
@@ -160,13 +197,22 @@ export function LogsApp() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select className="logs-select" value={period} onChange={(e) => setPeriod(e.target.value as PeriodFilter)}>
+        <select
+          className="logs-select"
+          value={period}
+          onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
+        >
           <option value="month">Month</option>
           <option value="semester">Semester</option>
           <option value="year">Year</option>
           <option value="all">All time</option>
         </select>
-        <select className="logs-select" value={tz} onChange={(e) => setTz(e.target.value)} title="Zona horaria de visualización">
+        <select
+          className="logs-select"
+          value={tz}
+          onChange={(e) => setTz(e.target.value)}
+          title="Zona horaria de visualización"
+        >
           <option value="UTC">UTC (log)</option>
           <option value="America/Santiago">Chile</option>
           <option value="America/New_York">New York</option>
@@ -197,12 +243,19 @@ export function LogsApp() {
           <div className="logs-eyebrow">No logs yet</div>
           <h2 className="logs-empty__title">Configurá una carpeta de logs</h2>
           <p className="logs-empty__text">
-            Cortex lee archivos (.jsonl / .log) de una carpeta externa, read-only. Sin MongoDB.
+            Cortex lee archivos (.jsonl / .log) de una carpeta externa,
+            read-only. Sin MongoDB.
           </p>
-          <button className="logs-btn logs-btn--accent" type="button" onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}>
+          <button
+            className="logs-btn logs-btn--accent"
+            type="button"
+            onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
+          >
             Elegir carpeta…
           </button>
-          <p className="logs-empty__hint">Actual: <code>{folderLabel}</code></p>
+          <p className="logs-empty__hint">
+            Actual: <code>{folderLabel}</code>
+          </p>
         </div>
       ) : (
         <div className="logs-master">
@@ -226,7 +279,8 @@ export function LogsApp() {
                     <span className="logs-proc__body">
                       <span className="logs-proc__name">{row.process}</span>
                       <span className="logs-proc__sub">
-                        {row.runCount} runs · {formatRelativeTime(row.lastRunAt)}
+                        {row.runCount} runs ·{" "}
+                        {formatRelativeTime(row.lastRunAt)}
                         {row.errorCount > 0 ? ` · ${row.errorCount} err` : ""}
                       </span>
                     </span>
@@ -242,7 +296,9 @@ export function LogsApp() {
               <div className="logs-pane__empty">Seleccioná un proceso.</div>
             ) : (
               <>
-                <h2 className="logs-pane__title">{currentProcess.process} — corridas</h2>
+                <h2 className="logs-pane__title">
+                  {currentProcess.process} — corridas
+                </h2>
                 <table className="logs-runs">
                   <thead>
                     <tr>
@@ -265,7 +321,9 @@ export function LogsApp() {
                           <td>{formatStart(run.startedAt, tz)}</td>
                           <td>{formatDuration(run.durationMs)}</td>
                           <td>
-                            <span className={`logs-run-status ${runStatusClass(run.status)}`}>
+                            <span
+                              className={`logs-run-status ${runStatusClass(run.status)}`}
+                            >
                               {runStatusIcon(run.status)}
                             </span>{" "}
                             {run.status}
@@ -280,7 +338,9 @@ export function LogsApp() {
                   {currentRun ? (
                     <RunDrawer run={currentRun} tz={tz} onClose={() => {}} />
                   ) : (
-                    <div className="logs-pane__empty">Seleccioná una corrida.</div>
+                    <div className="logs-pane__empty">
+                      Seleccioná una corrida.
+                    </div>
                   )}
                 </div>
               </>
