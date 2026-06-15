@@ -263,6 +263,19 @@
   max-width: 520px;
 }
 
+.react-flow__controls,
+.react-flow__minimap {
+  z-index: var(--z-flow-chrome);
+  background: color-mix(in srgb, var(--cortex-surface-strong) 86%, transparent);
+  border: 1px solid var(--cortex-border);
+  box-shadow: var(--cortex-shadow-soft);
+  backdrop-filter: blur(12px);
+}
+
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--cortex-bg) 55%, transparent);
+}
+
 .react-flow__node {
   box-shadow: none;
 }
@@ -411,13 +424,6 @@
   white-space: nowrap;
 }
 
-.brain-minimap {
-  background: color-mix(in srgb, var(--cortex-bg-dark) 82%, transparent) !important;
-  border: 1px solid color-mix(in srgb, var(--cortex-slate-400) 18%, transparent);
-  border-radius: 6px;
-  height: 118px !important;
-  width: 176px !important;
-}
 
 .brain-inspector {
   background: var(--cortex-overlay);

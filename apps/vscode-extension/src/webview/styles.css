@@ -407,6 +407,10 @@
   backdrop-filter: blur(12px);
 }
 
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--cortex-bg) 55%, transparent);
+}
+
 .react-flow__controls-button {
   background: transparent;
   border-bottom-color: var(--cortex-border);

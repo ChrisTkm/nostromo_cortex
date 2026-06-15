@@ -12,6 +12,19 @@
   min-height: 0;
 }
 
+.react-flow__controls,
+.react-flow__minimap {
+  z-index: var(--z-flow-chrome);
+  background: color-mix(in srgb, var(--cortex-surface-strong) 86%, transparent);
+  border: 1px solid var(--cortex-border);
+  box-shadow: var(--cortex-shadow-soft);
+  backdrop-filter: blur(12px);
+}
+
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--cortex-bg) 55%, transparent);
+}
+
 .script-flow-header--compact {
   margin-bottom: 8px;
 }
@@ -447,12 +460,6 @@
   cursor: grab;
 }
 
-.script-flow-canvas .react-flow__controls,
-.script-flow-canvas .react-flow__minimap {
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-background) 90%, transparent);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
-}
 
 .script-flow-canvas .react-flow__controls-button {
   background: transparent;
