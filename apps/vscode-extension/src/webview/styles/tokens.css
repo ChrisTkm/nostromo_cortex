@@ -8,7 +8,8 @@
   --cortex-radius-md: 14px;
   --cortex-radius-lg: 16px;
   --cortex-font:
-    'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace;
+    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New",
+    monospace;
   --cortex-font-mono:
     var(--vscode-editor-font-family), "SFMono-Regular", Consolas, monospace;
   --cortex-text-xs: 11px;
@@ -23,7 +24,11 @@
 
   /* brand */
   --cortex-brand: #f2ce7e;
-  --cortex-brand-muted: color-mix(in srgb, var(--cortex-brand) 60%, transparent);
+  --cortex-brand-muted: color-mix(
+    in srgb,
+    var(--cortex-brand) 60%,
+    transparent
+  );
 
   /* severity levels */
   --cortex-level-error: #ef4444;
@@ -72,27 +77,74 @@
   --cortex-bg-dark: #020617;
   --cortex-slate-400: #94a3b8;
   --cortex-teal-700: #0e7490;
-  --cortex-minimap-mask: color-mix(in srgb, var(--cortex-bg-base) 68%, transparent);
-  --cortex-bg-overlay: color-mix(in srgb, var(--cortex-bg-base) 92%, transparent);
-  --cortex-bg-overlay-soft: color-mix(in srgb, var(--cortex-bg-base) 74%, transparent);
-  --cortex-bg-overlay-panel: color-mix(in srgb, var(--cortex-bg-base) 97%, transparent);
-  --cortex-bg-overlay-toolbar: color-mix(in srgb, var(--cortex-bg-base) 70%, transparent);
+  --cortex-minimap-mask: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 68%,
+    transparent
+  );
+  --cortex-bg-overlay: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 92%,
+    transparent
+  );
+  --cortex-bg-overlay-soft: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 74%,
+    transparent
+  );
+  --cortex-bg-overlay-panel: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 97%,
+    transparent
+  );
+  --cortex-bg-overlay-toolbar: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 70%,
+    transparent
+  );
 
   /* surface/base for buttons and inputs (brain) */
-  --cortex-surface-input: color-mix(in srgb, var(--cortex-bg-mid) 82%, transparent);
-  --cortex-surface-input-active: color-mix(in srgb, var(--cortex-accent-blue) 92%, transparent);
-  --cortex-surface-chip: color-mix(in srgb, var(--cortex-accent-green) 13%, transparent);
-  --cortex-surface-chip-border: color-mix(in srgb, var(--cortex-accent-green) 30%, transparent);
+  --cortex-surface-input: color-mix(
+    in srgb,
+    var(--cortex-bg-mid) 82%,
+    transparent
+  );
+  --cortex-surface-input-active: color-mix(
+    in srgb,
+    var(--cortex-accent-blue) 92%,
+    transparent
+  );
+  --cortex-surface-chip: color-mix(
+    in srgb,
+    var(--cortex-accent-green) 13%,
+    transparent
+  );
+  --cortex-surface-chip-border: color-mix(
+    in srgb,
+    var(--cortex-accent-green) 30%,
+    transparent
+  );
 
   /* brain-specific node backgrounds */
-  --cortex-node-brain-bg: linear-gradient(180deg, color-mix(in srgb, var(--cortex-bg-mid) 96%, transparent), color-mix(in srgb, var(--cortex-bg-dark) 96%, transparent));
-  --cortex-node-brain-selected-shadow: 0 0 0 1px rgba(248, 250, 252, 0.9), 0 18px 34px rgba(8, 145, 178, 0.22);
-  --cortex-node-brain-orphan-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35), 0 14px 28px rgba(0, 0, 0, 0.28);
-  --cortex-node-brain-cycle-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4), 0 14px 28px rgba(0, 0, 0, 0.28);
+  --cortex-node-brain-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--cortex-bg-mid) 96%, transparent),
+    color-mix(in srgb, var(--cortex-bg-dark) 96%, transparent)
+  );
+  --cortex-node-brain-selected-shadow:
+    0 0 0 1px rgba(248, 250, 252, 0.9), 0 18px 34px rgba(8, 145, 178, 0.22);
+  --cortex-node-brain-orphan-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.35), 0 14px 28px rgba(0, 0, 0, 0.28);
+  --cortex-node-brain-cycle-shadow:
+    0 0 0 1px rgba(239, 68, 68, 0.4), 0 14px 28px rgba(0, 0, 0, 0.28);
 
   /* overlay/mask */
   --cortex-overlay: color-mix(in srgb, var(--cortex-bg-base) 82%, transparent);
-  --cortex-overlay-border: color-mix(in srgb, var(--cortex-slate-400) 16%, transparent);
+  --cortex-overlay-border: color-mix(
+    in srgb,
+    var(--cortex-slate-400) 16%,
+    transparent
+  );
 
   /* accent foregrounds */
   --cortex-accent-blue: #38bdf8;
@@ -121,19 +173,39 @@
 :root,
 :root[data-cortex-theme="cortex"] {
   --cortex-accent: var(--cortex-brand);
-  --cortex-accent-soft: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
+  --cortex-accent-soft: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
   --cortex-bg: #171717;
   --cortex-surface: #1d1d1d;
   --cortex-surface-strong: #222222;
   --cortex-border: #262626;
-  --cortex-border-strong: color-mix(in srgb, var(--cortex-accent) 52%, var(--cortex-border));
+  --cortex-border-strong: color-mix(
+    in srgb,
+    var(--cortex-accent) 52%,
+    var(--cortex-border)
+  );
   --cortex-text-strong: #e5e5e5;
   --cortex-text: color-mix(in srgb, #e5e5e5 86%, transparent);
   --cortex-text-muted: #8a8a8a;
   --cortex-text-faint: color-mix(in srgb, #8a8a8a 66%, transparent);
-  --cortex-hover-bg: color-mix(in srgb, rgba(255,255,255,0.06) 72%, transparent);
-  --cortex-selected-bg: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
-  --cortex-selected-border: color-mix(in srgb, var(--cortex-accent) 48%, transparent);
+  --cortex-hover-bg: color-mix(
+    in srgb,
+    rgba(255, 255, 255, 0.06) 72%,
+    transparent
+  );
+  --cortex-selected-bg: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
+  --cortex-selected-border: color-mix(
+    in srgb,
+    var(--cortex-accent) 48%,
+    transparent
+  );
   --cortex-surface-raised: #222222;
   --cortex-surface-darker: #111111;
   --cortex-glow-accent: 0 14px 28px rgba(0, 0, 0, 0.28);
@@ -146,20 +218,72 @@
 :root[data-cortex-theme="vscode"] {
   --cortex-accent: #22d3ee;
   --accent-cyan: var(--cortex-accent);
-  --cortex-accent-soft: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
+  --cortex-accent-soft: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
   --cortex-bg: var(--vscode-editor-background);
-  --cortex-surface: color-mix(in srgb, var(--vscode-editor-background) 96%, rgba(255,255,255,0.04));
-  --cortex-surface-strong: color-mix(in srgb, var(--vscode-editor-background) 92%, rgba(255,255,255,0.08));
-  --cortex-border: color-mix(in srgb, var(--vscode-widget-border) 40%, transparent);
-  --cortex-border-strong: color-mix(in srgb, var(--cortex-accent) 52%, var(--cortex-border));
+  --cortex-surface: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 96%,
+    rgba(255, 255, 255, 0.04)
+  );
+  --cortex-surface-strong: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 92%,
+    rgba(255, 255, 255, 0.08)
+  );
+  --cortex-border: color-mix(
+    in srgb,
+    var(--vscode-widget-border) 40%,
+    transparent
+  );
+  --cortex-border-strong: color-mix(
+    in srgb,
+    var(--cortex-accent) 52%,
+    var(--cortex-border)
+  );
   --cortex-text-strong: var(--vscode-editor-foreground);
-  --cortex-text: color-mix(in srgb, var(--vscode-editor-foreground) 86%, transparent);
-  --cortex-text-muted: color-mix(in srgb, var(--vscode-descriptionForeground) 88%, transparent);
-  --cortex-text-faint: color-mix(in srgb, var(--vscode-descriptionForeground) 66%, transparent);
-  --cortex-hover-bg: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
-  --cortex-selected-bg: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
-  --cortex-selected-border: color-mix(in srgb, var(--cortex-accent) 48%, transparent);
-  --cortex-surface-raised: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--cortex-bg-base) 12%);
-  --cortex-surface-darker: color-mix(in srgb, var(--vscode-editor-background) 60%, var(--cortex-bg-mid) 40%);
+  --cortex-text: color-mix(
+    in srgb,
+    var(--vscode-editor-foreground) 86%,
+    transparent
+  );
+  --cortex-text-muted: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 88%,
+    transparent
+  );
+  --cortex-text-faint: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 66%,
+    transparent
+  );
+  --cortex-hover-bg: color-mix(
+    in srgb,
+    var(--vscode-toolbar-hoverBackground) 72%,
+    transparent
+  );
+  --cortex-selected-bg: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
+  --cortex-selected-border: color-mix(
+    in srgb,
+    var(--cortex-accent) 48%,
+    transparent
+  );
+  --cortex-surface-raised: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 88%,
+    var(--cortex-bg-base) 12%
+  );
+  --cortex-surface-darker: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 60%,
+    var(--cortex-bg-mid) 40%
+  );
   --cortex-glow-accent: 0 14px 28px rgba(0, 0, 0, 0.28);
 }

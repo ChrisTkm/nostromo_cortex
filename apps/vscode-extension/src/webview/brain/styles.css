@@ -84,10 +84,14 @@
 .brain-toolbar {
   align-items: center;
   background: var(--cortex-bg-overlay-toolbar);
-  border-bottom: 1px solid color-mix(in srgb, var(--cortex-slate-400) 13%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--cortex-slate-400) 13%, transparent);
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto auto minmax(220px, auto) auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto minmax(
+      220px,
+      auto
+    ) auto auto;
   padding: 10px 14px;
 }
 
@@ -391,7 +395,8 @@
 
 .brain-node__kind {
   background: color-mix(in srgb, var(--cortex-teal-700) 22%, transparent);
-  border: 1px solid color-mix(in srgb, var(--cortex-level-info) 28%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--cortex-level-info) 28%, transparent);
   border-radius: 999px;
   color: var(--cortex-accent-blue);
   max-width: 148px;
@@ -423,7 +428,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 
 .brain-inspector {
   background: var(--cortex-overlay);
@@ -471,7 +475,8 @@
 
 .brain-inspector button {
   background: color-mix(in srgb, var(--cortex-teal-700) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--cortex-level-info) 55%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--cortex-level-info) 55%, transparent);
   border-radius: 6px;
   color: var(--cortex-text-strong);
   cursor: pointer;

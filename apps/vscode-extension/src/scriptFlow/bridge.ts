@@ -16,74 +16,84 @@ type MessageTarget = {
   postMessage(message: unknown): unknown;
 };
 
-export function sendSnapshot(target: MessageTarget, snapshot: ScriptFlowSnapshot) {
+export function sendSnapshot(
+  target: MessageTarget,
+  snapshot: ScriptFlowSnapshot,
+) {
   return target.postMessage({
     type: "scriptFlow:snapshot",
-    snapshot
+    snapshot,
   } satisfies ScriptFlowHostMessage);
 }
 
 export function sendError(target: MessageTarget, error: string) {
   return target.postMessage({
     type: "scriptFlow:error",
-    error
+    error,
   } satisfies ScriptFlowHostMessage);
 }
 
 export function sendUnsupported(target: MessageTarget, language?: string) {
   return target.postMessage({
     type: "scriptFlow:unsupported",
-    ...(language ? { language } : {})
+    ...(language ? { language } : {}),
   } satisfies ScriptFlowHostMessage);
 }
 
 export function sendReady(target: MessageTarget) {
   return target.postMessage({
-    type: "ready"
+    type: "ready",
   } satisfies ScriptFlowWebviewMessage);
 }
 
 export function sendSelectNode(target: MessageTarget, nodeId: string) {
   return target.postMessage({
     type: "scriptFlow:selectNode",
-    nodeId
+    nodeId,
   } satisfies ScriptFlowWebviewMessage);
 }
 
 export function sendDrawerClick(target: MessageTarget, section: string) {
   return target.postMessage({
     type: "scriptFlow:drawerClick",
-    section
+    section,
   } satisfies ScriptFlowWebviewMessage);
 }
 
 export function sendRefresh(target: MessageTarget) {
   return target.postMessage({
-    type: "scriptFlow:refresh"
+    type: "scriptFlow:refresh",
   } satisfies ScriptFlowWebviewMessage);
 }
 
 export function sendOpenGlossary(target: MessageTarget) {
   return target.postMessage({
-    type: "scriptFlow:openGlossary"
+    type: "scriptFlow:openGlossary",
   } satisfies ScriptFlowWebviewMessage);
 }
 
-export function isScriptFlowHostMessage(value: unknown): value is ScriptFlowHostMessage {
+export function isScriptFlowHostMessage(
+  value: unknown,
+): value is ScriptFlowHostMessage {
   if (!value || typeof value !== "object") {
     return false;
   }
 
   const candidate = value as Partial<ScriptFlowHostMessage>;
   return (
-    (candidate.type === "scriptFlow:snapshot" && isScriptFlowSnapshot(candidate.snapshot)) ||
-    (candidate.type === "scriptFlow:error" && typeof candidate.error === "string") ||
+    (candidate.type === "scriptFlow:snapshot" &&
+      isScriptFlowSnapshot(candidate.snapshot)) ||
+    (candidate.type === "scriptFlow:error" &&
+      typeof candidate.error === "string") ||
     (candidate.type === "scriptFlow:unsupported" &&
-      (candidate.language === undefined || typeof candidate.language === "string"))
+      (candidate.language === undefined ||
+        typeof candidate.language === "string"))
   );
 }
 
-export function isScriptFlowWebviewMessage(value: unknown): value is ScriptFlowWebviewMessage {
+export function isScriptFlowWebviewMessage(
+  value: unknown,
+): value is ScriptFlowWebviewMessage {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -91,8 +101,10 @@ export function isScriptFlowWebviewMessage(value: unknown): value is ScriptFlowW
   const candidate = value as Partial<ScriptFlowWebviewMessage>;
   return (
     candidate.type === "ready" ||
-    (candidate.type === "scriptFlow:selectNode" && typeof candidate.nodeId === "string") ||
-    (candidate.type === "scriptFlow:drawerClick" && typeof candidate.section === "string") ||
+    (candidate.type === "scriptFlow:selectNode" &&
+      typeof candidate.nodeId === "string") ||
+    (candidate.type === "scriptFlow:drawerClick" &&
+      typeof candidate.section === "string") ||
     candidate.type === "scriptFlow:refresh" ||
     candidate.type === "scriptFlow:openGlossary"
   );

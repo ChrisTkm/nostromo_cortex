@@ -10,13 +10,24 @@ import {
   ReactFlow,
   type Edge,
   type Node,
-  type NodeProps
+  type NodeProps,
 } from "@xyflow/react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import { isPersistedState, isSnapshot, reconcileHiddenNodeIds, reconcileSelectedNodeId } from "./state";
+import {
+  isPersistedState,
+  isSnapshot,
+  reconcileHiddenNodeIds,
+  reconcileSelectedNodeId,
+} from "./state";
 import type { PersistedBrainState } from "./state";
-import type { BrainEdge, BrainHostMessage, BrainIssueKind, BrainNode, BrainSnapshot } from "../../brain/types";
+import type {
+  BrainEdge,
+  BrainHostMessage,
+  BrainIssueKind,
+  BrainNode,
+  BrainSnapshot,
+} from "../../brain/types";
 import { PageHeader } from "../components/PageHeader";
 
 declare global {
@@ -43,7 +54,16 @@ const vscode = window.acquireVsCodeApi();
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
 const GRAPH_KINDS = ["doc", "tag", "account", "external"] as const;
-const EDGE_FILTERS = ["link", "upstream", "downstream", "references", "standards", "account", "tag", "unresolved"] as const;
+const EDGE_FILTERS = [
+  "link",
+  "upstream",
+  "downstream",
+  "references",
+  "standards",
+  "account",
+  "tag",
+  "unresolved",
+] as const;
 const nodeTypes = { brain: BrainNodeComponent };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
 type LayoutMode = "flow" | "orbit";
@@ -58,16 +78,22 @@ const ISSUE_SEVERITY: Record<BrainIssueKind, number> = {
   cycle: 4,
   "broken-ref": 3,
   "self-reference": 2,
-  orphan: 1
+  orphan: 1,
 };
 const ISSUE_LABEL: Record<BrainIssueKind, string> = {
   truncated: "Scan truncated",
   cycle: "Cycles",
   "broken-ref": "Broken references",
   "self-reference": "Self-references",
-  orphan: "Orphans"
+  orphan: "Orphans",
 };
-const ISSUE_ORDER: BrainIssueKind[] = ["truncated", "cycle", "broken-ref", "self-reference", "orphan"];
+const ISSUE_ORDER: BrainIssueKind[] = [
+  "truncated",
+  "cycle",
+  "broken-ref",
+  "self-reference",
+  "orphan",
+];
 
 export function BrainApp() {
   const persisted = useMemo<PersistedBrainState | null>(() => {
@@ -77,20 +103,24 @@ export function BrainApp() {
     return null;
   }, []);
 
-  const [snapshot, setSnapshot] = useState<BrainSnapshot | null>(persisted?.snapshot ?? null);
+  const [snapshot, setSnapshot] = useState<BrainSnapshot | null>(
+    persisted?.snapshot ?? null,
+  );
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>(
     persisted?.hiddenNodeIds && persisted.snapshot
       ? reconcileHiddenNodeIds(persisted.hiddenNodeIds, persisted.snapshot)
-      : []
+      : [],
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     persisted?.selectedNodeId != null && persisted.snapshot
       ? reconcileSelectedNodeId(persisted.selectedNodeId, persisted.snapshot)
-      : null
+      : null,
   );
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [visibleKinds, setVisibleKinds] = useState<Array<BrainNode["kind"]>>(["doc"]);
+  const [visibleKinds, setVisibleKinds] = useState<Array<BrainNode["kind"]>>([
+    "doc",
+  ]);
   const [visibleEdges, setVisibleEdges] = useState<EdgeFilter[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
@@ -101,8 +131,12 @@ export function BrainApp() {
       if (message?.type === "brain:snapshot") {
         setSnapshot(message.snapshot);
         setError(null);
-        setHiddenNodeIds((current) => reconcileHiddenNodeIds(current, message.snapshot));
-        setSelectedNodeId((current) => reconcileSelectedNodeId(current, message.snapshot));
+        setHiddenNodeIds((current) =>
+          reconcileHiddenNodeIds(current, message.snapshot),
+        );
+        setSelectedNodeId((current) =>
+          reconcileSelectedNodeId(current, message.snapshot),
+        );
         return;
       }
       if (message?.type === "brain:error") {
@@ -120,31 +154,54 @@ export function BrainApp() {
     vscode.setState({
       snapshot,
       hiddenNodeIds,
-      selectedNodeId
+      selectedNodeId,
     } satisfies PersistedBrainState);
   }, [snapshot, hiddenNodeIds, selectedNodeId]);
 
   const flow = useMemo(
-    () => (snapshot ? buildFlow(snapshot, deferredQuery, visibleKinds, visibleEdges, hiddenNodeIds, selectedNodeId, layoutMode) : { nodes: [], edges: [] }),
+    () =>
+      snapshot
+        ? buildFlow(
+            snapshot,
+            deferredQuery,
+            visibleKinds,
+            visibleEdges,
+            hiddenNodeIds,
+            selectedNodeId,
+            layoutMode,
+          )
+        : { nodes: [], edges: [] },
     [
-    deferredQuery,
-    hiddenNodeIds,
-    layoutMode,
-    snapshot,
-    selectedNodeId,
-    visibleEdges,
-    visibleKinds
-    ]
+      deferredQuery,
+      hiddenNodeIds,
+      layoutMode,
+      snapshot,
+      selectedNodeId,
+      visibleEdges,
+      visibleKinds,
+    ],
   );
-  const selectedNode = snapshot?.nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedNode =
+    snapshot?.nodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedLinks = useMemo(
-    () => (snapshot && selectedNode ? relatedLinks(snapshot, selectedNode.id, visibleEdges) : []),
-    [selectedNode, snapshot, visibleEdges]
+    () =>
+      snapshot && selectedNode
+        ? relatedLinks(snapshot, selectedNode.id, visibleEdges)
+        : [],
+    [selectedNode, snapshot, visibleEdges],
   );
-  const nodesByKind = useMemo(() => (snapshot ? groupNodesByKind(snapshot.nodes) : new Map<BrainNode["kind"], BrainNode[]>()), [snapshot]);
+  const nodesByKind = useMemo(
+    () =>
+      snapshot
+        ? groupNodesByKind(snapshot.nodes)
+        : new Map<BrainNode["kind"], BrainNode[]>(),
+    [snapshot],
+  );
 
   function showKind(kind: BrainNode["kind"]) {
-    setVisibleKinds((current) => (current.includes(kind) ? current : [...current, kind]));
+    setVisibleKinds((current) =>
+      current.includes(kind) ? current : [...current, kind],
+    );
     setHiddenNodeIds((current) => {
       const ids = new Set(nodesByKind.get(kind)?.map((node) => node.id) ?? []);
       return current.filter((id) => !ids.has(id));
@@ -157,7 +214,9 @@ export function BrainApp() {
 
   function setNodeVisible(node: BrainNode, isVisible: boolean) {
     if (isVisible) {
-      setVisibleKinds((current) => (current.includes(node.kind) ? current : [...current, node.kind]));
+      setVisibleKinds((current) =>
+        current.includes(node.kind) ? current : [...current, node.kind],
+      );
       setHiddenNodeIds((current) => {
         const hidden = new Set(current);
         hidden.delete(node.id);
@@ -172,7 +231,9 @@ export function BrainApp() {
       });
       return;
     }
-    setHiddenNodeIds((current) => (current.includes(node.id) ? current : [...current, node.id]));
+    setHiddenNodeIds((current) =>
+      current.includes(node.id) ? current : [...current, node.id],
+    );
     if (selectedNodeId === node.id) {
       setSelectedNodeId(null);
     }
@@ -189,7 +250,15 @@ export function BrainApp() {
     if (preset === "refs") {
       setLayoutMode("orbit");
       setVisibleKinds(["doc", "tag", "account", "external"]);
-      setVisibleEdges(["upstream", "downstream", "references", "standards", "account", "tag", "unresolved"]);
+      setVisibleEdges([
+        "upstream",
+        "downstream",
+        "references",
+        "standards",
+        "account",
+        "tag",
+        "unresolved",
+      ]);
       return;
     }
     setLayoutMode("flow");
@@ -198,20 +267,34 @@ export function BrainApp() {
   }
 
   function toggleEdgeFilter(edge: EdgeFilter) {
-    setVisibleEdges((current) => (current.includes(edge) ? current.filter((item) => item !== edge) : [...current, edge]));
+    setVisibleEdges((current) =>
+      current.includes(edge)
+        ? current.filter((item) => item !== edge)
+        : [...current, edge],
+    );
   }
 
   return (
     <div className="brain-app">
       <PageHeader
         title="CORTEX BRAIN"
-        subtitle={snapshot ? snapshot.rootPath : "Choose a folder with .md or .mdx files."}
+        subtitle={
+          snapshot
+            ? snapshot.rootPath
+            : "Choose a folder with .md or .mdx files."
+        }
         actions={
           <>
-            <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
+            <button
+              onClick={() => vscode.postMessage({ type: "brain:pickFolder" })}
+              type="button"
+            >
               Folder
             </button>
-            <button onClick={() => vscode.postMessage({ type: "brain:refresh" })} type="button">
+            <button
+              onClick={() => vscode.postMessage({ type: "brain:refresh" })}
+              type="button"
+            >
               Refresh
             </button>
           </>
@@ -220,7 +303,12 @@ export function BrainApp() {
 
       {snapshot ? (
         <section className="brain-toolbar">
-          <input onChange={(event) => setQuery(event.target.value)} placeholder="Filter docs, tags, accounts..." type="search" value={query} />
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter docs, tags, accounts..."
+            type="search"
+            value={query}
+          />
           <div className="brain-presets" aria-label="View presets">
             <button onClick={() => setPreset("docs")} type="button">
               Docs
@@ -233,16 +321,29 @@ export function BrainApp() {
             </button>
           </div>
           <div className="brain-layout-toggle" aria-label="Layout mode">
-            <button className={layoutMode === "flow" ? "is-active" : ""} onClick={() => setLayoutMode("flow")} type="button">
+            <button
+              className={layoutMode === "flow" ? "is-active" : ""}
+              onClick={() => setLayoutMode("flow")}
+              type="button"
+            >
               Flow
             </button>
-            <button className={layoutMode === "orbit" ? "is-active" : ""} onClick={() => setLayoutMode("orbit")} type="button">
+            <button
+              className={layoutMode === "orbit" ? "is-active" : ""}
+              onClick={() => setLayoutMode("orbit")}
+              type="button"
+            >
               Orbit
             </button>
           </div>
           <div className="brain-edge-filters" aria-label="Relation filters">
             {EDGE_FILTERS.map((edge) => (
-              <button className={visibleEdges.includes(edge) ? "is-active" : ""} key={edge} onClick={() => toggleEdgeFilter(edge)} type="button">
+              <button
+                className={visibleEdges.includes(edge) ? "is-active" : ""}
+                key={edge}
+                onClick={() => toggleEdgeFilter(edge)}
+                type="button"
+              >
                 {edge}
               </button>
             ))}
@@ -265,12 +366,17 @@ export function BrainApp() {
             <span>{snapshot.stats.fileCount} files</span>
             <span>{snapshot.edges.length} edges</span>
             {snapshot.issues.some((issue) => issue.kind === "truncated") ? (
-              <span className="brain-stats__truncated" title="Scan reached cortex.brainMaxFiles. Some .md/.mdx files were not analyzed.">
+              <span
+                className="brain-stats__truncated"
+                title="Scan reached cortex.brainMaxFiles. Some .md/.mdx files were not analyzed."
+              >
                 Scan truncated ({snapshot.stats.fileCount}/+)
               </span>
             ) : null}
             {snapshot.issues.length > 0 ? (
-              <span className="brain-stats__warn">{snapshot.issues.length} issues</span>
+              <span className="brain-stats__warn">
+                {snapshot.issues.length} issues
+              </span>
             ) : null}
             <span>{snapshot.stats.elapsedMs} ms</span>
           </div>
@@ -288,25 +394,48 @@ export function BrainApp() {
                 edges={flow.edges}
                 nodeTypes={nodeTypes}
                 onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                onNodeDoubleClick={(_, node) => vscode.postMessage({ type: "brain:openNode", nodeId: node.id })}
+                onNodeDoubleClick={(_, node) =>
+                  vscode.postMessage({
+                    type: "brain:openNode",
+                    nodeId: node.id,
+                  })
+                }
                 proOptions={{ hideAttribution: true }}
               >
                 <Controls />
                 <MiniMap
                   pannable
                   zoomable
-                  nodeColor={(node) => colorForKind((node.data as GraphNodeData).kind)}
+                  nodeColor={(node) =>
+                    colorForKind((node.data as GraphNodeData).kind)
+                  }
                 />
-                <Background color="rgba(148, 163, 184, 0.12)" gap={22} size={1} variant={BackgroundVariant.Dots} />
+                <Background
+                  color="rgba(148, 163, 184, 0.12)"
+                  gap={22}
+                  size={1}
+                  variant={BackgroundVariant.Dots}
+                />
               </ReactFlow>
             </section>
-            <BrainInspector node={selectedNode} onSelectNode={setSelectedNodeId} related={selectedLinks} snapshot={snapshot} />
+            <BrainInspector
+              node={selectedNode}
+              onSelectNode={setSelectedNodeId}
+              related={selectedLinks}
+              snapshot={snapshot}
+            />
           </>
         ) : (
           <section className="brain-empty">
             <h2>{error ? "Could not scan folder" : "No folder selected"}</h2>
-            <p>{error ?? "Pick any local documentation folder and Cortex will scan .md/.mdx links, tags, accounts, and routes."}</p>
-            <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
+            <p>
+              {error ??
+                "Pick any local documentation folder and Cortex will scan .md/.mdx links, tags, accounts, and routes."}
+            </p>
+            <button
+              onClick={() => vscode.postMessage({ type: "brain:pickFolder" })}
+              type="button"
+            >
               Choose Folder
             </button>
           </section>
@@ -323,7 +452,7 @@ function KindFilter({
   onHideKind,
   onSetNodeVisible,
   onShowKind,
-  visibleKinds
+  visibleKinds,
 }: {
   hiddenNodeIds: string[];
   kind: BrainNode["kind"];
@@ -335,10 +464,14 @@ function KindFilter({
 }) {
   const hidden = new Set(hiddenNodeIds);
   const kindIsVisible = visibleKinds.includes(kind);
-  const visibleCount = kindIsVisible ? nodes.filter((node) => !hidden.has(node.id)).length : 0;
+  const visibleCount = kindIsVisible
+    ? nodes.filter((node) => !hidden.has(node.id)).length
+    : 0;
 
   return (
-    <details className={`brain-kind-filter${kindIsVisible ? " is-active" : ""}`}>
+    <details
+      className={`brain-kind-filter${kindIsVisible ? " is-active" : ""}`}
+    >
       <summary>
         <span className="brain-kind-filter__name">{kind}</span>
         <span className="brain-kind-filter__count">
@@ -360,7 +493,13 @@ function KindFilter({
             const checked = kindIsVisible && !hidden.has(node.id);
             return (
               <label key={node.id}>
-                <input checked={checked} onChange={(event) => onSetNodeVisible(node, event.target.checked)} type="checkbox" />
+                <input
+                  checked={checked}
+                  onChange={(event) =>
+                    onSetNodeVisible(node, event.target.checked)
+                  }
+                  type="checkbox"
+                />
                 <span>{node.label}</span>
               </label>
             );
@@ -371,18 +510,27 @@ function KindFilter({
   );
 }
 
-function BrainNodeComponent({ data, selected }: NodeProps<Node<GraphNodeData>>) {
+function BrainNodeComponent({
+  data,
+  selected,
+}: NodeProps<Node<GraphNodeData>>) {
   return (
     <div
       className={`brain-node brain-node--${data.kind}${data.issue ? ` brain-node--${data.issue}` : ""}${selected ? " brain-node--selected" : ""}`}
     >
       <Handle position={Position.Left} type="target" />
       <div className="brain-node__top">
-        <span className="brain-node__kind">{data.badge ?? data.layer ?? data.kind}</span>
-        {typeof data.count === "number" ? <span className="brain-node__count">{data.count}</span> : null}
+        <span className="brain-node__kind">
+          {data.badge ?? data.layer ?? data.kind}
+        </span>
+        {typeof data.count === "number" ? (
+          <span className="brain-node__count">{data.count}</span>
+        ) : null}
       </div>
       <div className="brain-node__label">{data.label}</div>
-      {data.subtitle ? <div className="brain-node__subtitle">{data.subtitle}</div> : null}
+      {data.subtitle ? (
+        <div className="brain-node__subtitle">{data.subtitle}</div>
+      ) : null}
       <Handle position={Position.Right} type="source" />
     </div>
   );
@@ -392,7 +540,7 @@ function BrainInspector({
   node,
   onSelectNode,
   related,
-  snapshot
+  snapshot,
 }: {
   node: BrainNode | null;
   onSelectNode(nodeId: string): void;
@@ -400,19 +548,27 @@ function BrainInspector({
   snapshot: BrainSnapshot;
 }) {
   if (!node) {
-    const labelOf = (id: string) => snapshot.nodes.find((item) => item.id === id)?.label ?? id;
+    const labelOf = (id: string) =>
+      snapshot.nodes.find((item) => item.id === id)?.label ?? id;
     return (
       <aside className="brain-inspector">
         <div className="brain-inspector__label">Overview</div>
         <h2>{snapshot.stats.fileCount} documents</h2>
-        <p>{snapshot.stats.tagCount} tags, {snapshot.stats.accountCount} accounts, {snapshot.stats.unresolvedCount} unresolved references.</p>
+        <p>
+          {snapshot.stats.tagCount} tags, {snapshot.stats.accountCount}{" "}
+          accounts, {snapshot.stats.unresolvedCount} unresolved references.
+        </p>
         <section>
           <h3>Issues ({snapshot.issues.length})</h3>
           {snapshot.issues.length === 0 ? (
-            <p className="brain-muted">No issues — the related tree is healthy.</p>
+            <p className="brain-muted">
+              No issues — the related tree is healthy.
+            </p>
           ) : null}
           {ISSUE_ORDER.map((kind) => {
-            const items = snapshot.issues.filter((issue) => issue.kind === kind);
+            const items = snapshot.issues.filter(
+              (issue) => issue.kind === kind,
+            );
             if (items.length === 0) {
               return null;
             }
@@ -426,13 +582,20 @@ function BrainInspector({
                     const isWorkspace = issue.nodeId === "__workspace__";
                     if (isWorkspace) {
                       return (
-                        <span key={`${issue.nodeId}-${index}`} className="brain-inspector__issue-workspace">
+                        <span
+                          key={`${issue.nodeId}-${index}`}
+                          className="brain-inspector__issue-workspace"
+                        >
                           {issue.detail ?? "Workspace"}
                         </span>
                       );
                     }
                     return (
-                      <button key={`${issue.nodeId}-${index}`} onClick={() => onSelectNode(issue.nodeId)} type="button">
+                      <button
+                        key={`${issue.nodeId}-${index}`}
+                        onClick={() => onSelectNode(issue.nodeId)}
+                        type="button"
+                      >
                         <span>{kind}</span>
                         {labelOf(issue.nodeId)}
                       </button>
@@ -447,23 +610,49 @@ function BrainInspector({
     );
   }
 
-  const nodeIssues = snapshot.issues.filter((issue) => issue.nodeId === node.id);
+  const nodeIssues = snapshot.issues.filter(
+    (issue) => issue.nodeId === node.id,
+  );
 
   return (
     <aside className="brain-inspector">
       <div className="brain-inspector__label">{node.kind}</div>
       <h2>{node.label}</h2>
-      {node.route ? <p className="brain-inspector__route">{node.route}</p> : null}
+      {node.route ? (
+        <p className="brain-inspector__route">{node.route}</p>
+      ) : null}
       {nodeIssues.length > 0 ? (
-        <p className="brain-inspector__warn">{nodeIssues.map((issue) => ISSUE_LABEL[issue.kind]).join(" · ")}</p>
+        <p className="brain-inspector__warn">
+          {nodeIssues.map((issue) => ISSUE_LABEL[issue.kind]).join(" · ")}
+        </p>
       ) : null}
       {node.description ? <p>{node.description}</p> : null}
       {node.domain || node.layer || node.docKind || node.badge ? (
         <dl className="brain-inspector__meta">
-          {node.badge ? <><dt>Badge</dt><dd>{node.badge}</dd></> : null}
-          {node.domain ? <><dt>Domain</dt><dd>{node.domain}</dd></> : null}
-          {node.layer ? <><dt>Layer</dt><dd>{node.layer}</dd></> : null}
-          {node.docKind ? <><dt>Kind</dt><dd>{node.docKind}</dd></> : null}
+          {node.badge ? (
+            <>
+              <dt>Badge</dt>
+              <dd>{node.badge}</dd>
+            </>
+          ) : null}
+          {node.domain ? (
+            <>
+              <dt>Domain</dt>
+              <dd>{node.domain}</dd>
+            </>
+          ) : null}
+          {node.layer ? (
+            <>
+              <dt>Layer</dt>
+              <dd>{node.layer}</dd>
+            </>
+          ) : null}
+          {node.docKind ? (
+            <>
+              <dt>Kind</dt>
+              <dd>{node.docKind}</dd>
+            </>
+          ) : null}
         </dl>
       ) : null}
       {node.tags?.length ? (
@@ -474,17 +663,32 @@ function BrainInspector({
         </div>
       ) : null}
       {node.kind === "doc" ? (
-        <button onClick={() => vscode.postMessage({ type: "brain:openNode", nodeId: node.id })} type="button">
+        <button
+          onClick={() =>
+            vscode.postMessage({ type: "brain:openNode", nodeId: node.id })
+          }
+          type="button"
+        >
           Open document
         </button>
       ) : null}
       <section>
         <h3>Connected</h3>
-        {related.length === 0 ? <p className="brain-muted">No visible relations.</p> : null}
+        {related.length === 0 ? (
+          <p className="brain-muted">No visible relations.</p>
+        ) : null}
         <div className="brain-related">
           {related.slice(0, 24).map((item) => (
-            <button className={`brain-related__item brain-related__item--${item.relation}`} key={`${item.direction}:${item.relation}:${item.node.id}`} onClick={() => onSelectNode(item.node.id)} type="button">
-              <span>{item.direction === "from" ? "from this doc" : "to this doc"} · {item.relation}</span>
+            <button
+              className={`brain-related__item brain-related__item--${item.relation}`}
+              key={`${item.direction}:${item.relation}:${item.node.id}`}
+              onClick={() => onSelectNode(item.node.id)}
+              type="button"
+            >
+              <span>
+                {item.direction === "from" ? "from this doc" : "to this doc"} ·{" "}
+                {item.relation}
+              </span>
               {item.node.label}
             </button>
           ))}
@@ -501,7 +705,7 @@ function buildFlow(
   visibleEdges: EdgeFilter[],
   hiddenNodeIds: string[],
   selectedNodeId: string | null,
-  layoutMode: LayoutMode
+  layoutMode: LayoutMode,
 ) {
   const visible = new Set(visibleKinds);
   const visibleEdgeSet = new Set(visibleEdges);
@@ -522,11 +726,21 @@ function buildFlow(
         if (!query) {
           return true;
         }
-        return `${node.label} ${node.route ?? ""} ${node.description ?? ""} ${(node.tags ?? []).join(" ")}`.toLowerCase().includes(query);
+        return `${node.label} ${node.route ?? ""} ${node.description ?? ""} ${(node.tags ?? []).join(" ")}`
+          .toLowerCase()
+          .includes(query);
       })
-      .map((node) => node.id)
+      .map((node) => node.id),
   );
-  const orbitNodeIds = layoutMode === "orbit" && selectedNodeId ? focusedNeighborhood(snapshot, selectedNodeId, matchingNodeIds, visibleEdgeSet) : null;
+  const orbitNodeIds =
+    layoutMode === "orbit" && selectedNodeId
+      ? focusedNeighborhood(
+          snapshot,
+          selectedNodeId,
+          matchingNodeIds,
+          visibleEdgeSet,
+        )
+      : null;
   const flowNodeIds = orbitNodeIds ?? matchingNodeIds;
 
   const nodes: Array<Node<GraphNodeData>> = snapshot.nodes
@@ -539,12 +753,15 @@ function buildFlow(
       data: {
         kind: node.kind,
         label: node.label,
-        subtitle: node.kind === "doc" ? node.docKind ?? compactRoute(node.route) : node.kind,
+        subtitle:
+          node.kind === "doc"
+            ? (node.docKind ?? compactRoute(node.route))
+            : node.kind,
         badge: node.badge,
         layer: node.layer,
         count: degree.get(node.id) ?? 0,
-        issue: issueByNode.get(node.id)
-      }
+        issue: issueByNode.get(node.id),
+      },
     }));
 
   const edges: Edge[] = snapshot.edges
@@ -560,18 +777,30 @@ function buildFlow(
       markerEnd: { type: MarkerType.ArrowClosed, color: colorForEdge(edge) },
       style: {
         stroke: colorForEdge(edge),
-        opacity: edge.kind === "unresolved" ? 0.45 : edge.label === "references" ? 0.92 : 0.72,
+        opacity:
+          edge.kind === "unresolved"
+            ? 0.45
+            : edge.label === "references"
+              ? 0.92
+              : 0.72,
         strokeWidth:
-          edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards"
+          edge.label === "upstream" ||
+          edge.label === "downstream" ||
+          edge.label === "references" ||
+          edge.label === "standards"
             ? 2.4
             : edge.kind === "link"
               ? 2
               : 1.5,
-        strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined
-      }
+        strokeDasharray: edge.kind === "unresolved" ? "5 5" : undefined,
+      },
     }));
 
-  if (layoutMode === "orbit" && selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
+  if (
+    layoutMode === "orbit" &&
+    selectedNodeId &&
+    nodes.some((node) => node.id === selectedNodeId)
+  ) {
     return computeOrbitLayout(nodes, edges, selectedNodeId);
   }
 
@@ -580,7 +809,13 @@ function buildFlow(
 
 function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 110, marginx: 40, marginy: 40 });
+  graph.setGraph({
+    rankdir: "LR",
+    nodesep: 44,
+    ranksep: 110,
+    marginx: 40,
+    marginy: 40,
+  });
 
   for (const node of nodes) {
     graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
@@ -599,19 +834,23 @@ function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
         data: {
           ...node.data,
           label: node.data.label,
-          subtitle: node.data.subtitle
+          subtitle: node.data.subtitle,
         },
         position: {
           x: position.x - NODE_WIDTH / 2,
-          y: position.y - NODE_HEIGHT / 2
-        }
+          y: position.y - NODE_HEIGHT / 2,
+        },
       };
     }),
-    edges
+    edges,
   };
 }
 
-function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], selectedNodeId: string) {
+function computeOrbitLayout(
+  nodes: Array<Node<GraphNodeData>>,
+  edges: Edge[],
+  selectedNodeId: string,
+) {
   const selected = nodes.find((node) => node.id === selectedNodeId);
   if (!selected) {
     return computeLayout(nodes, edges);
@@ -622,7 +861,8 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
     if (edge.source !== selectedNodeId && edge.target !== selectedNodeId) {
       continue;
     }
-    const neighborId = edge.source === selectedNodeId ? edge.target : edge.source;
+    const neighborId =
+      edge.source === selectedNodeId ? edge.target : edge.source;
     const neighbor = nodes.find((node) => node.id === neighborId);
     if (!neighbor) {
       continue;
@@ -637,7 +877,12 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
 
   const positioned = new Map<string, { x: number; y: number }>();
   positioned.set(selectedNodeId, { x: 0, y: 0 });
-  const slots: Array<{ relation: EdgeFilter; start: number; end: number; radius: number }> = [
+  const slots: Array<{
+    relation: EdgeFilter;
+    start: number;
+    end: number;
+    radius: number;
+  }> = [
     { relation: "upstream", start: 150, end: 210, radius: 360 },
     { relation: "downstream", start: -30, end: 30, radius: 360 },
     { relation: "references", start: 45, end: 135, radius: 330 },
@@ -645,7 +890,7 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
     { relation: "account", start: 315, end: 405, radius: 420 },
     { relation: "tag", start: 250, end: 290, radius: 470 },
     { relation: "link", start: 110, end: 250, radius: 500 },
-    { relation: "unresolved", start: 20, end: 80, radius: 500 }
+    { relation: "unresolved", start: 20, end: 80, radius: 500 },
   ];
 
   for (const slot of slots) {
@@ -655,12 +900,15 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
         return;
       }
       const spread = slot.end - slot.start;
-      const angle = items.length === 1 ? (slot.start + slot.end) / 2 : slot.start + (spread * index) / Math.max(items.length - 1, 1);
+      const angle =
+        items.length === 1
+          ? (slot.start + slot.end) / 2
+          : slot.start + (spread * index) / Math.max(items.length - 1, 1);
       const radians = (angle * Math.PI) / 180;
       const radius = slot.radius + Math.floor(index / 8) * 120;
       positioned.set(node.id, {
         x: Math.cos(radians) * radius,
-        y: Math.sin(radians) * radius
+        y: Math.sin(radians) * radius,
       });
     });
   }
@@ -670,17 +918,17 @@ function computeOrbitLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[], se
     nodes: nodes.map((node) => {
       const position = positioned.get(node.id) ?? {
         x: Math.cos(fallbackIndex) * 560,
-        y: Math.sin(fallbackIndex++) * 560
+        y: Math.sin(fallbackIndex++) * 560,
       };
       return {
         ...node,
         position: {
           x: position.x - NODE_WIDTH / 2,
-          y: position.y - NODE_HEIGHT / 2
-        }
+          y: position.y - NODE_HEIGHT / 2,
+        },
       };
     }),
-    edges
+    edges,
   };
 }
 
@@ -688,7 +936,7 @@ function focusedNeighborhood(
   snapshot: BrainSnapshot,
   selectedNodeId: string,
   matchingNodeIds: ReadonlySet<string>,
-  visibleEdges: ReadonlySet<EdgeFilter>
+  visibleEdges: ReadonlySet<EdgeFilter>,
 ) {
   const ids = new Set<string>();
   if (matchingNodeIds.has(selectedNodeId)) {
@@ -710,7 +958,10 @@ function focusedNeighborhood(
   return ids.size > 0 ? ids : matchingNodeIds;
 }
 
-function buildDegreeMap(snapshot: BrainSnapshot, visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS)) {
+function buildDegreeMap(
+  snapshot: BrainSnapshot,
+  visibleEdges = new Set<EdgeFilter>(EDGE_FILTERS),
+) {
   const degree = new Map<string, number>();
   for (const edge of snapshot.edges) {
     if (!visibleEdges.has(edgeFilterFor(edge))) {
@@ -733,13 +984,17 @@ function groupNodesByKind(nodes: BrainNode[]) {
   for (const [kind, items] of grouped) {
     grouped.set(
       kind,
-      items.sort((left, right) => left.label.localeCompare(right.label))
+      items.sort((left, right) => left.label.localeCompare(right.label)),
     );
   }
   return grouped;
 }
 
-function relatedLinks(snapshot: BrainSnapshot, nodeId: string, visibleEdges: EdgeFilter[]): RelatedLink[] {
+function relatedLinks(
+  snapshot: BrainSnapshot,
+  nodeId: string,
+  visibleEdges: EdgeFilter[],
+): RelatedLink[] {
   const visibleEdgeSet = new Set(visibleEdges);
   const nodesById = new Map(snapshot.nodes.map((node) => [node.id, node]));
   const links: RelatedLink[] = [];
@@ -771,7 +1026,7 @@ function relatedLinks(snapshot: BrainSnapshot, nodeId: string, visibleEdges: Edg
       left.relation.localeCompare(right.relation) ||
       left.direction.localeCompare(right.direction) ||
       left.node.kind.localeCompare(right.node.kind) ||
-      left.node.label.localeCompare(right.node.label)
+      left.node.label.localeCompare(right.node.label),
   );
 }
 
@@ -800,10 +1055,19 @@ function colorForKind(kind: BrainNode["kind"]) {
 }
 
 function edgeFilterFor(edge: BrainEdge): EdgeFilter {
-  if (edge.kind === "tag" || edge.kind === "account" || edge.kind === "unresolved") {
+  if (
+    edge.kind === "tag" ||
+    edge.kind === "account" ||
+    edge.kind === "unresolved"
+  ) {
     return edge.kind;
   }
-  if (edge.label === "upstream" || edge.label === "downstream" || edge.label === "references" || edge.label === "standards") {
+  if (
+    edge.label === "upstream" ||
+    edge.label === "downstream" ||
+    edge.label === "references" ||
+    edge.label === "standards"
+  ) {
     return edge.label;
   }
   return "link";
@@ -811,7 +1075,12 @@ function edgeFilterFor(edge: BrainEdge): EdgeFilter {
 
 function edgeFilterForId(edgeId: string): EdgeFilter {
   const [, label] = edgeId.split(":");
-  if (label === "upstream" || label === "downstream" || label === "references" || label === "standards") {
+  if (
+    label === "upstream" ||
+    label === "downstream" ||
+    label === "references" ||
+    label === "standards"
+  ) {
     return label;
   }
   if (edgeId.startsWith("tag:")) {
@@ -846,4 +1115,3 @@ function colorForEdge(edge: BrainEdge) {
       return "#64748b";
   }
 }
-

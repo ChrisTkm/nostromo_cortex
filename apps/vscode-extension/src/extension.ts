@@ -788,7 +788,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         if (picked && picked[0]) {
           await vscode.workspace
             .getConfiguration("cortex")
-            .update("logsSources", [picked[0].fsPath], vscode.ConfigurationTarget.Global);
+            .update(
+              "logsSources",
+              [picked[0].fsPath],
+              vscode.ConfigurationTarget.Global,
+            );
           await postLogsList();
         }
         return;
@@ -836,7 +840,10 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       ) {
         await postLogsOlder(message.beforeTimestamp);
       }
-      if (message?.type === "logs:toggleLive" && typeof message.live === "boolean") {
+      if (
+        message?.type === "logs:toggleLive" &&
+        typeof message.live === "boolean"
+      ) {
         if (message.live) {
           const liveMs = vscode.workspace
             .getConfiguration("cortex")
@@ -1247,7 +1254,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         try {
           await service.archivePlan(code);
         } catch (err) {
-          void vscode.window.showWarningMessage(`Archive failed: ${String(err)}`);
+          void vscode.window.showWarningMessage(
+            `Archive failed: ${String(err)}`,
+          );
         }
         await postPlansSnapshot();
         return;
@@ -1273,7 +1282,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
             planEditorPanel.dispose();
           }
         } catch (err) {
-          void vscode.window.showWarningMessage(`Delete failed: ${String(err)}`);
+          void vscode.window.showWarningMessage(
+            `Delete failed: ${String(err)}`,
+          );
         }
         await postPlansSnapshot();
         return;
@@ -2629,8 +2640,6 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     ),
   );
 
-
-
   async function markTaskStatus(
     arg: TaskTreeNode | { kind?: string; task?: { code?: string } } | undefined,
     newStatus: TaskRecord["status"],
@@ -2921,8 +2930,10 @@ export async function deactivate() {
   disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
-  const { clearScriptFlowCache } = await import("./scriptFlow/analyzers/index.js");
-  const { clearCrossFileCache } = await import("./scriptFlow/crossFileResolver.js");
+  const { clearScriptFlowCache } =
+    await import("./scriptFlow/analyzers/index.js");
+  const { clearCrossFileCache } =
+    await import("./scriptFlow/crossFileResolver.js");
   clearScriptFlowCache();
   clearCrossFileCache();
 }
@@ -3338,7 +3349,10 @@ async function pickConnectionSettings(
 async function buildScriptFlowDelivery(
   request: ScriptFlowRequest,
 ): Promise<ScriptFlowDelivery> {
-  const [{ resolveScriptFlowLanguage, analyzeScriptFlowDocument }, { expandCrossFileImports }] = await Promise.all([
+  const [
+    { resolveScriptFlowLanguage, analyzeScriptFlowDocument },
+    { expandCrossFileImports },
+  ] = await Promise.all([
     import("./scriptFlow/analyzers/index.js"),
     import("./scriptFlow/crossFileResolver.js"),
   ]);

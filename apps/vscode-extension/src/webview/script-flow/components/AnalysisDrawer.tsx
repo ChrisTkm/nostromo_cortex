@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 
 import type { ScriptFlowAnalysis } from "../../../scriptFlow/types.js";
 
-type DrawerSection = "summary" | "entryPoints" | "decisions" | "loops" | "observations";
+type DrawerSection =
+  | "summary"
+  | "entryPoints"
+  | "decisions"
+  | "loops"
+  | "observations";
 type ActionableSection = Exclude<DrawerSection, "summary" | "observations">;
 
 type AnalysisDrawerProps = {
@@ -17,9 +22,19 @@ type AnalysisDrawerProps = {
 type DrawerItemRefMap = Map<string, HTMLButtonElement>;
 
 export function AnalysisDrawer(props: AnalysisDrawerProps) {
-  const { activeNodeId, analysis, isCollapsed, nodeLabels, onSelectNode, onToggle } = props;
+  const {
+    activeNodeId,
+    analysis,
+    isCollapsed,
+    nodeLabels,
+    onSelectNode,
+    onToggle,
+  } = props;
   const itemRefs = useRef<DrawerItemRefMap>(new Map());
-  const activeKey = useMemo(() => resolveDrawerKey(analysis, activeNodeId), [activeNodeId, analysis]);
+  const activeKey = useMemo(
+    () => resolveDrawerKey(analysis, activeNodeId),
+    [activeNodeId, analysis],
+  );
   const summaryLines = analysis.summary
     .split("\n")
     .map((line) => line.trim())
@@ -33,7 +48,7 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
     const element = itemRefs.current.get(activeKey);
     element?.scrollIntoView({
       block: "nearest",
-      behavior: "smooth"
+      behavior: "smooth",
     });
   }, [activeKey]);
 
@@ -67,7 +82,9 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
           onClick={onToggle}
           type="button"
         >
-          <span className="script-flow-drawer__chevron script-flow-drawer__chevron--open">⌃</span>
+          <span className="script-flow-drawer__chevron script-flow-drawer__chevron--open">
+            ⌃
+          </span>
         </button>
       </div>
 
@@ -87,7 +104,9 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
             {analysis.entryPoints.length > 0 ? (
               analysis.entryPoints.map((nodeId) => (
                 <button
-                  className={itemClassName(activeKey === `entryPoints:${nodeId}`)}
+                  className={itemClassName(
+                    activeKey === `entryPoints:${nodeId}`,
+                  )}
                   key={nodeId}
                   onClick={() => onSelectNode(nodeId, "entryPoints")}
                   ref={bindItemRef(itemRefs, `entryPoints:${nodeId}`)}
@@ -108,14 +127,19 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
             {analysis.decisions.length > 0 ? (
               analysis.decisions.map((decision) => (
                 <button
-                  className={itemClassName(activeKey === `decisions:${decision.nodeId}`)}
+                  className={itemClassName(
+                    activeKey === `decisions:${decision.nodeId}`,
+                  )}
                   key={decision.nodeId}
                   onClick={() => onSelectNode(decision.nodeId, "decisions")}
                   ref={bindItemRef(itemRefs, `decisions:${decision.nodeId}`)}
                   type="button"
                 >
                   <span>{decision.label}</span>
-                  <span className="script-flow-drawer-item__meta">{decision.branches} branch{decision.branches === 1 ? "" : "es"}</span>
+                  <span className="script-flow-drawer-item__meta">
+                    {decision.branches} branch
+                    {decision.branches === 1 ? "" : "es"}
+                  </span>
                 </button>
               ))
             ) : (
@@ -130,14 +154,18 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
             {analysis.loops.length > 0 ? (
               analysis.loops.map((loop) => (
                 <button
-                  className={itemClassName(activeKey === `loops:${loop.nodeId}`)}
+                  className={itemClassName(
+                    activeKey === `loops:${loop.nodeId}`,
+                  )}
                   key={loop.nodeId}
                   onClick={() => onSelectNode(loop.nodeId, "loops")}
                   ref={bindItemRef(itemRefs, `loops:${loop.nodeId}`)}
                   type="button"
                 >
                   <span>{loop.label}</span>
-                  <span className="script-flow-drawer-item__meta">{loop.kind}</span>
+                  <span className="script-flow-drawer-item__meta">
+                    {loop.kind}
+                  </span>
                 </button>
               ))
             ) : (
@@ -150,7 +178,9 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
           <div className="script-flow-drawer-section__title">Observaciones</div>
           <div className="script-flow-drawer-observations">
             {analysis.observations.length > 0 ? (
-              analysis.observations.map((observation) => <p key={observation}>{observation}</p>)
+              analysis.observations.map((observation) => (
+                <p key={observation}>{observation}</p>
+              ))
             ) : (
               <div className="script-flow-drawer-empty">No observations.</div>
             )}
@@ -161,7 +191,10 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
   );
 }
 
-function resolveDrawerKey(analysis: ScriptFlowAnalysis, activeNodeId: string | null) {
+function resolveDrawerKey(
+  analysis: ScriptFlowAnalysis,
+  activeNodeId: string | null,
+) {
   if (!activeNodeId) {
     return null;
   }
