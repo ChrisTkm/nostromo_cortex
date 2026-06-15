@@ -29,6 +29,8 @@ import {
   type ScriptFlowNodeKind,
   type ScriptFlowSnapshot,
 } from "../../scriptFlow/types.js";
+import { PageHeader } from "../components/PageHeader";
+import { PanelFooter } from "../components/PanelFooter";
 import { AnalysisDrawer } from "./components/AnalysisDrawer";
 import { FlowNode, type FlowNodeData } from "./components/FlowNode";
 import { vscode } from "./vscodeApi";
@@ -273,55 +275,34 @@ export function ScriptFlowApp() {
 
   return (
     <div className={`script-flow-app script-flow-app--${state.status}`}>
-      <header className="page-header">
-        <div className="page-header__row">
-          <div className="page-header__brand">
-            <span className="page-header__prefix">/// </span>CORTEX SCRIPT FLOW
-          </div>
-          <div className="page-header__actions">
+      <PageHeader
+        title="CORTEX SCRIPT FLOW"
+        subtitle={
+          state.status === "snapshot"
+            ? shortFilename(state.snapshot.metadata.path)
+            : undefined
+        }
+        actions={
+          <>
             {state.status === "snapshot" ? (
-              <>
-                <button
-                  className="script-flow-button script-flow-button--icon"
-                  onClick={() =>
-                    setOrientation((o) => (o === "LR" ? "TB" : "LR"))
-                  }
-                  title={`Switch to ${orientation === "LR" ? "top-bottom" : "left-right"} layout`}
-                  type="button"
-                >
-                  {orientation === "LR" ? "\u21C4" : "\u21C5"}
-                </button>
-                <button
-                  className="script-flow-button script-flow-button--with-icon"
-                  onClick={() => {
-                    setSearchOpen(true);
-                    setSearchQuery("");
-                    setActiveMatchIndex(0);
-                  }}
-                  title="Search nodes (Ctrl+K)"
-                  type="button"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="script-flow-button__glyph"
-                  >
-                    {"\u2315"}
-                  </span>
-                  Search
-                </button>
-                <button
-                  className="script-flow-button"
-                  onClick={() =>
-                    downloadFlowAsPng(state.snapshot.metadata.path)
-                  }
-                  type="button"
-                >
-                  PNG
-                </button>
-              </>
+              <button
+                className="script-flow-button--with-icon"
+                onClick={() => {
+                  setSearchOpen(true);
+                  setSearchQuery("");
+                  setActiveMatchIndex(0);
+                }}
+                title="Search nodes (Ctrl+K)"
+                type="button"
+              >
+                <span aria-hidden="true" className="script-flow-button__glyph">
+                  {"\u2315"}
+                </span>
+                Search
+              </button>
             ) : null}
             <button
-              className="script-flow-button script-flow-button--with-icon"
+              className="script-flow-button--with-icon"
               onClick={() => sendOpenGlossary(vscode)}
               title="Glossary: node and edge types used in the flow"
               type="button"
@@ -331,39 +312,18 @@ export function ScriptFlowApp() {
               </span>
               Glossary
             </button>
-            <button
-              className="script-flow-button"
-              onClick={() => sendRefresh(vscode)}
-              type="button"
-            >
+            <button onClick={() => sendRefresh(vscode)} type="button">
               Refresh
             </button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main
         className={`script-flow-surface${state.status !== "snapshot" ? " script-flow-surface--state" : ""}${isDrawerCollapsed ? " script-flow-surface--drawer-collapsed" : ""}`}
       >
         {state.status === "snapshot" ? (
           <section className="script-flow-panel">
-            <div className="script-flow-stats">
-              <span
-                className="script-flow-stats__file"
-                title={state.snapshot.metadata.path}
-              >
-                {shortFilename(state.snapshot.metadata.path)}
-              </span>
-              <span className="script-flow-stats__chip">
-                {state.snapshot.metadata.language}
-              </span>
-              <span className="script-flow-stats__chip">
-                {state.snapshot.nodes.length} nodes
-              </span>
-              <span className="script-flow-stats__chip">
-                {state.snapshot.edges.length} edges
-              </span>
-            </div>
             <div className="script-flow-canvas">
               <ReactFlow
                 fitView
@@ -494,6 +454,50 @@ export function ScriptFlowApp() {
           />
         ) : null}
       </main>
+
+      {state.status === "snapshot" ? (
+        <PanelFooter
+          left={
+            <>
+              <span
+                className="panel-footer__label"
+                title={state.snapshot.metadata.path}
+              >
+                {shortFilename(state.snapshot.metadata.path)}
+              </span>
+              <span className="panel-footer__label">
+                {state.snapshot.metadata.language}
+              </span>
+              <span className="panel-footer__label">
+                {state.snapshot.nodes.length} nodes ·{" "}
+                {state.snapshot.edges.length} edges
+              </span>
+            </>
+          }
+          right={
+            <>
+              <button
+                className="panel-footer__button"
+                onClick={() =>
+                  setOrientation((o) => (o === "LR" ? "TB" : "LR"))
+                }
+                title={`Switch to ${orientation === "LR" ? "top-bottom" : "left-right"} layout`}
+                type="button"
+              >
+                {orientation === "LR" ? "Layout: ⇄" : "Layout: ⇅"}
+              </button>
+              <button
+                className="panel-footer__button"
+                onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)}
+                title="Export PNG (2x)"
+                type="button"
+              >
+                PNG
+              </button>
+            </>
+          }
+        />
+      ) : null}
     </div>
   );
 }

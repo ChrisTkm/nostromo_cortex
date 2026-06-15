@@ -1,4 +1,5 @@
 @import "../components/PageHeader.css";
+@import "../components/PanelFooter.css";
 
 .script-flow-app {
   height: 100%;
