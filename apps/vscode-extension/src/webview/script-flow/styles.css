@@ -533,6 +533,17 @@
   justify-content: center;
 }
 
+.script-flow-button--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.script-flow-button__glyph {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .script-flow-search {
   position: absolute;
   top: 12px;

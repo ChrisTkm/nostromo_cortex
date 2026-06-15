@@ -291,7 +291,7 @@ export function ScriptFlowApp() {
                   {orientation === "LR" ? "\u21C4" : "\u21C5"}
                 </button>
                 <button
-                  className="script-flow-button script-flow-button--icon"
+                  className="script-flow-button script-flow-button--with-icon"
                   onClick={() => {
                     setSearchOpen(true);
                     setSearchQuery("");
@@ -300,7 +300,13 @@ export function ScriptFlowApp() {
                   title="Search nodes (Ctrl+K)"
                   type="button"
                 >
-                  \u2315
+                  <span
+                    aria-hidden="true"
+                    className="script-flow-button__glyph"
+                  >
+                    {"\u2315"}
+                  </span>
+                  Search
                 </button>
                 <button
                   className="script-flow-button"
@@ -314,12 +320,15 @@ export function ScriptFlowApp() {
               </>
             ) : null}
             <button
-              className="script-flow-button"
+              className="script-flow-button script-flow-button--with-icon"
               onClick={() => sendOpenGlossary(vscode)}
-              title="Open glossary"
+              title="Glossary: node and edge types used in the flow"
               type="button"
             >
-              ?
+              <span aria-hidden="true" className="script-flow-button__glyph">
+                ?
+              </span>
+              Glossary
             </button>
             <button
               className="script-flow-button"
