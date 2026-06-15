@@ -8,7 +8,6 @@ import {
   type TaskFilter,
   type TaskRecord,
 } from "@cortex/core";
-import { MongoClient } from "mongodb";
 import path from "node:path";
 import * as vscode from "vscode";
 
@@ -22,15 +21,6 @@ import {
   webviewPlanPatchToDocumentPatch,
 } from "./service.js";
 import { clampAutoRefreshSeconds, clampLogsLimit } from "./logs/autoRefresh.js";
-import {
-  analyzeScriptFlowDocument,
-  clearScriptFlowCache,
-  resolveScriptFlowLanguage,
-} from "./scriptFlow/analyzers/index.js";
-import {
-  clearCrossFileCache,
-  expandCrossFileImports,
-} from "./scriptFlow/crossFileResolver.js";
 import { SCRIPT_FLOW_GLOSSARY_MD } from "./scriptFlow/glossary.js";
 import {
   isScriptFlowWebviewMessage,
@@ -2931,6 +2921,8 @@ export async function deactivate() {
   disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
+  const { clearScriptFlowCache } = await import("./scriptFlow/analyzers/index.js");
+  const { clearCrossFileCache } = await import("./scriptFlow/crossFileResolver.js");
   clearScriptFlowCache();
   clearCrossFileCache();
 }
@@ -3239,6 +3231,7 @@ async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
 }
 
 async function canConnectToMongoUrl(url: string) {
+  const { MongoClient } = await import("mongodb");
   const client = new MongoClient(url, { serverSelectionTimeoutMS: 3000 });
   try {
     await client.connect();
@@ -3345,6 +3338,10 @@ async function pickConnectionSettings(
 async function buildScriptFlowDelivery(
   request: ScriptFlowRequest,
 ): Promise<ScriptFlowDelivery> {
+  const [{ resolveScriptFlowLanguage, analyzeScriptFlowDocument }, { expandCrossFileImports }] = await Promise.all([
+    import("./scriptFlow/analyzers/index.js"),
+    import("./scriptFlow/crossFileResolver.js"),
+  ]);
   const resolved = await resolveScriptFlowDocument(request);
   if (resolved.kind === "error") {
     return { type: "error", error: resolved.error };

@@ -425,6 +425,11 @@
           "type": "string",
           "default": "any",
           "description": "Default agent assigned to new tasks created via cortex.newTask (e.g. codex, cursor, human). Falls back to 'any' if empty."
+        },
+        "cortex.uiFont": {
+          "type": "string",
+          "default": "JetBrains Mono",
+          "description": "Font family for Cortex panels. Default is 'JetBrains Mono'. Set to 'Inter' for a sans-serif UI."
         }
       }
     }
@@ -433,6 +438,7 @@
     "dev": "node esbuild.mjs --watch",
     "build": "node esbuild.mjs",
     "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "package:vsix": "vsce package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {

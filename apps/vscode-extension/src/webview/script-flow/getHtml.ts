@@ -4,6 +4,10 @@ export function getScriptFlowHtml(webview: vscode.Webview, extensionUri: vscode.
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "script-flow.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "script-flow.css"));
   const csp = `default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+  const uiFont = vscode.workspace.getConfiguration("cortex").get<string>("uiFont", "JetBrains Mono");
+  const fontStack = uiFont === "Inter"
+    ? `'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+    : `'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace`;
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -15,6 +19,7 @@ export function getScriptFlowHtml(webview: vscode.Webview, extensionUri: vscode.
       <link rel="stylesheet" href="${styleUri}" />
       <style>
         :root {
+          --cortex-font: ${fontStack};
           color-scheme: dark;
         }
 
@@ -34,7 +39,7 @@ export function getScriptFlowHtml(webview: vscode.Webview, extensionUri: vscode.
           padding: 0;
           background: var(--vscode-editor-background);
           color: var(--vscode-editor-foreground);
-          font-family: var(--vscode-font-family), sans-serif;
+          font-family: var(--cortex-font);
         }
       </style>
     </head>

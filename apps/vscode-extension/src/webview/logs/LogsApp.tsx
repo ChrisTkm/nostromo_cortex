@@ -14,6 +14,7 @@ import {
   type ProcessRow,
 } from "./state";
 import { RunDrawer } from "./components/RunDrawer";
+import { PageHeader } from "../components/PageHeader";
 
 type LogsMessage =
   | { type: "logs:list"; logs: LogRecord[]; sources?: string[]; hasMore: boolean }
@@ -123,32 +124,32 @@ export function LogsApp() {
   return (
     <div className="logs-shell">
       {/* ===== Header ===== */}
-      <header className="logs-head">
-        <div className="logs-head__brand">
-          <span className="logs-head__slash">/// </span>CORTEX LOGS
-        </div>
-        <div className="logs-head__actions">
-          <span className="logs-head__folder" title={sources.join(", ")}>📁 {folderLabel}</span>
-          <button className="logs-btn logs-btn--accent" type="button" onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}>
-            Change
-          </button>
-          <button
-            className={`logs-btn${live ? " logs-btn--live" : ""}`}
-            type="button"
-            onClick={() => {
-              const next = !live;
-              setLive(next);
-              vscode.postMessage({ type: "logs:toggleLive", live: next });
-            }}
-          >
-            {live ? "● LIVE" : "LIVE"}
-            {live && lastRefreshAt ? ` · ${formatLiveSince(lastRefreshAt)}` : ""}
-          </button>
-          <button className="logs-btn" type="button" onClick={() => vscode.postMessage({ type: "logs:refresh" })}>
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="CORTEX LOGS"
+        actions={
+          <>
+            <span className="logs-head__folder" title={sources.join(", ")}>📁 {folderLabel}</span>
+            <button className="logs-btn logs-btn--accent" type="button" onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}>
+              Change
+            </button>
+            <button
+              className={`logs-btn${live ? " logs-btn--live" : ""}`}
+              type="button"
+              onClick={() => {
+                const next = !live;
+                setLive(next);
+                vscode.postMessage({ type: "logs:toggleLive", live: next });
+              }}
+            >
+              {live ? "● LIVE" : "LIVE"}
+              {live && lastRefreshAt ? ` · ${formatLiveSince(lastRefreshAt)}` : ""}
+            </button>
+            <button className="logs-btn" type="button" onClick={() => vscode.postMessage({ type: "logs:refresh" })}>
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       {/* ===== Filters ===== */}
       <div className="logs-filterbar">

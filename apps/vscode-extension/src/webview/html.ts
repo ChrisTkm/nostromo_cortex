@@ -4,6 +4,10 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.css"));
   const csp = `default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+  const uiFont = vscode.workspace.getConfiguration("cortex").get<string>("uiFont", "JetBrains Mono");
+  const fontStack = uiFont === "Inter"
+    ? `'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+    : `'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace`;
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -15,6 +19,7 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
       <link rel="stylesheet" href="${styleUri}" />
       <style>
         :root {
+          --cortex-font: ${fontStack};
           color-scheme: dark;
         }
 
@@ -37,7 +42,7 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
             radial-gradient(circle at top right, rgba(10, 170, 145, 0.12) 0%, transparent 24%),
             linear-gradient(180deg, color-mix(in srgb, var(--vscode-editor-background) 94%, #06080d 6%), var(--vscode-editor-background));
           color: var(--vscode-editor-foreground);
-          font-family: var(--vscode-font-family), sans-serif;
+          font-family: var(--cortex-font);
         }
       </style>
     </head>

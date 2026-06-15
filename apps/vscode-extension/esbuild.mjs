@@ -24,7 +24,10 @@ const shared = {
   bundle: true,
   sourcemap: minify ? "linked" : true,
   minify,
-  format: "esm",
+  // VS Code loads the extension host entry via CommonJS. ESM + code-splitting
+  // (DS-04) produced an ESM bundle with chunks that the host cannot load,
+  // breaking activation/F5. Keep the extension as a single CJS file.
+  format: "cjs",
   platform: "node",
   target: "node20"
 };
@@ -44,15 +47,8 @@ const contexts = await Promise.all([
   esbuild.context({
     ...shared,
     entryPoints: ["src/extension.ts"],
-    format: "cjs",
     outfile: "dist/extension.cjs",
     external: ["vscode"],
-    banner: {
-      js: "var __cortex_import_meta_url=require('node:url').pathToFileURL(__filename).toString();"
-    },
-    define: {
-      "import.meta.url": "__cortex_import_meta_url"
-    }
   }),
   esbuild.context({
     ...browserBundle,

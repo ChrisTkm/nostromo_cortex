@@ -270,7 +270,7 @@
 }
 
 .react-flow__node-default {
-  font-family: var(--vscode-font-family), sans-serif;
+  font-family: var(--cortex-font);
 }
 
 .react-flow__node-default div:first-child {

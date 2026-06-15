@@ -94,7 +94,7 @@
   max-width: 720px;
   margin: 0 auto;
   padding: 16px;
-  font-family: var(--vscode-font-family), sans-serif;
+  font-family: var(--cortex-font);
   font-size: 13px;
   color: var(--vscode-editor-foreground);
 }
