@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ActionPlanRecord, TaskRecord } from "@cortex/core";
 import { AgentSelect, type CatalogAgent } from "../components/AgentSelect";
+import { PageHeader } from "../components/PageHeader";
 
 type PlanEditorMessage =
   | { type: "planEditor:load"; plan: ActionPlanRecord; agents: CatalogAgent[]; tasks?: TaskRecord[]; allPlans?: ActionPlanRecord[] }
@@ -240,13 +241,15 @@ export function PlanEditorApp() {
 
   return (
     <div className="pe">
-      <header className="pe__header">
-        <h1 className="pe__title">{plan.code}</h1>
-        <div className="pe__subtitle">Status: {plan.status}</div>
-        <div className={`pe__status ${isDirty ? "pe__status--dirty" : "pe__status--saved"}`}>
-          {isDirty ? "Unsaved changes" : "Saved"}
-        </div>
-      </header>
+      <PageHeader
+        title="CORTEX PLAN EDITOR"
+        subtitle={`${plan.code} · ${plan.status}`}
+        actions={
+          <span className={`pe__status ${isDirty ? "pe__status--dirty" : "pe__status--saved"}`}>
+            {isDirty ? "Unsaved changes" : "Saved"}
+          </span>
+        }
+      />
 
       {error ? <div className="pe__error">{error}</div> : null}
 

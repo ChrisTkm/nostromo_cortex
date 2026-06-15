@@ -2,6 +2,7 @@ import { NoteEditor } from "./components/NoteEditor";
 import { NoteList } from "./components/NoteList";
 import { NotesEmptyState } from "./components/NotesEmptyState";
 import { useNotesController } from "./hooks/useNotesController";
+import { PageHeader } from "../components/PageHeader";
 
 export function NotesApp() {
   const {
@@ -28,8 +29,17 @@ export function NotesApp() {
   } = useNotesController();
 
   return (
-    <div className={`notes-app${showEditor ? "" : " notes-app--list-only"}`}>
-      <aside className="notes-sidebar">
+    <div className="notes-shell">
+      <PageHeader
+        title="CORTEX NOTES"
+        actions={
+          <button className="is-accent" type="button" onClick={createNote}>
+            New note
+          </button>
+        }
+      />
+      <div className={`notes-app${showEditor ? "" : " notes-app--list-only"}`}>
+        <aside className="notes-sidebar">
         <NoteList
           activeSearch={activeSearch}
           hasDirtyDraft={isDraftDirty}
@@ -67,6 +77,7 @@ export function NotesApp() {
           )}
         </section>
       ) : null}
+      </div>
     </div>
   );
 }

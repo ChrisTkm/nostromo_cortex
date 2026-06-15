@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 
 type AgentRunRecord = {
   id: string;
@@ -203,8 +204,8 @@ export function LedgerApp() {
 
   return (
     <div className="ledger-container">
+      <PageHeader title="CORTEX LEDGER" />
       <div className="toolbar">
-        <h2>Ledger</h2>
         <div className="filters">
           <select
             className="filter-select"

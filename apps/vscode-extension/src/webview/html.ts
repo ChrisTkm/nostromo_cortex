@@ -8,9 +8,10 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
   const fontStack = uiFont === "Inter"
     ? `'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
     : `'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace`;
+  const theme = vscode.workspace.getConfiguration("cortex").get<string>("theme", "cortex");
 
   return `<!DOCTYPE html>
-  <html lang="en">
+  <html lang="en" data-cortex-theme="${theme}">
     <head>
       <meta charset="UTF-8" />
       <meta http-equiv="Content-Security-Policy" content="${csp}" />
@@ -40,8 +41,8 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri, 
           background:
             radial-gradient(circle at top left, rgba(80, 126, 255, 0.12) 0%, transparent 28%),
             radial-gradient(circle at top right, rgba(10, 170, 145, 0.12) 0%, transparent 24%),
-            linear-gradient(180deg, color-mix(in srgb, var(--vscode-editor-background) 94%, #06080d 6%), var(--vscode-editor-background));
-          color: var(--vscode-editor-foreground);
+            linear-gradient(180deg, color-mix(in srgb, var(--cortex-bg) 94%, #06080d 6%), var(--cortex-bg));
+          color: var(--cortex-text);
           font-family: var(--cortex-font);
         }
       </style>

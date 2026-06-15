@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AiAgentAvatar } from "../components/AiAgentAvatar";
 import { type CatalogAgent } from "../components/AgentSelect";
 import { PlanWizard } from "./PlanWizard";
+import { PageHeader } from "../components/PageHeader";
 
 type PlanRecord = {
   id?: string;
@@ -167,8 +168,8 @@ export function PlansApp() {
 
   return (
     <div className="plans-container">
+      <PageHeader title="CORTEX PLANS" />
       <div className="toolbar">
-        <h2>Planes</h2>
         <div className="filters">
           <select
             className="filter-select"

@@ -430,6 +430,15 @@
           "type": "string",
           "default": "JetBrains Mono",
           "description": "Font family for Cortex panels. Default is 'JetBrains Mono'. Set to 'Inter' for a sans-serif UI."
+        },
+        "cortex.theme": {
+          "type": "string",
+          "default": "cortex",
+          "enum": [
+            "cortex",
+            "vscode"
+          ],
+          "description": "Visual theme for Cortex panels. 'cortex' (default) applies the Cortex dark design (dorado brand, JetBrains Mono). 'vscode' follows the VS Code editor theme."
         }
       }
     }

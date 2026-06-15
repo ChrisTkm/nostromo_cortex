@@ -1,3 +1,5 @@
+@import "../components/PageHeader.css";
+
 .brain-app {
   display: grid;
   grid-template-rows: auto auto 1fr;

@@ -17,6 +17,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { isPersistedState, isSnapshot, reconcileHiddenNodeIds, reconcileSelectedNodeId } from "./state";
 import type { PersistedBrainState } from "./state";
 import type { BrainEdge, BrainHostMessage, BrainIssueKind, BrainNode, BrainSnapshot } from "../../brain/types";
+import { PageHeader } from "../components/PageHeader";
 
 declare global {
   interface Window {
@@ -202,20 +203,20 @@ export function BrainApp() {
 
   return (
     <div className="brain-app">
-      <header className="brain-header">
-        <div>
-          <h1>Cortex Brain</h1>
-          <p>{snapshot ? snapshot.rootPath : "Choose a folder with .md or .mdx files."}</p>
-        </div>
-        <div className="brain-actions">
-          <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
-            Folder
-          </button>
-          <button onClick={() => vscode.postMessage({ type: "brain:refresh" })} type="button">
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="CORTEX BRAIN"
+        subtitle={snapshot ? snapshot.rootPath : "Choose a folder with .md or .mdx files."}
+        actions={
+          <>
+            <button onClick={() => vscode.postMessage({ type: "brain:pickFolder" })} type="button">
+              Folder
+            </button>
+            <button onClick={() => vscode.postMessage({ type: "brain:refresh" })} type="button">
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       {snapshot ? (
         <section className="brain-toolbar">

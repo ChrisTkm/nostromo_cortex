@@ -36,3 +36,28 @@
 .page-header__content {
   padding: 0;
 }
+
+/* Consistent header buttons across all modules (any <button> in actions). */
+.page-header__actions button {
+  background: transparent;
+  color: var(--cortex-text);
+  border: 1px solid var(--cortex-border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-family: var(--cortex-font);
+  font-size: 12px;
+  cursor: pointer;
+}
+.page-header__actions button:hover {
+  border-color: var(--cortex-border-strong);
+}
+.page-header__actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.page-header__actions .is-accent {
+  background: var(--cortex-brand);
+  color: #171717;
+  border-color: var(--cortex-brand);
+  font-weight: 700;
+}

@@ -228,9 +228,10 @@ export function ScriptFlowApp() {
 
   return (
     <div className={`script-flow-app script-flow-app--${state.status}`}>
-      <header className="script-flow-header script-flow-header--compact">
-        <h1 className="script-flow-header__title">Script Flow</h1>
-        <div className="script-flow-header__actions">
+      <header className="page-header">
+        <div className="page-header__row">
+          <div className="page-header__brand"><span className="page-header__prefix">/// </span>CORTEX SCRIPT FLOW</div>
+          <div className="page-header__actions">
           {state.status === "snapshot" ? (
             <>
               <button
@@ -269,6 +270,7 @@ export function ScriptFlowApp() {
           <button className="script-flow-button" onClick={() => sendRefresh(vscode)} type="button">
             Refresh
           </button>
+          </div>
         </div>
       </header>
 

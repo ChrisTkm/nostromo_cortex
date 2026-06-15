@@ -8,9 +8,10 @@ export function getLogsHtml(webview: vscode.Webview, extensionUri: vscode.Uri, n
   const fontStack = uiFont === "Inter"
     ? `'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
     : `'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace`;
+  const theme = vscode.workspace.getConfiguration("cortex").get<string>("theme", "cortex");
 
   return `<!DOCTYPE html>
-  <html lang="en">
+  <html lang="en" data-cortex-theme="${theme}">
     <head>
       <meta charset="UTF-8" />
       <meta http-equiv="Content-Security-Policy" content="${csp}" />
@@ -37,8 +38,8 @@ export function getLogsHtml(webview: vscode.Webview, extensionUri: vscode.Uri, n
         body {
           overflow: hidden;
           padding: 0;
-          background: var(--vscode-editor-background);
-          color: var(--vscode-editor-foreground);
+          background: var(--cortex-bg);
+          color: var(--cortex-text);
           font-family: var(--cortex-font);
         }
       </style>

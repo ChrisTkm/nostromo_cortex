@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import type { ArchivedPlanSummary } from "../../service";
+import { PageHeader } from "../components/PageHeader";
 
 type SortKey =
   | "archivedAt-desc"
@@ -104,27 +105,22 @@ export function ArchiveApp() {
 
   return (
     <div className="archive-app">
-      <header className="archive-header">
-        <div className="archive-header__meta">
-          <div className="archive-header__eyebrow">Read-only</div>
-          <h1 className="archive-header__title">Cortex Archive</h1>
-          {archivePath ? (
-            <div className="archive-header__path" title={archivePath}>
-              Folder: {archivePath}
-            </div>
-          ) : null}
-        </div>
-        <div className="archive-header__actions">
-          {archivePath ? (
-            <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:openFolder" })} type="button">
-              Open folder
+      <PageHeader
+        title="CORTEX ARCHIVE"
+        subtitle={archivePath ? `Folder: ${archivePath}` : "Read-only"}
+        actions={
+          <>
+            {archivePath ? (
+              <button onClick={() => vscode.postMessage({ type: "archive:openFolder" })} type="button">
+                Open folder
+              </button>
+            ) : null}
+            <button onClick={() => vscode.postMessage({ type: "archive:refresh" })} type="button">
+              Refresh
             </button>
-          ) : null}
-          <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:refresh" })} type="button">
-            Refresh
-          </button>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section className="archive-toolbar">
         <div className="archive-toolbar__row">
