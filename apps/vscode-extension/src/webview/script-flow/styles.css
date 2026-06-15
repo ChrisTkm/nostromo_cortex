@@ -5,7 +5,7 @@
   padding: 12px 14px;
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent), transparent 38%),
-    linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%), var(--vscode-editor-background));
+    linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-bg-base)), var(--vscode-editor-background));
   color: var(--vscode-editor-foreground);
   min-height: 0;
 }
@@ -109,7 +109,7 @@
 .script-flow-boundary {
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 88%, #0c1724 12%);
+  background: var(--cortex-surface-raised);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
 }
 
@@ -223,7 +223,7 @@
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 88%, #0c1724 12%);
+  background: var(--cortex-surface-raised);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
 }
 
@@ -432,7 +432,7 @@
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent), transparent 28%),
-    color-mix(in srgb, var(--vscode-editor-background) 90%, #08111d 10%);
+    color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-bg-base));
 }
 
 .script-flow-canvas .react-flow {
@@ -466,7 +466,7 @@
   padding: 14px 16px;
   border-radius: 18px;
   border: 2px solid currentColor;
-  background: color-mix(in srgb, var(--vscode-editor-background) 60%, #1e293b 40%);
+  background: var(--cortex-surface-darker);
   color: var(--vscode-editor-foreground);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
@@ -520,47 +520,47 @@
 }
 
 .script-flow-node-card--entry {
-  color: #22d3ee;
+  color: var(--cortex-node-entry);
 }
 
 .script-flow-node-card--function {
-  color: #60a5fa;
+  color: var(--cortex-node-function);
 }
 
 .script-flow-node-card--branch {
-  color: #facc15;
+  color: var(--cortex-node-branch);
 }
 
 .script-flow-node-card--loop {
-  color: #a855f7;
+  color: var(--cortex-node-loop);
 }
 
 .script-flow-node-card--return {
-  color: #22c55e;
+  color: var(--cortex-node-return);
 }
 
 .script-flow-node-card--tryCatch {
-  color: #f97316;
+  color: var(--cortex-node-try-catch);
 }
 
 .script-flow-node-card--call {
-  color: #94a3b8;
+  color: var(--cortex-node-call);
 }
 
 .script-flow-node-card--cte {
-  color: #38bdf8;
+  color: var(--cortex-node-cte);
 }
 
 .script-flow-node-card--select {
-  color: #22d3ee;
+  color: var(--cortex-node-select);
 }
 
 .script-flow-node-card--join {
-  color: #facc15;
+  color: var(--cortex-node-join);
 }
 
 .script-flow-node-card--subquery {
-  color: #a855f7;
+  color: var(--cortex-node-subquery);
 }
 
 .script-flow-boundary {
@@ -571,7 +571,7 @@
   gap: 10px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--vscode-editorError-foreground) 16%, transparent), transparent 42%),
-    color-mix(in srgb, var(--vscode-editor-background) 90%, #190d0d 10%);
+    color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-level-error) 10%);
 }
 
 @media (max-width: 900px) {
