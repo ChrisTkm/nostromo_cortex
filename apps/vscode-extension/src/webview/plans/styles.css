@@ -163,7 +163,7 @@
 .progress-track {
   flex: 1;
   height: 6px;
-  background: var(--vscode-dropdown-background);
+  background: color-mix(in srgb, var(--cortex-text-muted) 22%, transparent);
   border-radius: 3px;
   overflow: hidden;
   min-width: 40px;
@@ -171,7 +171,7 @@
 
 .progress-fill {
   height: 100%;
-  background: var(--vscode-testing-iconPassed);
+  background: var(--cortex-accent);
   border-radius: 3px;
   transition: width 0.3s;
 }
