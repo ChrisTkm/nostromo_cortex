@@ -391,11 +391,7 @@
 
 .react-flow {
   z-index: var(--z-graph);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--cortex-bg) 98%, rgba(255, 255, 255, 0.02)),
-    var(--cortex-bg)
-  );
+  background: var(--cortex-canvas-bg);
 }
 
 .react-flow__controls,

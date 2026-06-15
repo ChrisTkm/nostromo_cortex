@@ -88,10 +88,9 @@
     color-mix(in srgb, var(--cortex-slate-400) 13%, transparent);
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto auto minmax(
-      220px,
-      auto
-    ) auto auto;
+  grid-template-columns:
+    minmax(220px, 1fr) auto auto minmax(220px, auto)
+    auto auto;
   padding: 10px 14px;
 }
 
@@ -246,6 +245,11 @@
 .brain-canvas {
   min-height: 0;
   min-width: 0;
+}
+
+/* Near-black canvas shared with graph/script-flow so nodes read above it. */
+.brain-canvas .react-flow {
+  background: var(--cortex-canvas-bg);
 }
 
 .brain-empty {

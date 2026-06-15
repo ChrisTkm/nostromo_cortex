@@ -406,6 +406,7 @@ export function BrainApp() {
                 <MiniMap
                   pannable
                   zoomable
+                  nodeStrokeWidth={3}
                   nodeColor={(node) =>
                     colorForKind((node.data as GraphNodeData).kind)
                   }
@@ -750,6 +751,10 @@ function buildFlow(
       type: "brain",
       selected: node.id === selectedNodeId,
       position: { x: 0, y: 0 },
+      // Seed dimensions so the MiniMap can draw node rects (nodes are rebuilt
+      // each render without useNodesState, so measured sizes never persist).
+      initialWidth: NODE_WIDTH,
+      initialHeight: NODE_HEIGHT,
       data: {
         kind: node.kind,
         label: node.label,

@@ -77,6 +77,9 @@
   --cortex-bg-dark: #020617;
   --cortex-slate-400: #94a3b8;
   --cortex-teal-700: #0e7490;
+  /* Flow/graph canvas: near-black so nodes, header and surfaces read above it.
+     Shared by graph, brain and script-flow canvases. */
+  --cortex-canvas-bg: #07090d;
   --cortex-minimap-mask: color-mix(
     in srgb,
     var(--cortex-bg-base) 68%,

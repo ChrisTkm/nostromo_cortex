@@ -20,6 +20,7 @@ import {
   sendReady,
   sendRefresh,
   sendSelectNode,
+  sendSelectScript,
   type ScriptFlowHostMessage,
 } from "../../scriptFlow/bridge.js";
 import {
@@ -382,6 +383,7 @@ export function ScriptFlowApp() {
                   <MiniMap
                     pannable
                     zoomable
+                    nodeStrokeWidth={3}
                     nodeColor={(node) =>
                       colorForKind((node.data as FlowNodeData).kind)
                     }
@@ -480,6 +482,15 @@ export function ScriptFlowApp() {
               </h3>
               <p className="script-flow-panel__text">{state.description}</p>
             </>
+          ) : null}
+          {state.status !== "snapshot" ? (
+            <button
+              className="script-flow-button script-flow-button--cta"
+              onClick={() => sendSelectScript(vscode)}
+              type="button"
+            >
+              Select script…
+            </button>
           ) : null}
         </section>
 
@@ -607,6 +618,12 @@ function buildFlowModel(
     type: "scriptFlow",
     selected: node.id === selectedNodeId,
     position: { x: 0, y: 0 },
+    // Seed dimensions so the MiniMap can draw node rects: nodes are rebuilt
+    // each render (no useNodesState/onNodesChange), so measured sizes never
+    // persist back into this array. initialWidth/Height hint the store
+    // without constraining the real (auto-measured) node DOM.
+    initialWidth: NODE_WIDTH,
+    initialHeight: NODE_HEIGHT,
     data: {
       kind: node.kind,
       kindLabel: KIND_LABELS[node.kind],

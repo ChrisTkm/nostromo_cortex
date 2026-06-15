@@ -10,7 +10,8 @@ export type ScriptFlowWebviewMessage =
   | { type: "scriptFlow:selectNode"; nodeId: string }
   | { type: "scriptFlow:drawerClick"; section: string }
   | { type: "scriptFlow:refresh" }
-  | { type: "scriptFlow:openGlossary" };
+  | { type: "scriptFlow:openGlossary" }
+  | { type: "scriptFlow:selectScript" };
 
 type MessageTarget = {
   postMessage(message: unknown): unknown;
@@ -72,6 +73,12 @@ export function sendOpenGlossary(target: MessageTarget) {
   } satisfies ScriptFlowWebviewMessage);
 }
 
+export function sendSelectScript(target: MessageTarget) {
+  return target.postMessage({
+    type: "scriptFlow:selectScript",
+  } satisfies ScriptFlowWebviewMessage);
+}
+
 export function isScriptFlowHostMessage(
   value: unknown,
 ): value is ScriptFlowHostMessage {
@@ -106,6 +113,7 @@ export function isScriptFlowWebviewMessage(
     (candidate.type === "scriptFlow:drawerClick" &&
       typeof candidate.section === "string") ||
     candidate.type === "scriptFlow:refresh" ||
-    candidate.type === "scriptFlow:openGlossary"
+    candidate.type === "scriptFlow:openGlossary" ||
+    candidate.type === "scriptFlow:selectScript"
   );
 }

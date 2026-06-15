@@ -62,7 +62,7 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
           onClick={onToggle}
           type="button"
         >
-          <span className="script-flow-drawer-trigger__chevron">⌃</span>
+          <span className="script-flow-drawer-trigger__chevron">‹</span>
         </button>
       </div>
     );
@@ -83,7 +83,7 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
           type="button"
         >
           <span className="script-flow-drawer__chevron script-flow-drawer__chevron--open">
-            ⌃
+            ›
           </span>
         </button>
       </div>

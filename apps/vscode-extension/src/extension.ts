@@ -1593,7 +1593,27 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           content: SCRIPT_FLOW_GLOSSARY_MD,
           language: "markdown",
         });
-        await vscode.window.showTextDocument(doc, { preview: false });
+        // Render the glossary as formatted markdown, not raw source. Opening
+        // the untitled doc registers it so the built-in preview can resolve it.
+        await vscode.commands.executeCommand("markdown.showPreview", doc.uri);
+        return;
+      }
+      if (message.type === "scriptFlow:selectScript") {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: "Analyze in Script Flow",
+          filters: {
+            "Supported scripts": ["ts", "tsx", "js", "jsx", "py", "sql"],
+          },
+        });
+        const uri = picked?.[0];
+        if (!uri) {
+          return;
+        }
+        const document = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(document, { preview: false });
+        pendingScriptFlowRequest = { scope: "file" };
+        await postScriptFlowInit(pendingScriptFlowRequest);
         return;
       }
       if (message.type === "scriptFlow:drawerClick") {
