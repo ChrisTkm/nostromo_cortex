@@ -6,8 +6,20 @@
   flex-direction: column;
   padding: 12px 14px;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent), transparent 38%),
-    linear-gradient(155deg, color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-bg-base)), var(--vscode-editor-background));
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent),
+      transparent 38%
+    ),
+    linear-gradient(
+      155deg,
+      color-mix(
+        in srgb,
+        var(--vscode-editor-background) 90%,
+        var(--cortex-bg-base)
+      ),
+      var(--vscode-editor-background)
+    );
   color: var(--vscode-editor-foreground);
   min-height: 0;
 }
@@ -35,7 +47,11 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 88%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 88%,
+    transparent
+  );
 }
 
 .script-flow-header--compact .script-flow-button {
@@ -65,7 +81,11 @@
 .script-flow-stats__chip {
   padding: 2px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 40%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-inactiveSelectionBackground) 40%,
+    transparent
+  );
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -94,7 +114,11 @@
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 84%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 84%,
+    transparent
+  );
 }
 
 .script-flow-header__title,
@@ -122,7 +146,8 @@
 .script-flow-state-card,
 .script-flow-panel,
 .script-flow-boundary {
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
   border-radius: 20px;
   background: var(--cortex-surface-raised);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
@@ -160,14 +185,22 @@
 .script-flow-meta__item {
   padding: 12px 14px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 28%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-inactiveSelectionBackground) 28%,
+    transparent
+  );
 }
 
 .script-flow-meta__item dt {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 82%,
+    transparent
+  );
 }
 
 .script-flow-meta__item dd {
@@ -179,8 +212,13 @@
   margin-top: 18px;
   padding: 16px;
   border-radius: 16px;
-  border: 1px dashed color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 14%, transparent);
+  border: 1px dashed
+    color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-inactiveSelectionBackground) 14%,
+    transparent
+  );
 }
 
 .script-flow-selection__title {
@@ -191,15 +229,24 @@
   margin-top: 16px;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-background) 78%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 78%,
+    transparent
+  );
 }
 
 .script-flow-detail-card__eyebrow {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 82%,
+    transparent
+  );
 }
 
 .script-flow-detail-card__title {
@@ -226,7 +273,11 @@
   min-height: 28px;
   padding: 0 12px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--vscode-badge-background) 82%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-badge-background) 82%,
+    transparent
+  );
   color: var(--vscode-badge-foreground);
 }
 
@@ -236,7 +287,8 @@
   gap: 14px;
   min-height: 640px;
   padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
   border-radius: 20px;
   background: var(--cortex-surface-raised);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
@@ -257,7 +309,8 @@
   width: 28px;
   height: 52px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
   border-radius: 999px;
   background: var(--cortex-surface-raised);
   color: inherit;
@@ -268,7 +321,11 @@
 }
 
 .script-flow-drawer-trigger:hover {
-  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-toolbar-hoverBackground) 72%,
+    transparent
+  );
 }
 
 .script-flow-drawer-trigger__chevron {
@@ -293,7 +350,11 @@
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 82%,
+    transparent
+  );
 }
 
 .script-flow-drawer__title {
@@ -305,7 +366,8 @@
 .script-flow-drawer__toggle {
   width: 34px;
   height: 34px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
   border-radius: 999px;
   background: transparent;
   color: inherit;
@@ -313,7 +375,11 @@
 }
 
 .script-flow-drawer__toggle:hover {
-  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-toolbar-hoverBackground) 72%,
+    transparent
+  );
 }
 
 .script-flow-drawer__chevron {
@@ -338,8 +404,13 @@
   gap: 10px;
   padding: 14px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 14%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-inactiveSelectionBackground) 14%,
+    transparent
+  );
 }
 
 .script-flow-drawer-summary,
@@ -363,38 +434,70 @@
   padding: 10px 12px;
   border: 1px solid transparent;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 88%,
+    transparent
+  );
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .script-flow-drawer-item:hover {
-  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 36%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 36%,
+    transparent
+  );
 }
 
 .script-flow-drawer-item--active {
-  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 48%, transparent);
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 48%,
+    transparent
+  );
+  background: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 12%,
+    transparent
+  );
 }
 
 .script-flow-drawer-item__meta,
 .script-flow-drawer-empty {
   font-size: 12px;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 90%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 90%,
+    transparent
+  );
 }
 
 .script-flow-app--unsupported .script-flow-state-card {
-  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 38%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground) 38%,
+    transparent
+  );
 }
 
 .script-flow-app--snapshot .script-flow-state-card {
-  border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 34%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 34%,
+    transparent
+  );
 }
 
 .script-flow-app--error .script-flow-state-card,
 .script-flow-boundary {
-  border-color: color-mix(in srgb, var(--vscode-editorError-foreground) 44%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-editorError-foreground) 44%,
+    transparent
+  );
 }
 
 .script-flow-app--empty .script-flow-state-card {
@@ -404,7 +507,8 @@
 .script-flow-button {
   min-height: 34px;
   padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
   border-radius: 999px;
   background: transparent;
   color: inherit;
@@ -412,7 +516,11 @@
 }
 
 .script-flow-button:hover {
-  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-toolbar-hoverBackground) 72%,
+    transparent
+  );
 }
 
 .script-flow-button--icon {
@@ -436,7 +544,8 @@
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 40%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-textLink-foreground) 40%, transparent);
   background: var(--vscode-editor-background);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   min-width: 320px;
@@ -479,10 +588,19 @@
   min-height: 320px;
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent), transparent 28%),
-    color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-bg-base));
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent),
+      transparent 28%
+    ),
+    color-mix(
+      in srgb,
+      var(--vscode-editor-background) 90%,
+      var(--cortex-bg-base)
+    );
 }
 
 .script-flow-canvas .react-flow {
@@ -494,7 +612,6 @@
 .script-flow-canvas .react-flow__pane {
   cursor: grab;
 }
-
 
 .script-flow-canvas .react-flow__controls-button {
   background: transparent;
@@ -527,7 +644,11 @@
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 82%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 82%,
+    transparent
+  );
 }
 
 .script-flow-node-card__label {
@@ -554,7 +675,8 @@
 .script-flow-node-card__handle {
   width: 10px;
   height: 10px;
-  border: 2px solid color-mix(in srgb, var(--vscode-editor-background) 40%, black 60%);
+  border: 2px solid
+    color-mix(in srgb, var(--vscode-editor-background) 40%, black 60%);
   background: currentColor;
 }
 
@@ -614,8 +736,16 @@
   align-content: center;
   gap: 10px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--vscode-editorError-foreground) 16%, transparent), transparent 42%),
-    color-mix(in srgb, var(--vscode-editor-background) 90%, var(--cortex-level-error) 10%);
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--vscode-editorError-foreground) 16%, transparent),
+      transparent 42%
+    ),
+    color-mix(
+      in srgb,
+      var(--vscode-editor-background) 90%,
+      var(--cortex-level-error) 10%
+    );
 }
 
 @media (max-width: 900px) {
