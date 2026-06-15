@@ -244,6 +244,41 @@
 
 .script-flow-drawer--collapsed {
   min-height: 0;
+  padding: 18px 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.script-flow-drawer-trigger {
+  width: 28px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 76%, transparent);
+  border-radius: 999px;
+  background: var(--cortex-surface-raised);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.script-flow-drawer-trigger:hover {
+  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 72%, transparent);
+}
+
+.script-flow-drawer-trigger__chevron {
+  transform: rotate(180deg);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.script-flow-surface--drawer-collapsed {
+  grid-template-columns: 1fr auto;
 }
 
 .script-flow-drawer__header {
@@ -596,6 +631,10 @@
 
 @media (max-width: 800px) {
   .script-flow-surface {
+    grid-template-columns: 1fr;
+  }
+
+  .script-flow-surface--drawer-collapsed {
     grid-template-columns: 1fr;
   }
 

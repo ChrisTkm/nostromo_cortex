@@ -72,6 +72,7 @@
   --cortex-bg-dark: #020617;
   --cortex-slate-400: #94a3b8;
   --cortex-teal-700: #0e7490;
+  --cortex-minimap-mask: color-mix(in srgb, var(--cortex-bg-base) 68%, transparent);
   --cortex-bg-overlay: color-mix(in srgb, var(--cortex-bg-base) 92%, transparent);
   --cortex-bg-overlay-soft: color-mix(in srgb, var(--cortex-bg-base) 74%, transparent);
   --cortex-bg-overlay-panel: color-mix(in srgb, var(--cortex-bg-base) 97%, transparent);
@@ -107,6 +108,10 @@
   --z-prompt-expanded: 50;
   --z-portal-popover: 9999;
   --chrome-status-bar-height: 34px;
+}
+
+.react-flow__minimap-mask {
+  fill: var(--cortex-minimap-mask);
 }
 
 /* ============================================================

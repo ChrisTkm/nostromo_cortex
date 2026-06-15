@@ -293,11 +293,9 @@ export function BrainApp() {
               >
                 <Controls />
                 <MiniMap
-                  className="brain-minimap"
                   pannable
                   zoomable
                   nodeColor={(node) => colorForKind((node.data as GraphNodeData).kind)}
-                  maskColor="rgba(3, 7, 18, 0.68)"
                 />
                 <Background color="rgba(148, 163, 184, 0.12)" gap={22} size={1} variant={BackgroundVariant.Dots} />
               </ReactFlow>

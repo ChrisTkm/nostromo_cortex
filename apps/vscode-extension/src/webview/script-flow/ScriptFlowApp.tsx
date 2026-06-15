@@ -274,7 +274,7 @@ export function ScriptFlowApp() {
         </div>
       </header>
 
-      <main className="script-flow-surface">
+      <main className={`script-flow-surface${isDrawerCollapsed ? " script-flow-surface--drawer-collapsed" : ""}`}>
         <section className="script-flow-panel">
           {state.status === "snapshot" ? (
             <>

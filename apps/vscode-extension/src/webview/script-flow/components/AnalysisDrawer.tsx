@@ -37,112 +37,126 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
     });
   }, [activeKey]);
 
+  if (isCollapsed) {
+    return (
+      <div className="script-flow-drawer script-flow-drawer--collapsed">
+        <button
+          aria-expanded={false}
+          aria-label="Expand analysis drawer"
+          className="script-flow-drawer-trigger"
+          onClick={onToggle}
+          type="button"
+        >
+          <span className="script-flow-drawer-trigger__chevron">⌃</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className={`script-flow-drawer${isCollapsed ? " script-flow-drawer--collapsed" : ""}`}>
+    <aside className="script-flow-drawer">
       <div className="script-flow-drawer__header">
         <div>
           <div className="script-flow-drawer__eyebrow">Flow analysis</div>
           <h2 className="script-flow-drawer__title">Analysis</h2>
         </div>
         <button
-          aria-expanded={!isCollapsed}
-          aria-label={isCollapsed ? "Expand analysis drawer" : "Collapse analysis drawer"}
+          aria-expanded
+          aria-label="Collapse analysis drawer"
           className="script-flow-drawer__toggle"
           onClick={onToggle}
           type="button"
         >
-          <span className={`script-flow-drawer__chevron${isCollapsed ? "" : " script-flow-drawer__chevron--open"}`}>⌃</span>
+          <span className="script-flow-drawer__chevron script-flow-drawer__chevron--open">⌃</span>
         </button>
       </div>
 
-      {!isCollapsed ? (
-        <div className="script-flow-drawer__content">
-          <section className="script-flow-drawer-section">
-            <div className="script-flow-drawer-section__title">Resumen</div>
-            <div className="script-flow-drawer-summary">
-              {summaryLines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
-            </div>
-          </section>
+      <div className="script-flow-drawer__content">
+        <section className="script-flow-drawer-section">
+          <div className="script-flow-drawer-section__title">Resumen</div>
+          <div className="script-flow-drawer-summary">
+            {summaryLines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        </section>
 
-          <section className="script-flow-drawer-section">
-            <div className="script-flow-drawer-section__title">Entry points</div>
-            <div className="script-flow-drawer-list">
-              {analysis.entryPoints.length > 0 ? (
-                analysis.entryPoints.map((nodeId) => (
-                  <button
-                    className={itemClassName(activeKey === `entryPoints:${nodeId}`)}
-                    key={nodeId}
-                    onClick={() => onSelectNode(nodeId, "entryPoints")}
-                    ref={bindItemRef(itemRefs, `entryPoints:${nodeId}`)}
-                    type="button"
-                  >
-                    <span>{nodeLabels.get(nodeId) ?? nodeId}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="script-flow-drawer-empty">No entry points.</div>
-              )}
-            </div>
-          </section>
+        <section className="script-flow-drawer-section">
+          <div className="script-flow-drawer-section__title">Entry points</div>
+          <div className="script-flow-drawer-list">
+            {analysis.entryPoints.length > 0 ? (
+              analysis.entryPoints.map((nodeId) => (
+                <button
+                  className={itemClassName(activeKey === `entryPoints:${nodeId}`)}
+                  key={nodeId}
+                  onClick={() => onSelectNode(nodeId, "entryPoints")}
+                  ref={bindItemRef(itemRefs, `entryPoints:${nodeId}`)}
+                  type="button"
+                >
+                  <span>{nodeLabels.get(nodeId) ?? nodeId}</span>
+                </button>
+              ))
+            ) : (
+              <div className="script-flow-drawer-empty">No entry points.</div>
+            )}
+          </div>
+        </section>
 
-          <section className="script-flow-drawer-section">
-            <div className="script-flow-drawer-section__title">Decisiones</div>
-            <div className="script-flow-drawer-list">
-              {analysis.decisions.length > 0 ? (
-                analysis.decisions.map((decision) => (
-                  <button
-                    className={itemClassName(activeKey === `decisions:${decision.nodeId}`)}
-                    key={decision.nodeId}
-                    onClick={() => onSelectNode(decision.nodeId, "decisions")}
-                    ref={bindItemRef(itemRefs, `decisions:${decision.nodeId}`)}
-                    type="button"
-                  >
-                    <span>{decision.label}</span>
-                    <span className="script-flow-drawer-item__meta">{decision.branches} branch{decision.branches === 1 ? "" : "es"}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="script-flow-drawer-empty">No decisions.</div>
-              )}
-            </div>
-          </section>
+        <section className="script-flow-drawer-section">
+          <div className="script-flow-drawer-section__title">Decisiones</div>
+          <div className="script-flow-drawer-list">
+            {analysis.decisions.length > 0 ? (
+              analysis.decisions.map((decision) => (
+                <button
+                  className={itemClassName(activeKey === `decisions:${decision.nodeId}`)}
+                  key={decision.nodeId}
+                  onClick={() => onSelectNode(decision.nodeId, "decisions")}
+                  ref={bindItemRef(itemRefs, `decisions:${decision.nodeId}`)}
+                  type="button"
+                >
+                  <span>{decision.label}</span>
+                  <span className="script-flow-drawer-item__meta">{decision.branches} branch{decision.branches === 1 ? "" : "es"}</span>
+                </button>
+              ))
+            ) : (
+              <div className="script-flow-drawer-empty">No decisions.</div>
+            )}
+          </div>
+        </section>
 
-          <section className="script-flow-drawer-section">
-            <div className="script-flow-drawer-section__title">Loops</div>
-            <div className="script-flow-drawer-list">
-              {analysis.loops.length > 0 ? (
-                analysis.loops.map((loop) => (
-                  <button
-                    className={itemClassName(activeKey === `loops:${loop.nodeId}`)}
-                    key={loop.nodeId}
-                    onClick={() => onSelectNode(loop.nodeId, "loops")}
-                    ref={bindItemRef(itemRefs, `loops:${loop.nodeId}`)}
-                    type="button"
-                  >
-                    <span>{loop.label}</span>
-                    <span className="script-flow-drawer-item__meta">{loop.kind}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="script-flow-drawer-empty">No loops.</div>
-              )}
-            </div>
-          </section>
+        <section className="script-flow-drawer-section">
+          <div className="script-flow-drawer-section__title">Loops</div>
+          <div className="script-flow-drawer-list">
+            {analysis.loops.length > 0 ? (
+              analysis.loops.map((loop) => (
+                <button
+                  className={itemClassName(activeKey === `loops:${loop.nodeId}`)}
+                  key={loop.nodeId}
+                  onClick={() => onSelectNode(loop.nodeId, "loops")}
+                  ref={bindItemRef(itemRefs, `loops:${loop.nodeId}`)}
+                  type="button"
+                >
+                  <span>{loop.label}</span>
+                  <span className="script-flow-drawer-item__meta">{loop.kind}</span>
+                </button>
+              ))
+            ) : (
+              <div className="script-flow-drawer-empty">No loops.</div>
+            )}
+          </div>
+        </section>
 
-          <section className="script-flow-drawer-section">
-            <div className="script-flow-drawer-section__title">Observaciones</div>
-            <div className="script-flow-drawer-observations">
-              {analysis.observations.length > 0 ? (
-                analysis.observations.map((observation) => <p key={observation}>{observation}</p>)
-              ) : (
-                <div className="script-flow-drawer-empty">No observations.</div>
-              )}
-            </div>
-          </section>
-        </div>
-      ) : null}
+        <section className="script-flow-drawer-section">
+          <div className="script-flow-drawer-section__title">Observaciones</div>
+          <div className="script-flow-drawer-observations">
+            {analysis.observations.length > 0 ? (
+              analysis.observations.map((observation) => <p key={observation}>{observation}</p>)
+            ) : (
+              <div className="script-flow-drawer-empty">No observations.</div>
+            )}
+          </div>
+        </section>
+      </div>
     </aside>
   );
 }
