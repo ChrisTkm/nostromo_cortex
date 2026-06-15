@@ -343,147 +343,129 @@ export function ScriptFlowApp() {
       </header>
 
       <main
-        className={`script-flow-surface${isDrawerCollapsed ? " script-flow-surface--drawer-collapsed" : ""}`}
+        className={`script-flow-surface${state.status !== "snapshot" ? " script-flow-surface--state" : ""}${isDrawerCollapsed ? " script-flow-surface--drawer-collapsed" : ""}`}
       >
-        <section className="script-flow-panel">
-          {state.status === "snapshot" ? (
-            <>
-              <div className="script-flow-stats">
-                <span
-                  className="script-flow-stats__file"
-                  title={state.snapshot.metadata.path}
-                >
-                  {shortFilename(state.snapshot.metadata.path)}
-                </span>
-                <span className="script-flow-stats__chip">
-                  {state.snapshot.metadata.language}
-                </span>
-                <span className="script-flow-stats__chip">
-                  {state.snapshot.nodes.length} nodes
-                </span>
-                <span className="script-flow-stats__chip">
-                  {state.snapshot.edges.length} edges
-                </span>
-              </div>
-              <div className="script-flow-canvas">
-                <ReactFlow
-                  fitView
-                  edges={flow.edges}
-                  nodes={flow.nodes}
-                  nodeTypes={nodeTypes}
-                  nodesDraggable
-                  onInit={setFlowInstance}
-                  onNodeClick={(_, node) => {
-                    setSelectedNodeId(node.id);
-                    sendSelectNode(vscode, node.id);
-                  }}
-                  proOptions={{ hideAttribution: true }}
-                >
-                  <Controls />
-                  <MiniMap
-                    pannable
-                    zoomable
-                    nodeStrokeWidth={3}
-                    nodeColor={(node) =>
-                      colorForKind((node.data as FlowNodeData).kind)
-                    }
-                  />
-                  <Background
-                    color="rgba(148, 163, 184, 0.18)"
-                    gap={18}
-                    size={1}
-                    variant={BackgroundVariant.Dots}
-                  />
-                </ReactFlow>
-                {searchOpen ? (
-                  <div className="script-flow-search">
-                    <input
-                      autoFocus
-                      className="script-flow-search__input"
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setActiveMatchIndex(0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          if (e.shiftKey) {
-                            setActiveMatchIndex(
-                              (i) =>
-                                (i - 1 + searchMatches.length) %
-                                searchMatches.length,
-                            );
-                          } else {
-                            setActiveMatchIndex(
-                              (i) => (i + 1) % searchMatches.length,
-                            );
-                          }
-                          e.preventDefault();
+        {state.status === "snapshot" ? (
+          <section className="script-flow-panel">
+            <div className="script-flow-stats">
+              <span
+                className="script-flow-stats__file"
+                title={state.snapshot.metadata.path}
+              >
+                {shortFilename(state.snapshot.metadata.path)}
+              </span>
+              <span className="script-flow-stats__chip">
+                {state.snapshot.metadata.language}
+              </span>
+              <span className="script-flow-stats__chip">
+                {state.snapshot.nodes.length} nodes
+              </span>
+              <span className="script-flow-stats__chip">
+                {state.snapshot.edges.length} edges
+              </span>
+            </div>
+            <div className="script-flow-canvas">
+              <ReactFlow
+                fitView
+                edges={flow.edges}
+                nodes={flow.nodes}
+                nodeTypes={nodeTypes}
+                nodesDraggable
+                onInit={setFlowInstance}
+                onNodeClick={(_, node) => {
+                  setSelectedNodeId(node.id);
+                  sendSelectNode(vscode, node.id);
+                }}
+                proOptions={{ hideAttribution: true }}
+              >
+                <Controls />
+                <MiniMap
+                  pannable
+                  zoomable
+                  nodeStrokeWidth={3}
+                  nodeColor={(node) =>
+                    colorForKind((node.data as FlowNodeData).kind)
+                  }
+                />
+                <Background
+                  color="rgba(148, 163, 184, 0.18)"
+                  gap={18}
+                  size={1}
+                  variant={BackgroundVariant.Dots}
+                />
+              </ReactFlow>
+              {searchOpen ? (
+                <div className="script-flow-search">
+                  <input
+                    autoFocus
+                    className="script-flow-search__input"
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setActiveMatchIndex(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        if (e.shiftKey) {
+                          setActiveMatchIndex(
+                            (i) =>
+                              (i - 1 + searchMatches.length) %
+                              searchMatches.length,
+                          );
+                        } else {
+                          setActiveMatchIndex(
+                            (i) => (i + 1) % searchMatches.length,
+                          );
                         }
-                        if (e.key === "Escape") {
-                          setSearchOpen(false);
-                          setSearchQuery("");
-                          setActiveMatchIndex(0);
-                        }
-                      }}
-                      placeholder="Search nodes by name or kind..."
-                      type="text"
-                      value={searchQuery}
-                    />
-                    <span className="script-flow-search__count">
-                      {searchQuery && searchMatches.length > 0
-                        ? `${activeMatchIndex + 1}/${searchMatches.length}`
-                        : searchQuery
-                          ? "0/0"
-                          : ""}
-                    </span>
-                    <button
-                      className="script-flow-button"
-                      onClick={() => {
+                        e.preventDefault();
+                      }
+                      if (e.key === "Escape") {
                         setSearchOpen(false);
                         setSearchQuery("");
                         setActiveMatchIndex(0);
-                      }}
-                      type="button"
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : null}
+                      }
+                    }}
+                    placeholder="Search nodes by name or kind..."
+                    type="text"
+                    value={searchQuery}
+                  />
+                  <span className="script-flow-search__count">
+                    {searchQuery && searchMatches.length > 0
+                      ? `${activeMatchIndex + 1}/${searchMatches.length}`
+                      : searchQuery
+                        ? "0/0"
+                        : ""}
+                  </span>
+                  <button
+                    className="script-flow-button"
+                    onClick={() => {
+                      setSearchOpen(false);
+                      setSearchQuery("");
+                      setActiveMatchIndex(0);
+                    }}
+                    type="button"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : (
+          <section className="script-flow-state-card">
+            <div className="script-flow-state-card__label">
+              {formatStatusLabel(state.status)}
+            </div>
+            <h2 className="script-flow-state-card__title">{state.title}</h2>
+            <p className="script-flow-state-card__text">{state.description}</p>
+            {state.status === "unsupported" ? (
+              <div className="script-flow-pill-row">
+                {["typescript", "python", "sql"].map((language) => (
+                  <span className="script-flow-pill" key={language}>
+                    {language}
+                  </span>
+                ))}
               </div>
-            </>
-          ) : null}
-          {state.status === "empty" ? (
-            <>
-              <h3 className="script-flow-panel__title">
-                Open a supported source file to render its flow.
-              </h3>
-              <p className="script-flow-panel__text">
-                The panel parses in the extension host and renders the flow
-                through React Flow.
-              </p>
-            </>
-          ) : null}
-          {state.status === "unsupported" ? (
-            <>
-              <h3 className="script-flow-panel__title">
-                Script Flow does not support this source yet.
-              </h3>
-              <p className="script-flow-panel__text">
-                {state.language
-                  ? `The active source resolved to ${state.language}, but Script Flow currently analyzes TypeScript, Python, and SQL files only.`
-                  : "Open a .ts, .tsx, .py, or .sql file to render its flow."}
-              </p>
-            </>
-          ) : null}
-          {state.status === "error" ? (
-            <>
-              <h3 className="script-flow-panel__title">
-                The host failed to deliver a valid Script Flow snapshot.
-              </h3>
-              <p className="script-flow-panel__text">{state.description}</p>
-            </>
-          ) : null}
-          {state.status !== "snapshot" ? (
+            ) : null}
             <button
               className="script-flow-button script-flow-button--cta"
               onClick={() => sendSelectScript(vscode)}
@@ -491,8 +473,8 @@ export function ScriptFlowApp() {
             >
               Select script…
             </button>
-          ) : null}
-        </section>
+          </section>
+        )}
 
         {state.status === "snapshot" ? (
           <AnalysisDrawer
@@ -510,24 +492,7 @@ export function ScriptFlowApp() {
             }}
             onToggle={() => setIsDrawerCollapsed((current) => !current)}
           />
-        ) : (
-          <section className="script-flow-state-card">
-            <div className="script-flow-state-card__label">
-              {formatStatusLabel(state.status)}
-            </div>
-            <h2 className="script-flow-state-card__title">{state.title}</h2>
-            <p className="script-flow-state-card__text">{state.description}</p>
-            {state.status === "unsupported" ? (
-              <div className="script-flow-pill-row">
-                {["typescript", "python", "sql"].map((language) => (
-                  <span className="script-flow-pill" key={language}>
-                    {language}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        )}
+        ) : null}
       </main>
     </div>
   );

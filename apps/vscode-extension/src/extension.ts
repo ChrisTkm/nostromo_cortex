@@ -1589,13 +1589,22 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         return;
       }
       if (message.type === "scriptFlow:openGlossary") {
-        const doc = await vscode.workspace.openTextDocument({
-          content: SCRIPT_FLOW_GLOSSARY_MD,
-          language: "markdown",
-        });
-        // Render the glossary as formatted markdown, not raw source. Opening
-        // the untitled doc registers it so the built-in preview can resolve it.
-        await vscode.commands.executeCommand("markdown.showPreview", doc.uri);
+        // Write to a real file under global storage (not an untitled doc) so we
+        // can open ONLY the rendered preview: no editable/dirty source tab and
+        // no save prompt when the user closes it.
+        await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+        const glossaryUri = vscode.Uri.joinPath(
+          context.globalStorageUri,
+          "script-flow-glossary.md",
+        );
+        await vscode.workspace.fs.writeFile(
+          glossaryUri,
+          new TextEncoder().encode(SCRIPT_FLOW_GLOSSARY_MD),
+        );
+        await vscode.commands.executeCommand(
+          "markdown.showPreview",
+          glossaryUri,
+        );
         return;
       }
       if (message.type === "scriptFlow:selectScript") {

@@ -751,10 +751,12 @@ function buildFlow(
       type: "brain",
       selected: node.id === selectedNodeId,
       position: { x: 0, y: 0 },
-      // Seed dimensions so the MiniMap can draw node rects (nodes are rebuilt
-      // each render without useNodesState, so measured sizes never persist).
-      initialWidth: NODE_WIDTH,
-      initialHeight: NODE_HEIGHT,
+      // Explicit dims so the MiniMap can draw node rects without depending on
+      // measurement (nodes are rebuilt each render without useNodesState, so
+      // measured sizes never persist). Brain nodes are fixed at NODE_WIDTH x
+      // NODE_HEIGHT in CSS, so this never clips them.
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
       data: {
         kind: node.kind,
         label: node.label,
