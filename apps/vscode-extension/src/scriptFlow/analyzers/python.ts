@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
-import type { Node} from "web-tree-sitter";
-import { Language, Parser } from "web-tree-sitter";
+import type { Language as TreeSitterLanguage, Node, Parser as TreeSitterParser } from "web-tree-sitter";
 
+import { appendNodeObservation } from "../observations.js";
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
 type ScriptFlowAnalyzerInput = {
@@ -31,9 +32,11 @@ const MODULE_DIR = typeof __dirname === "string" ? __dirname : process.cwd();
 const TREE_SITTER_PYTHON_VERSION = "0.25.0";
 const WEB_TREE_SITTER_WASM = "web-tree-sitter.wasm";
 const PYTHON_WASM = "tree-sitter-python.wasm";
+const nodeRequire = createRequire(__filename);
+const { Language, Parser } = nodeRequire("web-tree-sitter") as typeof import("web-tree-sitter");
 
-let parserPromise: Promise<Parser> | undefined;
-let languagePromise: Promise<Language> | undefined;
+let parserPromise: Promise<TreeSitterParser> | undefined;
+let languagePromise: Promise<TreeSitterLanguage> | undefined;
 let loadLogged = false;
 
 export async function analyzePythonDocument(input: ScriptFlowAnalyzerInput): Promise<ScriptFlowSnapshot> {
@@ -125,7 +128,7 @@ function resolveExtensionRoot() {
 class PythonFlowAnalyzer {
   private readonly documentPath: string;
   private readonly source: string;
-  private readonly parser: Parser;
+  private readonly parser: TreeSitterParser;
   private readonly nodes: ScriptFlowNode[] = [];
   private readonly edges: ScriptFlowEdge[] = [];
   private readonly decisions: ScriptFlowAnalysis["decisions"] = [];
@@ -135,7 +138,7 @@ class PythonFlowAnalyzer {
   private readonly edgeKeys = new Set<string>();
   private readonly idCounters = new Map<string, number>();
 
-  constructor(documentPath: string, source: string, parser: Parser) {
+  constructor(documentPath: string, source: string, parser: TreeSitterParser) {
     this.documentPath = documentPath;
     this.source = source;
     this.parser = parser;
@@ -243,6 +246,7 @@ class PythonFlowAnalyzer {
     const body = this.findBlock(node);
     if (body && !this.hasExplicitReturn(body)) {
       this.observations.add(`Function ${displayName} has no explicit return.`);
+      this.addFlowGap(functionId, `Function ${displayName} has no explicit return.`);
     }
 
     const bodySegment = body ? this.parseStatementList(body.namedChildren) : EMPTY_SEGMENT;
@@ -255,7 +259,19 @@ class PythonFlowAnalyzer {
   }
 
   private parseStatementList(statements: readonly Node[]): FlowSegment {
-    const segments = statements.map((statement) => this.parseStatementNode(statement)).filter((segment) => segment.entries.length > 0);
+    const segments: FlowSegment[] = [];
+    let terminalFlowSeen = false;
+    for (const statement of statements) {
+      const segment = this.parseStatementNode(statement);
+      if (segment.entries.length === 0) {
+        continue;
+      }
+      if (terminalFlowSeen) {
+        this.addFlowGap(segment.entries[0], "Statement is unreachable after a terminal flow.");
+      }
+      segments.push(segment);
+      terminalFlowSeen = segment.exits.length === 0;
+    }
     return this.sequenceSegments(segments);
   }
 
@@ -319,6 +335,7 @@ class PythonFlowAnalyzer {
       this.collectBranchSegment(branchId, "else", elseSegment, exits);
     } else {
       exits.push({ id: branchId, label: "else" });
+      this.addFlowGap(branchId, "Branch has no explicit else path.");
     }
 
     return {
@@ -611,6 +628,20 @@ class PythonFlowAnalyzer {
       ...(node.meta ?? {}),
       ...meta
     };
+  }
+
+  private addFlowGap(id: string, message: string) {
+    const node = this.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      return;
+    }
+    appendNodeObservation(node, {
+      kind: "flow-gap",
+      severity: "warning",
+      message,
+      source: "script-flow",
+      line: node.range?.startLine,
+    });
   }
 
   private createId(kind: ScriptFlowNodeKind, seed: string) {

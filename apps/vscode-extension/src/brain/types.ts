@@ -1,8 +1,13 @@
-export type BrainNodeKind = "doc" | "tag" | "account" | "external";
+export type BrainNodeKind = "doc" | "folder" | "tag" | "account" | "external";
 
 export type BrainEdgeKind = "link" | "tag" | "account" | "unresolved";
 
-export type BrainIssueKind = "orphan" | "cycle" | "self-reference" | "broken-ref" | "truncated";
+export type BrainIssueKind =
+  | "orphan"
+  | "cycle"
+  | "self-reference"
+  | "broken-ref"
+  | "truncated";
 
 export type BrainIssue = {
   kind: BrainIssueKind;
@@ -64,4 +69,5 @@ export type BrainWebviewMessage =
   | { type: "ready" }
   | { type: "brain:refresh" }
   | { type: "brain:pickFolder" }
-  | { type: "brain:openNode"; nodeId: string };
+  | { type: "brain:openNode"; nodeId: string }
+  | { type: "brain:openGlossary" };

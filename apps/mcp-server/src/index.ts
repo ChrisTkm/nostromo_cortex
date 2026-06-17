@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { createMongoTaskStore, ensureAiAgentRuns, insertRun, loadConfig, queryAgentStats, queryRuns, stableStringify, type AgentRunQuery, type TaskFilter, TASK_SEVERITIES, TASK_STATUSES } from "@cortex/core";
+import { createMongoActionPlanStore, createMongoTaskStore, ensureAiAgentRuns, insertRun, loadConfig, queryAgentStats, queryRuns, stableStringify, updateRun, type ActionPlanDocument, type AgentRunDocument, type AgentRunQuery, type TaskFilter, TASK_SEVERITIES, TASK_STATUSES } from "@cortex/core";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MongoClient } from "mongodb";
@@ -41,12 +41,35 @@ function resourceContents(uri: string, data: unknown) {
   };
 }
 
+function dedupe(values: Array<string | undefined | null>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b));
+}
+
+function parseDateInput(value: string | undefined, fallback: Date): Date {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`Invalid ISO datetime: ${value}`);
+  }
+  return parsed;
+}
+
+function durationMs(startedAt: Date, endedAt: Date | null): number | undefined {
+  if (!endedAt) return undefined;
+  return Math.max(0, endedAt.getTime() - startedAt.getTime());
+}
+
 async function main() {
   const config = loadConfig();
   const taskStore = createMongoTaskStore({
     mongoUrl: config.mongoUrl,
     dbName: config.mongoDbName,
     collectionName: config.mongoTasksCollection
+  });
+  const planStore = createMongoActionPlanStore({
+    mongoUrl: config.mongoUrl,
+    dbName: config.mongoDbName,
+    collectionName: "action_plans"
   });
   const app = new CortexApplicationService(config, taskStore);
   await app.initialize();
@@ -65,6 +88,148 @@ async function main() {
     sessionId: randomUUID(),
     actor: "agent" as const
   };
+
+  async function validateAgentSlug(agentSlug: string): Promise<void> {
+    const agents = db.collection("ai_agents");
+    const knownAgentCount = await agents.countDocuments({});
+    if (knownAgentCount === 0) return;
+    const agent = await agents.findOne({ slug: agentSlug, active: { $ne: false } });
+    if (!agent) {
+      throw new Error(`Unknown or inactive agent_slug: ${agentSlug}`);
+    }
+  }
+
+  async function resolveRunTaskContext(taskCodes: string[], explicitPlanCodes: string[] = []) {
+    const tasks = await Promise.all(taskCodes.map((code) => taskStore.getTask(code)));
+    const startedTimes = tasks
+      .map((task) => (task?.startedAt ? new Date(task.startedAt).getTime() : Number.NaN))
+      .filter((time) => Number.isFinite(time));
+    return {
+      planCodes: dedupe([
+        ...explicitPlanCodes,
+        ...tasks.map((task) => task?.planCode)
+      ]),
+      earliestStartedAt:
+        startedTimes.length > 0
+          ? new Date(Math.min(...startedTimes)).toISOString()
+          : undefined
+    };
+  }
+
+  async function recalcPlanProgress(planCode: string) {
+    const [plan, tasks] = await Promise.all([
+      planStore.getPlan(planCode),
+      taskStore.listTasks({ planCode })
+    ]);
+    const progress = {
+      total: tasks.length,
+      pending: tasks.filter((task) => task.status === "PENDING").length,
+      in_progress: tasks.filter((task) => task.status === "IN_PROGRESS").length,
+      blocked: tasks.filter((task) => task.status === "BLOCKED").length,
+      done: tasks.filter((task) => task.status === "DONE").length,
+      failed: tasks.filter((task) => task.status === "FAILED").length
+    };
+    const now = new Date().toISOString();
+    const patch: Partial<ActionPlanDocument> = {
+      progress,
+      updated_at: now
+    };
+    if (progress.total > 0 && progress.done === progress.total) {
+      patch.status = "DONE";
+      patch.current_task_code = null;
+      patch.completed_at = plan?.completedAt ?? now;
+    } else if (progress.in_progress > 0 && plan?.status !== "DONE") {
+      patch.status = "IN_PROGRESS";
+      patch.current_task_code = tasks.find((task) => task.status === "IN_PROGRESS")?.code ?? null;
+      patch.completed_at = null;
+    }
+    return planStore.updatePlan(planCode, patch);
+  }
+
+  async function writeAgentRun(input: {
+    id?: string;
+    agentSlug: string;
+    modelId?: string;
+    startedAt?: string;
+    endedAt?: string;
+    taskCodes?: string[];
+    planCodes?: string[];
+    files?: string[];
+    commits?: string[];
+    tokensIn?: number;
+    tokensOut?: number;
+    status: "running" | "completed" | "failed";
+    notes?: string;
+  }) {
+    await validateAgentSlug(input.agentSlug);
+    const now = new Date();
+    const existing = input.id
+      ? await db.collection("agent_runs").findOne({ id: input.id })
+      : null;
+    const taskCodes = dedupe([
+      ...((existing?.task_codes as string[] | undefined) ?? []),
+      ...(input.taskCodes ?? [])
+    ]);
+    const taskContext = await resolveRunTaskContext(
+      taskCodes,
+      dedupe([
+        ...((existing?.plan_codes as string[] | undefined) ?? []),
+        ...(input.planCodes ?? [])
+      ])
+    );
+    const startedAt = parseDateInput(
+      input.startedAt ??
+        (existing?.started_at ? new Date(existing.started_at as string | Date).toISOString() : undefined) ??
+        taskContext.earliestStartedAt,
+      now
+    );
+    const endedAt =
+      input.status === "running"
+        ? input.endedAt
+          ? parseDateInput(input.endedAt, now)
+          : null
+        : parseDateInput(input.endedAt, now);
+    const patch: AgentRunDocument = {
+      id: input.id ?? `run-${randomUUID()}`,
+      agent_slug: input.agentSlug,
+      ...(input.modelId ? { model_id: input.modelId } : existing?.model_id ? { model_id: existing.model_id as string } : {}),
+      started_at: startedAt.toISOString(),
+      ended_at: endedAt ? endedAt.toISOString() : null,
+      ...(typeof durationMs(startedAt, endedAt) === "number" ? { duration_ms: durationMs(startedAt, endedAt) } : {}),
+      task_codes: taskCodes,
+      plan_codes: taskContext.planCodes,
+      files_touched: dedupe([
+        ...((existing?.files_touched as string[] | undefined) ?? []),
+        ...(input.files ?? [])
+      ]),
+      commits: dedupe([
+        ...((existing?.commits as string[] | undefined) ?? []),
+        ...(input.commits ?? [])
+      ]),
+      ...(typeof input.tokensIn === "number" ? { tokens_in: input.tokensIn } : {}),
+      ...(typeof input.tokensOut === "number" ? { tokens_out: input.tokensOut } : {}),
+      status: input.status,
+      ...(input.notes ? { notes: input.notes } : existing?.notes ? { notes: existing.notes as string } : {})
+    };
+
+    if (input.id && existing) {
+      const { id, ...update } = patch;
+      await updateRun(db, id, update);
+    } else {
+      await insertRun(db, patch);
+    }
+
+    return {
+      id: patch.id,
+      agent_slug: patch.agent_slug,
+      status: patch.status,
+      started_at: patch.started_at,
+      ended_at: patch.ended_at ?? null,
+      duration_ms: patch.duration_ms ?? null,
+      task_codes: patch.task_codes,
+      plan_codes: patch.plan_codes ?? []
+    };
+  }
 
   server.tool("task_list", filterSchema, async (filter) =>
     jsonContent(
@@ -153,27 +318,131 @@ async function main() {
   server.tool(
     "record_run",
     {
+      id: z.string().min(1).optional(),
       agent_slug: z.string().min(1),
+      model_id: z.string().optional(),
+      started_at: z.string().optional(),
+      ended_at: z.string().optional(),
       task_codes: z.array(z.string()).default([]),
+      plan_codes: z.array(z.string()).default([]),
       tokens_in: z.number().nonnegative().optional(),
       tokens_out: z.number().nonnegative().optional(),
       files: z.array(z.string()).default([]),
+      commits: z.array(z.string()).default([]),
+      notes: z.string().optional(),
       status: z.enum(["running", "completed", "failed"]).default("running")
     },
-    async ({ agent_slug, task_codes, tokens_in, tokens_out, files, status }) => {
-      const id = `run-${randomUUID()}`;
-      await insertRun(db, {
-        id,
-        agent_slug,
-        started_at: new Date(),
-        task_codes,
-        files_touched: files,
-        commits: [],
-        ...(typeof tokens_in === "number" ? { tokens_in } : {}),
-        ...(typeof tokens_out === "number" ? { tokens_out } : {}),
-        status
+    async ({ id, agent_slug, model_id, started_at, ended_at, task_codes, plan_codes, tokens_in, tokens_out, files, commits, notes, status }) =>
+      jsonContent(
+        await writeAgentRun({
+          ...(id ? { id } : {}),
+          agentSlug: agent_slug,
+          ...(model_id ? { modelId: model_id } : {}),
+          ...(started_at ? { startedAt: started_at } : {}),
+          ...(ended_at ? { endedAt: ended_at } : {}),
+          taskCodes: task_codes,
+          planCodes: plan_codes,
+          files,
+          commits,
+          ...(typeof tokens_in === "number" ? { tokensIn: tokens_in } : {}),
+          ...(typeof tokens_out === "number" ? { tokensOut: tokens_out } : {}),
+          status,
+          ...(notes ? { notes } : {})
+        })
+      )
+  );
+
+  server.tool(
+    "task_start",
+    {
+      code: z.string().min(1),
+      agent_slug: z.string().min(1),
+      run_id: z.string().min(1).optional(),
+      model_id: z.string().optional(),
+      started_at: z.string().optional(),
+      notes: z.string().optional()
+    },
+    async ({ code, agent_slug, run_id, model_id, started_at, notes }) => {
+      await validateAgentSlug(agent_slug);
+      const task = await taskStore.getTask(code);
+      if (!task) throw new Error(`Task not found: ${code}`);
+      const startedAt = parseDateInput(started_at, new Date()).toISOString();
+      await taskStore.bulkUpdateTasks([task.code], {
+        status: "IN_PROGRESS",
+        agent: agent_slug,
+        started_at: startedAt,
+        completed_at: null
       });
-      return jsonContent({ id, status });
+      if (task.planCode) await recalcPlanProgress(task.planCode);
+      const run = await writeAgentRun({
+        ...(run_id ? { id: run_id } : {}),
+        agentSlug: agent_slug,
+        ...(model_id ? { modelId: model_id } : {}),
+        startedAt,
+        taskCodes: [task.code],
+        planCodes: task.planCode ? [task.planCode] : [],
+        status: "running",
+        ...(notes ? { notes } : {})
+      });
+      return jsonContent({
+        task_code: task.code,
+        plan_code: task.planCode ?? null,
+        run
+      });
+    }
+  );
+
+  server.tool(
+    "task_complete",
+    {
+      code: z.string().min(1),
+      agent_slug: z.string().min(1),
+      run_id: z.string().min(1).optional(),
+      model_id: z.string().optional(),
+      started_at: z.string().optional(),
+      ended_at: z.string().optional(),
+      files: z.array(z.string()).default([]),
+      commits: z.array(z.string()).default([]),
+      tokens_in: z.number().nonnegative().optional(),
+      tokens_out: z.number().nonnegative().optional(),
+      status: z.enum(["completed", "failed"]).default("completed"),
+      notes: z.string().optional()
+    },
+    async ({ code, agent_slug, run_id, model_id, started_at, ended_at, files, commits, tokens_in, tokens_out, status, notes }) => {
+      await validateAgentSlug(agent_slug);
+      const task = await taskStore.getTask(code);
+      if (!task) throw new Error(`Task not found: ${code}`);
+      const endedAt = parseDateInput(ended_at, new Date()).toISOString();
+      const startedAt = parseDateInput(started_at ?? task.startedAt ?? undefined, new Date(endedAt)).toISOString();
+      const taskStatus = status === "completed" ? "DONE" : "FAILED";
+      await taskStore.bulkUpdateTasks([task.code], {
+        status: taskStatus,
+        agent: agent_slug,
+        ...(task.startedAt ? {} : { started_at: startedAt }),
+        completed_at: endedAt
+      });
+      if (task.planCode) await recalcPlanProgress(task.planCode);
+      const run = await writeAgentRun({
+        ...(run_id ? { id: run_id } : {}),
+        agentSlug: agent_slug,
+        ...(model_id ? { modelId: model_id } : {}),
+        startedAt,
+        endedAt,
+        taskCodes: [task.code],
+        planCodes: task.planCode ? [task.planCode] : [],
+        files,
+        commits,
+        ...(typeof tokens_in === "number" ? { tokensIn: tokens_in } : {}),
+        ...(typeof tokens_out === "number" ? { tokensOut: tokens_out } : {}),
+        status,
+        ...(notes ? { notes } : {})
+      });
+      return jsonContent({
+        task_code: task.code,
+        task_status: taskStatus,
+        plan_code: task.planCode ?? null,
+        run
+      });
     }
   );
 

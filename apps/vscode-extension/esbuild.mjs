@@ -12,12 +12,15 @@ const require = createRequire(import.meta.url);
 const staticAssets = [
   {
     source: require.resolve("web-tree-sitter/web-tree-sitter.wasm"),
-    target: path.resolve("media/web-tree-sitter.wasm")
+    target: path.resolve("media/web-tree-sitter.wasm"),
   },
   {
-    source: path.join(path.dirname(require.resolve("tree-sitter-python/package.json")), "tree-sitter-python.wasm"),
-    target: path.resolve("media/tree-sitter-python.wasm")
-  }
+    source: path.join(
+      path.dirname(require.resolve("tree-sitter-python/package.json")),
+      "tree-sitter-python.wasm",
+    ),
+    target: path.resolve("media/tree-sitter-python.wasm"),
+  },
 ];
 
 const shared = {
@@ -29,7 +32,7 @@ const shared = {
   // breaking activation/F5. Keep the extension as a single CJS file.
   format: "cjs",
   platform: "node",
-  target: "node20"
+  target: "node20",
 };
 
 const browserBundle = {
@@ -40,7 +43,7 @@ const browserBundle = {
   platform: "browser",
   target: "es2022",
   jsx: "automatic",
-  loader: { ".tsx": "tsx" }
+  loader: { ".tsx": "tsx" },
 };
 
 const contexts = await Promise.all([
@@ -53,54 +56,54 @@ const contexts = await Promise.all([
   esbuild.context({
     ...browserBundle,
     // The graph webview ships as a single browser bundle.
-    entryPoints: ["src/webview/index.tsx"],
-    outfile: "media/webview.js"
+    entryPoints: ["src/webview/graph/index.tsx"],
+    outfile: "media/graph.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/notes/index.tsx"],
-    outfile: "media/notes.js"
+    outfile: "media/notes.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/logs/index.tsx"],
-    outfile: "media/logs.js"
+    outfile: "media/logs.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/archive/index.tsx"],
-    outfile: "media/archive.js"
+    outfile: "media/archive.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/brain/index.tsx"],
-    outfile: "media/brain.js"
+    outfile: "media/brain.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/script-flow/index.tsx"],
-    outfile: "media/script-flow.js"
+    outfile: "media/script-flow.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/task-editor/index.tsx"],
-    outfile: "media/task-editor.js"
+    outfile: "media/task-editor.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/ledger/index.tsx"],
-    outfile: "media/ledger.js"
+    outfile: "media/ledger.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/plans/index.tsx"],
-    outfile: "media/plans.js"
+    outfile: "media/plans.js",
   }),
   esbuild.context({
     ...browserBundle,
     entryPoints: ["src/webview/plan-editor/index.tsx"],
-    outfile: "media/plan-editor.js"
-  })
+    outfile: "media/plan-editor.js",
+  }),
 ]);
 
 async function copyStaticAssets() {
@@ -108,13 +111,17 @@ async function copyStaticAssets() {
     staticAssets.map(async (asset) => {
       await mkdir(path.dirname(asset.target), { recursive: true });
       await copyFile(asset.source, asset.target);
-    })
+    }),
   );
 
   const missing = staticAssets.filter((asset) => !existsSync(asset.target));
   if (missing.length > 0) {
-    const list = missing.map((asset) => path.relative(process.cwd(), asset.target)).join(", ");
-    throw new Error(`esbuild copyStaticAssets: missing after copy: ${list}. Build aborted — .vsix would ship broken Python analyzer.`);
+    const list = missing
+      .map((asset) => path.relative(process.cwd(), asset.target))
+      .join(", ");
+    throw new Error(
+      `esbuild copyStaticAssets: missing after copy: ${list}. Build aborted — .vsix would ship broken Python analyzer.`,
+    );
   }
 }
 

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { analyzeScriptFlowDocument } from "./index.js";
 import { analyzeTypeScriptDocument } from "./typescript.js";
 import { loadFixture } from "./__fixtures__/helpers.js";
 
 const run = (source: string) =>
   analyzeTypeScriptDocument({ documentPath: "fixture.ts", source });
+const runPipeline = (source: string) =>
+  analyzeScriptFlowDocument({ documentPath: "fixture.ts", source });
 
 describe("analyzeTypeScriptDocument", () => {
   it("splits try/catch/finally into 3 separate nodes", () => {
@@ -53,6 +56,30 @@ describe("analyzeTypeScriptDocument", () => {
     const snap = run("function plain() { return 1; }");
     const fn = snap.nodes.find((n) => n.kind === "function");
     expect(fn?.meta?.async).toBeUndefined();
+  });
+
+  it("anchors inline tags and flow gaps to nodes", async () => {
+    const snap = await runPipeline(`
+      function inspect(value: number) {
+        // TODO revisar umbral
+        if (value > 10) log(value);
+        log(value);
+      }
+    `);
+    expect(snap).toBeDefined();
+    const fn = snap.nodes.find((n) => n.kind === "function");
+    const branch = snap.nodes.find((n) => n.kind === "branch");
+    expect(fn?.meta?.autoObservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "inline", message: expect.stringContaining("TODO") }),
+        expect.objectContaining({ kind: "flow-gap", message: expect.stringContaining("no explicit return") }),
+      ]),
+    );
+    expect(branch?.meta?.autoObservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "flow-gap", message: expect.stringContaining("no explicit else") }),
+      ]),
+    );
   });
 
   it("flags async class methods", () => {

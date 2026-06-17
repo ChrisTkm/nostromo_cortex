@@ -5,5 +5,5 @@
   "cortex.telemetryJsonlPath": "./data/telemetry/cortex-telemetry.jsonl",
   "cortex.mongoDbName": "nostromo_cortex",
   "cortex.mongoTasksCollection": "tasks",
-  "cortex.brainRootPath": "C:\\dev\\jean_d_arc\\src\\content"
+  "aiSignal.lastViewColumn": 2
 }

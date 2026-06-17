@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-import type { ScriptFlowLanguage, ScriptFlowSnapshot } from "../types.js";
+import { appendNodeObservation } from "../observations.js";
+import type { ScriptFlowLanguage, ScriptFlowNode, ScriptFlowSnapshot } from "../types.js";
 import { analyzePythonDocument } from "./python.js";
 import { analyzeSqlDocument } from "./sql.js";
 import { analyzeTypeScriptDocument } from "./typescript.js";
@@ -48,6 +49,7 @@ export async function analyzeScriptFlowDocument(input: ScriptFlowAnalyzerInput):
   if (!snapshot) {
     return undefined;
   }
+  enrichWithInlineObservations(snapshot, input.source);
 
   scriptFlowCache.set(key, snapshot);
   if (scriptFlowCache.size > SCRIPT_FLOW_CACHE_MAX) {
@@ -80,4 +82,54 @@ async function runAnalyzer(language: ScriptFlowLanguage, input: ScriptFlowAnalyz
     default:
       return undefined;
   }
+}
+
+const INLINE_TAG_PATTERN =
+  /\b(TODO|FIXME|NOTE)\b|(?:^|[\s/;#-])([!?*])(?=\s+\S)/i;
+
+function enrichWithInlineObservations(snapshot: ScriptFlowSnapshot, source: string) {
+  const lines = source.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    const match = INLINE_TAG_PATTERN.exec(line);
+    if (!match) {
+      continue;
+    }
+    const tag = (match[1] ?? match[2] ?? "NOTE").toUpperCase();
+    const lineNumber = index + 1;
+    const node = findSmallestNodeAtLine(snapshot.nodes, lineNumber);
+    const message = `${tag}: ${line.trim()}`;
+    if (node) {
+      appendNodeObservation(node, {
+        kind: "inline",
+        severity: tag === "FIXME" || tag === "!" ? "warning" : "info",
+        message,
+        line: lineNumber,
+        source: "inline",
+      });
+      continue;
+    }
+    snapshot.analysis.observations.push(message);
+  }
+}
+
+function findSmallestNodeAtLine(nodes: readonly ScriptFlowNode[], line: number) {
+  return [...nodes]
+    .filter(
+      (node) =>
+        node.range &&
+        node.range.startLine <= line &&
+        node.range.endLine >= line,
+    )
+    .sort(
+      (left, right) =>
+        rangeLineSpan(left) - rangeLineSpan(right) ||
+        left.label.localeCompare(right.label),
+    )[0];
+}
+
+function rangeLineSpan(node: ScriptFlowNode) {
+  if (!node.range) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return node.range.endLine - node.range.startLine;
 }

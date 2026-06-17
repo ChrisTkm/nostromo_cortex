@@ -5,6 +5,7 @@ const {
   taskClose,
   taskListTasks,
   taskGetTask,
+  taskUpsertTasks,
   taskBulkUpdateTasks,
   taskDeleteTasks,
   planEnsureIndexes,
@@ -47,6 +48,7 @@ const {
   const taskClose = vi.fn();
   const taskListTasks = vi.fn();
   const taskGetTask = vi.fn();
+  const taskUpsertTasks = vi.fn();
   const taskBulkUpdateTasks = vi.fn();
   const taskDeleteTasks = vi.fn();
   const planEnsureIndexes = vi.fn();
@@ -68,6 +70,7 @@ const {
     taskClose,
     taskListTasks,
     taskGetTask,
+    taskUpsertTasks,
     taskBulkUpdateTasks,
     taskDeleteTasks,
     planEnsureIndexes,
@@ -88,6 +91,7 @@ const {
       ensureIndexes: taskEnsureIndexes,
       listTasks: taskListTasks,
       getTask: taskGetTask,
+      upsertTasks: taskUpsertTasks,
       bulkUpdateTasks: taskBulkUpdateTasks,
       deleteTasks: taskDeleteTasks,
       close: taskClose,
@@ -459,6 +463,28 @@ function fakeCollection(initial: Document[] = []) {
         modifiedCount: idx >= 0 ? 1 : 0,
       };
     }),
+    insertOne: vi.fn(async (doc: Document) => {
+      box.docs.push(doc);
+      return { acknowledged: true, insertedId: doc._id ?? box.docs.length };
+    }),
+    updateOne: vi.fn(
+      async (
+        filter: Document,
+        update: { $set?: Document; $setOnInsert?: Document },
+        options?: { upsert?: boolean },
+      ) => {
+        const idx = box.docs.findIndex((d) => matchFilter(d, filter));
+        if (idx >= 0) {
+          box.docs[idx] = { ...box.docs[idx], ...(update.$set ?? {}) };
+          return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
+        }
+        if (options?.upsert) {
+          box.docs.push({ ...filter, ...(update.$setOnInsert ?? {}), ...(update.$set ?? {}) });
+          return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1 };
+        }
+        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
+      },
+    ),
     createIndexes: vi.fn(async () => []),
   };
 }
@@ -474,6 +500,9 @@ function matchFilter(doc: Document, filter: Document): boolean {
   return Object.entries(filter).every(([key, value]) => {
     if (value && typeof value === "object" && "$in" in value) {
       return (value.$in as unknown[]).includes(doc[key]);
+    }
+    if (Array.isArray(doc[key])) {
+      return (doc[key] as unknown[]).includes(value);
     }
     return doc[key] === value;
   });
@@ -814,17 +843,23 @@ describe("ExtensionTaskService.listArchivedPlans", () => {
 
 describe("ExtensionTaskService plan task bulk operations", () => {
   let service: ExtensionTaskService;
+  let agentRuns: ReturnType<typeof fakeCollection>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    agentRuns = fakeCollection();
     createDirectory.mockResolvedValue(undefined);
     telemetryInitialize.mockResolvedValue(undefined);
     sharedConnect.mockResolvedValue(undefined);
     logsCreateIndexes.mockResolvedValue(["logs_source_timestamp"]);
     sharedDb.mockImplementation(() => ({
-      collection: vi.fn(() => ({
-        createIndexes: logsCreateIndexes,
-      })),
+      collection: vi.fn((name: string) =>
+        name === "agent_runs"
+          ? agentRuns
+          : {
+              createIndexes: logsCreateIndexes,
+            },
+      ),
     }));
     sharedClose.mockResolvedValue(undefined);
     secretGet.mockResolvedValue(undefined);
@@ -861,6 +896,10 @@ describe("ExtensionTaskService plan task bulk operations", () => {
   });
 
   it("recalcPlanProgress counts tasks by status and updates plan progress", async () => {
+    planGetPlan.mockResolvedValue({
+      code: "P1",
+      status: "IN_PROGRESS",
+    } as never);
     taskListTasks.mockResolvedValue([
       { code: "T1", status: "PENDING" } as TaskRecord,
       { code: "T2", status: "IN_PROGRESS" } as TaskRecord,
@@ -900,6 +939,184 @@ describe("ExtensionTaskService plan task bulk operations", () => {
         progress: expect.objectContaining({ total: 5 }),
       }),
     );
+  });
+
+  it("recalcPlanProgress closes a plan when all tasks are DONE", async () => {
+    planGetPlan.mockResolvedValue({
+      code: "P1",
+      status: "IN_PROGRESS",
+      completedAt: null,
+    } as never);
+    taskListTasks.mockResolvedValue([
+      { code: "T1", status: "DONE" } as TaskRecord,
+      { code: "T2", status: "DONE" } as TaskRecord,
+    ]);
+    planUpdatePlan.mockResolvedValue({
+      code: "P1",
+      status: "DONE",
+    } as never);
+
+    await service.recalcPlanProgress("P1");
+
+    expect(planUpdatePlan).toHaveBeenCalledWith(
+      "P1",
+      expect.objectContaining({
+        status: "DONE",
+        current_task_code: null,
+        completed_at: expect.any(String),
+        progress: {
+          total: 2,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 2,
+          failed: 0,
+        },
+      }),
+    );
+  });
+
+  it("saveTask recalculates the affected plan progress", async () => {
+    taskGetTask.mockResolvedValue({
+      code: "T1",
+      planCode: "P1",
+      status: "PENDING",
+    } as TaskRecord);
+    taskUpsertTasks.mockResolvedValue(1);
+    taskListTasks.mockResolvedValue([
+      { code: "T1", status: "DONE" } as TaskRecord,
+    ]);
+    planUpdatePlan.mockResolvedValue({ code: "P1" } as never);
+
+    const result = await service.saveTask({
+      code: "T1",
+      short_task: "Task 1",
+      detail: "",
+      status: "DONE",
+      agent: "codex",
+      severity: "MEDIUM",
+    });
+
+    expect(result).toBe(1);
+    expect(taskUpsertTasks).toHaveBeenCalledWith([
+      expect.objectContaining({ code: "T1", status: "DONE" }),
+    ]);
+    expect(planUpdatePlan).toHaveBeenCalledWith(
+      "P1",
+      expect.objectContaining({
+        progress: {
+          total: 1,
+          pending: 0,
+          in_progress: 0,
+          blocked: 0,
+          done: 1,
+          failed: 0,
+        },
+      }),
+    );
+  });
+
+  it("saveTask creates one completed ledger run when a task transitions to DONE", async () => {
+    taskGetTask
+      .mockResolvedValueOnce({
+        code: "T1",
+        planCode: "P1",
+        status: "IN_PROGRESS",
+        agent: "codex",
+        startedAt: "2026-06-17T10:00:00.000Z",
+      } as TaskRecord)
+      .mockResolvedValueOnce({
+        code: "T1",
+        planCode: "P1",
+        status: "DONE",
+        agent: "codex",
+        startedAt: "2026-06-17T10:00:00.000Z",
+        completedAt: "2026-06-17T10:30:00.000Z",
+      } as TaskRecord);
+    taskUpsertTasks.mockResolvedValue(1);
+    taskListTasks.mockResolvedValue([
+      { code: "T1", status: "DONE" } as TaskRecord,
+    ]);
+    planUpdatePlan.mockResolvedValue({ code: "P1" } as never);
+
+    await service.saveTask({
+      code: "T1",
+      short_task: "Task 1",
+      detail: "",
+      status: "DONE",
+      agent: "codex",
+      severity: "MEDIUM",
+      plan_code: "P1",
+    });
+
+    expect(agentRuns.docs).toHaveLength(1);
+    expect(agentRuns.docs[0]).toMatchObject({
+      agent_slug: "codex",
+      task_codes: ["T1"],
+      plan_codes: ["P1"],
+      files_touched: [],
+      commits: [],
+      status: "completed",
+      started_at: "2026-06-17T10:00:00.000Z",
+      ended_at: "2026-06-17T10:30:00.000Z",
+      duration_ms: 30 * 60 * 1000,
+    });
+  });
+
+  it("saveTask updates an existing ledger run instead of duplicating the task", async () => {
+    agentRuns.docs = [
+      {
+        _id: 1,
+        id: "run-existing",
+        agent_slug: "codex",
+        task_codes: ["T1"],
+        plan_codes: ["P1"],
+        files_touched: [],
+        commits: [],
+        status: "running",
+        started_at: "2026-06-17T10:00:00.000Z",
+      },
+    ];
+    taskGetTask
+      .mockResolvedValueOnce({
+        code: "T1",
+        planCode: "P1",
+        status: "IN_PROGRESS",
+        agent: "codex",
+        startedAt: "2026-06-17T10:00:00.000Z",
+      } as TaskRecord)
+      .mockResolvedValueOnce({
+        code: "T1",
+        planCode: "P1",
+        status: "DONE",
+        agent: "codex",
+        startedAt: "2026-06-17T10:00:00.000Z",
+        completedAt: "2026-06-17T10:30:00.000Z",
+      } as TaskRecord);
+    taskUpsertTasks.mockResolvedValue(1);
+    taskListTasks.mockResolvedValue([
+      { code: "T1", status: "DONE" } as TaskRecord,
+    ]);
+    planUpdatePlan.mockResolvedValue({ code: "P1" } as never);
+
+    await service.saveTask({
+      code: "T1",
+      short_task: "Task 1",
+      detail: "",
+      status: "DONE",
+      agent: "codex",
+      severity: "MEDIUM",
+      plan_code: "P1",
+    });
+
+    expect(agentRuns.docs).toHaveLength(1);
+    expect(agentRuns.docs[0]).toMatchObject({
+      id: "run-existing",
+      task_codes: ["T1"],
+      plan_codes: ["P1"],
+      status: "completed",
+      ended_at: "2026-06-17T10:30:00.000Z",
+    });
   });
 
   it("bulkUpdateTaskStatus sets completed_at for DONE and unsets for other status", async () => {

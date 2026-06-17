@@ -176,7 +176,7 @@ export async function buildBrainSnapshot(
   }
 
   if (synthesizeTree) {
-    synthesizeTreeEdges(docs, edges, rootUri);
+    synthesizeTreeEdges(docs, nodes, edges, rootUri);
   }
 
   // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
@@ -448,102 +448,113 @@ function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]):
   return relation === "upstream" ? [to, from] : [from, to];
 }
 
-// Sintetiza aristas upstream/downstream desde la estructura de carpetas:
-// para cada doc, el padre es el index.{md,mdx} más cercano hacia arriba
-// dentro de la misma "zona" (primer segmento bajo el rootPath elegido por
-// el usuario). Es acíclico por construcción y se ejecuta después del loop
-// de links del frontmatter.
+// Sintetiza aristas upstream/downstream desde la estructura real de carpetas.
+// Cuando una carpeta tiene index.{md,mdx}, ese documento actúa como nodo de
+// carpeta. Cuando no existe, se crea un nodo sintético kind=folder.
 function synthesizeTreeEdges(
   docs: ParsedDoc[],
+  nodes: Map<string, BrainNode>,
   edges: Map<string, BrainEdge>,
   rootUri: vscode.Uri
 ) {
-  type Location = {
+  type DirectoryNode = {
+    id: string;
+    dir: string;
+    label: string;
+  };
+  type DocLocation = {
     doc: ParsedDoc;
-    absPath: string;
     dir: string;
     isIndex: boolean;
-    docsRoot: string | null;
-    zone: string | null;
   };
 
   const rootPath = normalizePath(rootUri.fsPath);
+  const dirToIndex = new Map<string, ParsedDoc>();
+  const locations: DocLocation[] = [];
 
-  function locate(doc: ParsedDoc): Location {
+  for (const doc of docs) {
     const absPath = normalizePath(doc.uri.fsPath);
     const isIndex = /\/index\.(md|mdx)$/i.test(absPath);
     const lastSlash = absPath.lastIndexOf("/");
     const dir = lastSlash >= 0 ? absPath.slice(0, lastSlash) : absPath;
-    if (!absPath.startsWith(`${rootPath}/`)) {
-      return { doc, absPath, dir, isIndex, docsRoot: null, zone: null };
+    locations.push({ doc, dir, isIndex });
+    if (isIndex) {
+      dirToIndex.set(dir, doc);
     }
-    const relative = absPath.slice(rootPath.length + 1);
-    const firstSeg = relative.split("/")[0] ?? "";
-    const zone = !firstSeg || firstSeg.includes(".") ? null : firstSeg;
-    return { doc, absPath, dir, isIndex, docsRoot: rootPath, zone };
   }
 
-  const locations = docs.map(locate);
-  const indexByDir = new Map<string, Location>();
+  const dirSet = new Set<string>([rootPath]);
   for (const loc of locations) {
-    if (loc.isIndex) {
-      indexByDir.set(loc.dir, loc);
-    }
-  }
-  const rootIndex = indexByDir.get(rootPath) ?? null;
-
-  function parentIndex(loc: Location): Location | null {
-    if (!loc.docsRoot) return null;
-    if (!loc.zone) {
-      return loc.isIndex ? null : rootIndex;
-    }
-    const zoneRoot = `${loc.docsRoot}/${loc.zone}`;
     let dir = loc.dir;
+    while (dir === rootPath || dir.startsWith(`${rootPath}/`)) {
+      dirSet.add(dir);
+      if (dir === rootPath || !dir.includes("/")) break;
+      dir = dir.slice(0, dir.lastIndexOf("/"));
+    }
+  }
+
+  function labelForDir(dir: string) {
+    if (dir === rootPath) {
+      return path.basename(rootPath) || "Workspace";
+    }
+    return path.basename(dir) || dir;
+  }
+
+  function routeForDir(dir: string) {
+    if (dir === rootPath) {
+      return "/";
+    }
+    return `/${normalizePath(path.relative(rootPath, dir))}`.replace(/\/+/g, "/");
+  }
+
+  function folderIdForDir(dir: string) {
+    if (dir === rootPath) {
+      return "folder:__root__";
+    }
+    return `folder:${normalizePath(path.relative(rootPath, dir))}`;
+  }
+
+  function ensureDirectoryNode(dir: string): DirectoryNode {
+    const indexDoc = dirToIndex.get(dir);
+    if (indexDoc) {
+      return { id: indexDoc.id, dir, label: indexDoc.title };
+    }
+    const id = folderIdForDir(dir);
+    if (!nodes.has(id)) {
+      nodes.set(id, {
+        id,
+        kind: "folder",
+        label: labelForDir(dir),
+        route: routeForDir(dir),
+      });
+    }
+    return { id, dir, label: labelForDir(dir) };
+  }
+
+  const sortedDirs = [...dirSet].sort(
+    (left, right) => left.split("/").length - right.split("/").length || left.localeCompare(right)
+  );
+  for (const dir of sortedDirs) {
+    ensureDirectoryNode(dir);
+  }
+
+  for (const dir of sortedDirs) {
+    if (dir === rootPath) continue;
+    const parentDir = dir.slice(0, dir.lastIndexOf("/")) || rootPath;
+    if (!dirSet.has(parentDir)) continue;
+    const parent = ensureDirectoryNode(parentDir);
+    const child = ensureDirectoryNode(dir);
+    addEdge(edges, parent.id, child.id, "link", "upstream");
+    addEdge(edges, parent.id, child.id, "link", "downstream");
+  }
+
+  for (const loc of locations) {
     if (loc.isIndex) {
-      if (dir === zoneRoot || !dir.includes("/")) return null;
-      dir = dir.slice(0, dir.lastIndexOf("/"));
+      continue;
     }
-    while (dir === zoneRoot || dir.startsWith(`${zoneRoot}/`)) {
-      const parent = indexByDir.get(dir);
-      if (parent && parent.doc.id !== loc.doc.id) return parent;
-      if (dir === zoneRoot || !dir.includes("/")) break;
-      dir = dir.slice(0, dir.lastIndexOf("/"));
-    }
-    return null;
-  }
-
-  function ancestorChain(loc: Location): Location[] {
-    const out: Location[] = [];
-    let current: Location | null = parentIndex(loc);
-    let guard = 0;
-    while (current && guard < 20) {
-      out.push(current);
-      current = parentIndex(current);
-      guard += 1;
-    }
-    return out;
-  }
-
-  const childrenByParent = new Map<string, Location[]>();
-  for (const loc of locations) {
-    const parent = parentIndex(loc);
-    if (!parent) continue;
-    const bucket = childrenByParent.get(parent.doc.id) ?? [];
-    bucket.push(loc);
-    childrenByParent.set(parent.doc.id, bucket);
-  }
-
-  for (const loc of locations) {
-    for (const ancestor of ancestorChain(loc)) {
-      const [from, to] = edgeEndpoints(loc.doc.id, ancestor.doc.id, "upstream");
-      addEdge(edges, from, to, "link", "upstream");
-    }
-  }
-  for (const [parentId, children] of childrenByParent) {
-    for (const child of children) {
-      const [from, to] = edgeEndpoints(parentId, child.doc.id, "downstream");
-      addEdge(edges, from, to, "link", "downstream");
-    }
+    const parent = ensureDirectoryNode(loc.dir);
+    addEdge(edges, parent.id, loc.doc.id, "link", "upstream");
+    addEdge(edges, parent.id, loc.doc.id, "link", "downstream");
   }
 }
 

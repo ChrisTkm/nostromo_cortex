@@ -30,6 +30,7 @@
     "onCommand:cortex.importArchive",
     "onCommand:cortex.setMongoUrl",
     "onCommand:cortex.clearMongoUrl",
+    "onCommand:cortex.setTheme",
     "onCommand:cortex.openLedger",
     "onCommand:cortex.openPlans",
     "onCommand:cortex.openPlanEditor"
@@ -42,11 +43,11 @@
       },
       {
         "command": "cortex.openTasks",
-        "title": "Cortex: Focus task navigator"
+        "title": "Cortex: Focus control"
       },
       {
         "command": "cortex.switchPanel",
-        "title": "Cortex: Switch panel"
+        "title": "Cortex: Modules"
       },
       {
         "command": "cortex.openGraph",
@@ -54,8 +55,7 @@
       },
       {
         "command": "cortex.togglePlanStatusFilter",
-        "title": "Cortex: Toggle plan status filter",
-        "icon": "$(filter)"
+        "title": "Cortex: Open Plans"
       },
       {
         "command": "cortex.showOptions",
@@ -191,6 +191,11 @@
         "title": "Cortex: Set AI Agent icon"
       },
       {
+        "command": "cortex.setTheme",
+        "title": "Cortex: Set Theme",
+        "icon": "$(color-mode)"
+      },
+      {
         "command": "cortex.openLedger",
         "title": "Cortex: Open Ledger"
       },
@@ -216,14 +221,14 @@
       "cortex": [
         {
           "id": "cortex.overview",
-          "name": "Task Navigator"
+          "name": "Cortex Control"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "cortex.overview",
-        "contents": "Connect Cortex to MongoDB or create a sample local database to get started.\n[Create sample local database](command:cortex.bootstrapDatabase)\n[Select Mongo database](command:cortex.selectDatabase)\n[Set Mongo URL](command:cortex.setMongoUrl)\n[Open graph](command:cortex.openGraph)"
+        "contents": "Cortex Control centralizes modules, options, settings, theme, and status.\n[Open modules](command:cortex.switchPanel)\n[Options](command:cortex.showOptions)\n[Select Mongo database](command:cortex.selectDatabase)"
       }
     ],
     "keybindings": [
@@ -256,51 +261,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "cortex.togglePlanStatusFilter",
+          "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@3"
         },
         {
-          "command": "cortex.newTask",
+          "command": "cortex.setTheme",
           "when": "view == cortex.overview",
           "group": "navigation@4"
-        },
-        {
-          "command": "cortex.showOptions",
-          "when": "view == cortex.overview",
-          "group": "navigation@5"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "cortex.editTask",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "inline@1"
-        },
-        {
-          "command": "cortex.openGraph",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "inline@2"
-        },
-        {
-          "command": "cortex.markDone",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@1"
-        },
-        {
-          "command": "cortex.markInProgress",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@2"
-        },
-        {
-          "command": "cortex.markBlocked",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@3"
-        },
-        {
-          "command": "cortex.archivePlan",
-          "when": "view == cortex.overview && viewItem == cortex.plan.done",
-          "group": "inline@1"
         }
       ],
       "editor/context": [

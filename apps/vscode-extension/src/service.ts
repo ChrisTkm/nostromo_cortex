@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,7 @@ import {
   buildGraphSnapshot,
   createMongoTaskStore,
   ensureAiAgentRuns,
+  insertRun,
   loadConfig,
   type MongoNoteStore,
   type NoteDocumentInput,
@@ -17,8 +19,10 @@ import {
   SharedMongoClient,
   sampleTasks,
   stableStringify,
+  updateRun,
   type ActionPlanDocument,
   type ActionPlanRecord,
+  type AgentRunDocument,
   type AgentRunQuery,
   type AgentRunRecord,
   type TaskDocumentInput,
@@ -365,7 +369,10 @@ export class ExtensionTaskService {
   }
 
   async recalcPlanProgress(planCode: string): Promise<ActionPlanRecord | null> {
-    const tasks = await this.loadPlanTasks(planCode);
+    const [plan, tasks] = await Promise.all([
+      this.getPlan(planCode),
+      this.loadPlanTasks(planCode),
+    ]);
     const total = tasks.length;
     const pending = tasks.filter((t) => t.status === "PENDING").length;
     const inProgress = tasks.filter((t) => t.status === "IN_PROGRESS").length;
@@ -380,10 +387,19 @@ export class ExtensionTaskService {
       done,
       failed,
     };
-    return this.updatePlan(planCode, {
+    const now = new Date().toISOString();
+    const patch: Partial<ActionPlanDocument> = {
       progress,
-      updated_at: new Date().toISOString(),
-    });
+      updated_at: now,
+    };
+
+    if (total > 0 && done === total) {
+      patch.status = "DONE";
+      patch.current_task_code = null;
+      patch.completed_at = plan?.completedAt ?? now;
+    }
+
+    return this.updatePlan(planCode, patch);
   }
 
   async bulkUpdateTaskStatus(
@@ -391,15 +407,35 @@ export class ExtensionTaskService {
     codes: string[],
     status: string,
   ): Promise<ActionPlanRecord | null> {
+    const existingTasks =
+      status === "DONE"
+        ? await Promise.all(codes.map((code) => this.getTask(code)))
+        : [];
     const patch: Record<string, unknown> = { status };
-    if (status === "DONE") {
-      patch.completed_at = new Date().toISOString();
+    const now = new Date().toISOString();
+    if (status === "IN_PROGRESS") {
+      patch.started_at = now;
+      patch.completed_at = null;
+    } else if (status === "DONE" || status === "FAILED") {
+      patch.completed_at = now;
     } else {
       patch.completed_at = null;
     }
     await this.withTaskStore(this.getConnectionSettings(), (store) =>
       store.bulkUpdateTasks(codes, patch),
     );
+    if (status === "DONE") {
+      await Promise.all(
+        existingTasks.map(async (existing, index) => {
+          const code = codes[index];
+          if (!code || existing?.status === "DONE") return;
+          const completedTask = await this.getTask(code);
+          if (completedTask?.status === "DONE") {
+            await this.ensureDoneTaskRun(completedTask, existing);
+          }
+        }),
+      );
+    }
     return this.recalcPlanProgress(planCode);
   }
 
@@ -1181,9 +1217,41 @@ export class ExtensionTaskService {
   }
 
   async saveTask(task: TaskDocumentInput) {
-    return this.withTaskStore(this.getConnectionSettings(), (store) =>
-      store.upsertTasks([task]),
+    const existing = await this.getTask(task.code);
+    const now = new Date().toISOString();
+    const nextTask: TaskDocumentInput = { ...task };
+    if (existing?.status !== nextTask.status) {
+      if (nextTask.status === "IN_PROGRESS" && !existing?.startedAt) {
+        nextTask.started_at = now;
+        nextTask.completed_at = null;
+      } else if (nextTask.status === "DONE" || nextTask.status === "FAILED") {
+        nextTask.completed_at = now;
+      } else if (existing?.status === "DONE" || existing?.status === "FAILED") {
+        nextTask.completed_at = null;
+      }
+      nextTask.updated_at = now;
+    }
+    const saved = await this.withTaskStore(this.getConnectionSettings(), (store) =>
+      store.upsertTasks([nextTask]),
     );
+    if (existing?.status !== "DONE" && nextTask.status === "DONE") {
+      const completedTask = await this.getTask(nextTask.code);
+      await this.ensureDoneTaskRun(completedTask, existing);
+    }
+    const affectedPlanCodes = new Set<string>();
+    if (existing?.planCode) {
+      affectedPlanCodes.add(existing.planCode);
+    }
+    if (typeof nextTask.plan_code === "string" && nextTask.plan_code.trim()) {
+      affectedPlanCodes.add(nextTask.plan_code.trim());
+    }
+
+    await Promise.all(
+      [...affectedPlanCodes].map((planCode) =>
+        this.recalcPlanProgress(planCode),
+      ),
+    );
+    return saved;
   }
 
   async listDatabaseNames() {
@@ -1428,7 +1496,7 @@ export class ExtensionTaskService {
     }
   }
 
-  private getLogsSource(): LogsSource {
+  getLogsSource(): LogsSource {
     // Read fresh config each call: this.config is a one-time snapshot and would
     // not reflect a folder change made via the "Change" button (logs:selectFolder).
     const sources = vscode.workspace
@@ -1454,6 +1522,95 @@ export class ExtensionTaskService {
     const sharedClient = await this.requireSharedClient(settings);
     const db = sharedClient.db(settings.mongoDbName);
     return queryRuns(db, query ?? {});
+  }
+
+  async updateAgentRunReport(
+    id: string,
+    patch: Partial<AgentRunDocument>,
+  ): Promise<void> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const current = await db.collection("agent_runs").findOne({ id });
+    const startedAt = patch.started_at ?? current?.started_at;
+    const endedAt = patch.ended_at ?? current?.ended_at;
+    const startedTime = startedAt ? new Date(startedAt as string | Date).getTime() : Number.NaN;
+    const endedTime = endedAt ? new Date(endedAt as string | Date).getTime() : Number.NaN;
+    const durationPatch =
+      Number.isFinite(startedTime) && Number.isFinite(endedTime)
+        ? { duration_ms: Math.max(0, endedTime - startedTime) }
+        : { duration_ms: null };
+    await updateRun(db, id, {
+      ...patch,
+      ...durationPatch,
+    });
+  }
+
+  private async ensureDoneTaskRun(
+    task: TaskRecord | null,
+    previous?: TaskRecord | null,
+  ): Promise<void> {
+    if (!task || task.status !== "DONE") {
+      return;
+    }
+
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    await ensureAiAgentRuns(db);
+
+    const collection = db.collection("agent_runs");
+    const existing = await collection.findOne({ task_codes: task.code });
+    const endedAt = task.completedAt ?? new Date().toISOString();
+    const startedAt = task.startedAt ?? previous?.startedAt ?? endedAt;
+    const startedTime = new Date(startedAt).getTime();
+    const endedTime = new Date(endedAt).getTime();
+    const durationMs =
+      Number.isFinite(startedTime) && Number.isFinite(endedTime)
+        ? Math.max(0, endedTime - startedTime)
+        : null;
+    const runPatch: Partial<AgentRunDocument> = {
+      agent_slug: task.agent || previous?.agent || "any",
+      started_at: startedAt,
+      ended_at: endedAt,
+      duration_ms: durationMs,
+      task_codes: [task.code],
+      plan_codes: task.planCode ? [task.planCode] : [],
+      files_touched: [],
+      commits: [],
+      status: "completed",
+    };
+
+    if (typeof existing?.id === "string" && existing.id.trim()) {
+      await updateRun(db, existing.id, runPatch);
+      return;
+    }
+    if (existing?._id) {
+      await collection.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            id: `task-${task.code}-${randomUUID()}`,
+            ...runPatch,
+            updated_at: new Date().toISOString(),
+          },
+        },
+      );
+      return;
+    }
+
+    await insertRun(db, {
+      id: `task-${task.code}-${randomUUID()}`,
+      agent_slug: runPatch.agent_slug ?? "any",
+      started_at: startedAt,
+      ended_at: endedAt,
+      ...(durationMs !== null ? { duration_ms: durationMs } : {}),
+      task_codes: [task.code],
+      plan_codes: task.planCode ? [task.planCode] : [],
+      files_touched: [],
+      commits: [],
+      status: "completed",
+    });
   }
 
   async listAiAgents(): Promise<

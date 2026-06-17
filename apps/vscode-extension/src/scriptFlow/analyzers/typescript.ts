@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import ts from "typescript";
 
+import { appendNodeObservation } from "../observations.js";
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
 type ScriptFlowAnalyzerInput = {
@@ -205,6 +206,7 @@ class TypeScriptFlowAnalyzer {
     }
     if (!this.hasExplicitReturn(body)) {
       this.observations.add(`Function ${displayName} has no explicit return.`);
+      this.addFlowGap(functionId, `Function ${displayName} has no explicit return.`);
     }
 
     const bodySegment = this.parseStatementList(body.statements);
@@ -218,11 +220,16 @@ class TypeScriptFlowAnalyzer {
 
   private parseStatementList(statements: readonly ts.Statement[]): FlowSegment {
     const segments: FlowSegment[] = [];
+    let terminalFlowSeen = false;
 
     for (const statement of statements) {
       const segment = this.parseExecutableStatement(statement);
       if (segment.entries.length > 0) {
+        if (terminalFlowSeen) {
+          this.addFlowGap(segment.entries[0], "Statement is unreachable after a terminal flow.");
+        }
         segments.push(segment);
+        terminalFlowSeen = segment.exits.length === 0;
       }
     }
 
@@ -300,6 +307,7 @@ class TypeScriptFlowAnalyzer {
       }
     } else {
       exits.push({ id: branchId, label: "else" });
+      this.addFlowGap(branchId, "Branch has no explicit else path.");
     }
 
     return {
@@ -320,8 +328,10 @@ class TypeScriptFlowAnalyzer {
     });
 
     const exits: FlowEndpoint[] = [];
+    let hasDefault = false;
     for (const clause of statement.caseBlock.clauses) {
       const clauseLabel = ts.isDefaultClause(clause) ? "default" : `case ${this.formatExpression(clause.expression)}`;
+      hasDefault = hasDefault || ts.isDefaultClause(clause);
       const segment = this.parseStatementList(clause.statements);
 
       if (segment.entries.length > 0) {
@@ -333,6 +343,9 @@ class TypeScriptFlowAnalyzer {
       } else {
         exits.push({ id: branchId, label: clauseLabel });
       }
+    }
+    if (!hasDefault) {
+      this.addFlowGap(branchId, "Switch has no default path.");
     }
 
     return {
@@ -518,6 +531,20 @@ class TypeScriptFlowAnalyzer {
       ...(node.meta ?? {}),
       ...meta
     };
+  }
+
+  private addFlowGap(id: string, message: string) {
+    const node = this.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      return;
+    }
+    appendNodeObservation(node, {
+      kind: "flow-gap",
+      severity: "warning",
+      message,
+      source: "script-flow",
+      line: node.range?.startLine,
+    });
   }
 
   private createId(kind: ScriptFlowNodeKind, seed: string): string {

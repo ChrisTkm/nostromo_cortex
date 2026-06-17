@@ -1,6 +1,6 @@
 # Cortex Ledger
 
-Captura de **sesiones de agentes IA ejecutando tareas** sobre el repo: qué agente trabajó, qué tasks tocó, qué archivos cambió, qué commits dejó, cuántos tokens/USD costó. Una fila por sesión, persistida en MongoDB y consultable desde el panel Ledger o vía MCP.
+Captura de **sesiones de agentes IA ejecutando tareas** sobre el repo: qué agente trabajó, qué tasks tocó, qué archivos cambió, qué commits dejó y, si el runtime lo sabe, cuántos tokens usó. Una fila por sesión, persistida en MongoDB y consultable desde el panel Ledger o vía MCP.
 
 El agente se reporta a sí mismo al cerrar (vía MCP `record_run` o hook Stop de Claude Code) — Ledger no intercepta llamadas API. Eso lo hace independiente del provider y del SDK.
 
@@ -43,12 +43,13 @@ Collection Mongo `agent_runs` en `nostromo_cortex`. Una fila por sesión. Se mut
 | `model_id`      | string?                              | Modelo concreto (`claude-opus-4-7`, `gpt-5-codex`).          |
 | `started_at`    | string ISO                           | Cuándo arrancó la sesión.                                    |
 | `ended_at`      | string ISO?                          | `null` mientras `status === "running"`.                      |
+| `duration_ms`   | number?                              | Calculado desde `started_at` / `ended_at`.                    |
 | `task_codes`    | string[]                             | Tasks tocadas en la sesión (cero o más).                     |
+| `plan_codes`    | string[]                             | Plans derivados de las tasks o reportados explícitamente.     |
 | `files_touched` | string[]                             | Rutas relativas modificadas en la sesión.                    |
 | `commits`       | string[]                             | Hashes corridos por el agente.                               |
 | `tokens_in`     | number?                              | Reportado por el agente; opcional.                           |
 | `tokens_out`    | number?                              | Idem.                                                        |
-| `cost_usd`      | number?                              | Costo estimado de la sesión (lo trae el agente).             |
 | `status`        | `running` \| `completed` \| `failed` | Estado terminal de la sesión.                                |
 | `notes`         | string?                              | Texto libre, idealmente 1–2 líneas: "cerró 4 tasks de PREP". |
 | `created_at`    | string ISO                           | Para histórico.                                              |
@@ -64,8 +65,11 @@ Collection Mongo `agent_runs` en `nostromo_cortex`. Una fila por sesión. Se mut
 
 Un run se crea cuando arranca la sesión y se cierra cuando termina. Dos vías, ambas livianas:
 
-1. **MCP tool `record_run`** (`apps/mcp-server`): el agente IA llama al final de su sesión con `{agent_slug, task_codes, tokens_in, tokens_out, files, commits, status}`. Esquema Zod en MCP server.
-2. **Hook Stop de Claude Code** (`~/.claude/settings.json`): un script local invoca el mismo tool al cerrar Claude Code. Sirve para self-tracking del propio Claude.
+1. **MCP tool `task_start`** (`apps/mcp-server`): cuando una IA toma una task, llama con `{code, agent_slug, model_id?}`. El server setea `tasks.status = IN_PROGRESS`, `tasks.agent`, `tasks.started_at`, recalcula el plan y crea/actualiza un run `running`.
+2. **MCP tool `task_complete`** (`apps/mcp-server`): cuando termina, llama con `{code, agent_slug, run_id?, files, commits, tokens_in?, tokens_out?, notes, status}`. El server setea `tasks.status = DONE|FAILED`, `tasks.completed_at`, recalcula/cierra el plan si corresponde y registra/cierra el run en Ledger.
+3. **MCP tool `record_run`** (`apps/mcp-server`): compatibilidad y reportes manuales. Acepta `{id?, agent_slug, model_id?, started_at?, ended_at?, task_codes, plan_codes?, tokens_in?, tokens_out?, files, commits, notes, status}` y calcula `duration_ms` cuando puede.
+4. **Extensión VS Code `saveTask`**: cuando una task cambia de cualquier estado a `DONE`, crea automáticamente un run simple `completed` con `agent_slug`, `task_codes: [code]`, `plan_codes`, `started_at/ended_at` y arrays vacíos para `files_touched`/`commits`. Antes de insertar busca `agent_runs` por `task_codes: code`; si existe, lo actualiza. Regla de producto: 1 task cerrada manualmente = máximo 1 run automático.
+5. **Hook Stop de Claude Code** (`~/.claude/settings.json`): un script local invoca el mismo contrato al cerrar Claude Code. Sirve para self-tracking del propio Claude.
 
 Ledger **no** intercepta llamadas API, no parsea logs, no lee SQLite de telemetry. El agente es responsable de reportarse — y si no se reporta, no aparece. Trade-off consciente: simplicidad sobre cobertura.
 
@@ -75,7 +79,9 @@ Para que cualquier agente IA pueda consultar el histórico antes de empezar:
 
 | Tool                                 | Devuelve                                                                    |
 | ------------------------------------ | --------------------------------------------------------------------------- |
-| `record_run(...)`                    | Inserta o cierra un run.                                                    |
+| `task_start(code, agent_slug, ...)`   | Marca una task `IN_PROGRESS`, asigna agente, pone `started_at` y crea run.  |
+| `task_complete(code, agent_slug, ...)`| Marca una task `DONE`/`FAILED`, pone `completed_at` y cierra run.           |
+| `record_run(...)`                    | Inserta o cierra un run manual/compatibilidad.                              |
 | `query_runs(agent?, since?, limit?)` | Lista de runs filtrada.                                                     |
 | `agent_stats(agent_slug)`            | `{total_runs, total_tasks_done, avg_duration_h, agg_tokens, success_rate}`. |
 
@@ -87,7 +93,7 @@ Comando `cortex.openLedger`. Webview React, reusa el shape de los paneles Logs/N
 
 Contenido:
 
-- **Tabla de runs**: ícono del agente, `started_at`, duración, tasks tocadas (chips), `tokens_in/out`, `cost_usd`, status. Filtros por agente y por rango de fechas.
+- **Tabla de runs**: ícono del agente, `started_at`, duración, tasks tocadas (chips), `tokens_in/out`, status. Filtros por agente y por rango de fechas.
 - **Chart simple**: tasks/día por agente (barras apiladas). Una sola gráfica, sin drill-down.
 - **Logo** `ledger-activity.svg` en activity bar.
 
@@ -100,14 +106,14 @@ Lo que entra (alineado al plan `CORTEX-LEDGER`):
 1. **PREP** (6 tasks · ~4h): enum `TaskAgent` extendido, `author`/`assigned_agent` en plans, collection `ai_agents` + seeds + iconos, `started_at`/`completed_at` en tasks, backfill best-effort de tasks/plans históricos.
 2. **LEDGER** (5 tasks · ~6h): schema `agent_runs` + índices + tests, MCP `record_run` + hook doc, panel Ledger (tabla + chart), MCP `query_runs` + `agent_stats`, select de agente en editores.
 
-Fuera del MVP: ranking de agentes, recomendaciones, drill-down por run, export CSV, auto-extracción de tokens.
+Fuera del MVP: ranking de agentes, recomendaciones, drill-down por run, export CSV, auto-extracción de tokens/costos.
 
 ## Riesgos
 
 | Riesgo                                    | Mitigación                                                               |
 | ----------------------------------------- | ------------------------------------------------------------------------ |
 | Agentes que no se reportan → datos huecos | Hook Stop de Claude Code para self-tracking; tabla muestra "untracked".  |
-| Tokens/cost reportados a ojo              | Documentar que es best-effort; aceptable para tendencias, no auditoría.  |
+| Tokens reportados a ojo                   | Tokens son best-effort; si la IA no los sabe, se omiten.                 |
 | Schema bumps rompen tasks históricas      | Todos los campos nuevos son opcionales; backfill por scripts dedicados.  |
 | Tabla de runs crece rápido                | Índice por `started_at`; el panel pagina y filtra por defecto a 30 días. |
 
