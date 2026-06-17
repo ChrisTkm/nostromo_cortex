@@ -4,7 +4,7 @@ import { formatDuration, runStatusClass, runStatusIcon } from "../state";
 
 type RunDrawerProps = {
   run: RunGroup | null;
-  onClose: () => void;
+  onClose?: () => void;
   tz?: string;
 };
 
@@ -33,13 +33,15 @@ export function RunDrawer({ run, onClose, tz = "UTC" }: RunDrawerProps) {
       <header className="logs-run-drawer__header">
         <div className="logs-run-drawer__header-top">
           <div className="logs-run-drawer__process-name">{run.process}</div>
-          <button
-            className="logs-button logs-run-drawer__close"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
+          {onClose ? (
+            <button
+              className="logs-button logs-run-drawer__close"
+              onClick={onClose}
+              type="button"
+            >
+              Close
+            </button>
+          ) : null}
         </div>
         <div className="logs-run-drawer__header-meta">
           <span className={`logs-run-status ${runStatusClass(run.status)}`}>

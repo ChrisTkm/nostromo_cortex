@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { sendRefresh } from "../../../scriptFlow/bridge.js";
+import { Button } from "../../components/atoms";
 import { vscode } from "../vscodeApi";
 
 type ErrorBoundaryProps = {
@@ -35,9 +36,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <h1 className="script-flow-boundary__title">Script Flow hit an unexpected render error.</h1>
         <p className="script-flow-boundary__text">{this.state.error.message}</p>
         <div className="script-flow-boundary__actions">
-          <button className="script-flow-button script-flow-button--primary" onClick={() => sendRefresh(vscode)} type="button">
+          <Button intent="action" onClick={() => sendRefresh(vscode)}>
             Reload panel
-          </button>
+          </Button>
         </div>
       </div>
     );

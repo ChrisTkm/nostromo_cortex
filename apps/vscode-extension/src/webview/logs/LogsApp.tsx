@@ -14,7 +14,9 @@ import {
   type ProcessRow,
 } from "./state";
 import { RunDrawer } from "./components/RunDrawer";
-import { PageHeader } from "../components/PageHeader";
+import { Button, FilterSelect, Metric, Search } from "../components/atoms";
+import { Footer, Header, SecondBar } from "../components/molecules";
+import { Module } from "../components/organisms";
 
 type LogsMessage =
   | {
@@ -42,7 +44,7 @@ export function LogsApp() {
   const [sources, setSources] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
-  const [period, setPeriod] = useState<PeriodFilter>("month");
+  const [period, setPeriod] = useState<PeriodFilter>("all");
   const [tz, setTz] = useState<string>("UTC");
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null);
   const [selectedRunIndex, setSelectedRunIndex] = useState(0);
@@ -132,6 +134,12 @@ export function LogsApp() {
   const currentRun: RunGroup | null =
     currentRuns[selectedRunIndex] ?? currentRuns[0] ?? null;
 
+  useEffect(() => {
+    if (selectedRunIndex >= currentRuns.length) {
+      setSelectedRunIndex(0);
+    }
+  }, [currentRuns.length, selectedRunIndex]);
+
   function pickProcess(name: string) {
     setSelectedProcess(name);
     setSelectedRunIndex(0);
@@ -143,101 +151,133 @@ export function LogsApp() {
     return "ok";
   }
 
+  function clearFilters() {
+    setSearch("");
+    setLevel("all");
+    setPeriod("all");
+  }
+
   const folderLabel =
     sources.length > 0 ? sources[0] : "Sin carpeta configurada";
 
-  return (
-    <div className="logs-shell">
-      {/* ===== Header ===== */}
-      <PageHeader
-        title="CORTEX LOGS"
-        actions={
-          <>
-            <span className="logs-head__folder" title={sources.join(", ")}>
-              📁 {folderLabel}
-            </span>
-            <button
-              className="logs-btn"
-              type="button"
-              onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
-            >
-              Change
-            </button>
-            <button
-              className={`logs-btn${live ? " logs-btn--live" : ""}`}
-              type="button"
-              onClick={() => {
-                const next = !live;
-                setLive(next);
-                vscode.postMessage({ type: "logs:toggleLive", live: next });
-              }}
-            >
-              {live ? "● LIVE" : "LIVE"}
-              {live && lastRefreshAt
-                ? ` · ${formatLiveSince(lastRefreshAt)}`
-                : ""}
-            </button>
-            <button
-              className="logs-btn"
-              type="button"
-              onClick={() => vscode.postMessage({ type: "logs:refresh" })}
-            >
-              Refresh
-            </button>
-          </>
-        }
-      />
+  const header = (
+    <Header
+      external={sources.length > 0}
+      title="CORTEX LOGS"
+      route={
+        <span className="logs-head__folder" title={sources.join(", ")}>
+          {folderLabel}
+        </span>
+      }
+      actions={
+        <>
+          <Button
+            intent="change"
+            onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
+            size="small"
+          >
+            Change
+          </Button>
+          <Button
+            className={live ? "is-active logs-live-button" : "logs-live-button"}
+            intent="change"
+            onClick={() => {
+              const next = !live;
+              setLive(next);
+              vscode.postMessage({ type: "logs:toggleLive", live: next });
+            }}
+            size="small"
+          >
+            {live ? "LIVE" : "Live"}
+            {live && lastRefreshAt
+              ? ` · ${formatLiveSince(lastRefreshAt)}`
+              : ""}
+          </Button>
+          <Button
+            intent="refresh"
+            onClick={() => vscode.postMessage({ type: "logs:refresh" })}
+            size="small"
+          >
+            Refresh
+          </Button>
+        </>
+      }
+    />
+  );
 
-      {/* ===== Filters ===== */}
-      <div className="logs-filterbar">
-        <input
+  const secondBar = (
+    <SecondBar
+      search={
+        <Search
           className="logs-search"
-          type="search"
+          onChange={setSearch}
           placeholder="Search messages…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          className="logs-select"
-          value={period}
-          onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
-        >
-          <option value="month">Month</option>
-          <option value="semester">Semester</option>
-          <option value="year">Year</option>
-          <option value="all">All time</option>
-        </select>
-        <select
-          className="logs-select"
-          value={tz}
-          onChange={(e) => setTz(e.target.value)}
-          title="Zona horaria de visualización"
-        >
-          <option value="UTC">UTC (log)</option>
-          <option value="America/Santiago">Chile</option>
-          <option value="America/New_York">New York</option>
-          <option value="local">Local</option>
-        </select>
-        <div className="logs-levelchips">
-          {(["ERROR", "WARN", "INFO"] as const).map((lvl) => {
-            const active = level === lvl;
-            return (
-              <button
-                key={lvl}
-                type="button"
-                aria-pressed={active}
-                className={`logs-chip logs-chip--${lvl.toLowerCase()}${active ? " logs-chip--active" : ""}`}
-                onClick={() => setLevel(active ? "all" : lvl)}
-              >
-                {lvl}
-                <span className="logs-chip__n">{levelCounts[lvl] ?? 0}</span>
-              </button>
-            );
-          })}
+      }
+      filters={
+        <div className="logs-filterbar">
+          <FilterSelect
+            onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
+            value={period}
+          >
+            <option value="month">Month</option>
+            <option value="semester">Semester</option>
+            <option value="year">Year</option>
+            <option value="all">All time</option>
+          </FilterSelect>
+          <FilterSelect
+            onChange={(e) => setTz(e.target.value)}
+            title="Zona horaria de visualización"
+            value={tz}
+          >
+            <option value="UTC">UTC (log)</option>
+            <option value="America/Santiago">Chile</option>
+            <option value="America/New_York">New York</option>
+            <option value="local">Local</option>
+          </FilterSelect>
+          <div className="logs-levelchips">
+            {(["ERROR", "WARN", "INFO"] as const).map((lvl) => {
+              const active = level === lvl;
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  aria-pressed={active}
+                  className={`logs-chip logs-chip--${lvl.toLowerCase()}${active ? " logs-chip--active" : ""}`}
+                  onClick={() => setLevel(active ? "all" : lvl)}
+                >
+                  {lvl}
+                  <span className="logs-chip__n">{levelCounts[lvl] ?? 0}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      }
+    />
+  );
 
-      {/* ===== Body ===== */}
+  const footer = (
+    <Footer
+      left={
+        <div className="logs-stats">
+          <Metric label="Total">{logs.length}</Metric>
+          <Metric label="Visibles">{filteredLogs.length}</Metric>
+          <Metric label="Procesos">{processRows.length}</Metric>
+          {live ? <Metric label="Live">On</Metric> : null}
+        </div>
+      }
+    />
+  );
+
+  return (
+    <Module
+      className="logs-module"
+      footer={footer}
+      header={header}
+      secondBar={secondBar}
+    >
       {logs.length === 0 ? (
         <div className="logs-empty">
           <div className="logs-eyebrow">No logs yet</div>
@@ -246,13 +286,27 @@ export function LogsApp() {
             Cortex lee archivos (.jsonl / .log) de una carpeta externa,
             read-only. Sin MongoDB.
           </p>
-          <button
-            className="logs-btn logs-btn--accent"
-            type="button"
+          <Button
+            intent="action"
             onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
           >
             Elegir carpeta…
-          </button>
+          </Button>
+          <p className="logs-empty__hint">
+            Actual: <code>{folderLabel}</code>
+          </p>
+        </div>
+      ) : filteredLogs.length === 0 ? (
+        <div className="logs-empty logs-empty--filtered">
+          <div className="logs-eyebrow">No visible logs</div>
+          <h2 className="logs-empty__title">Los filtros no dejan resultados visibles</h2>
+          <p className="logs-empty__text">
+            Hay {logs.length} eventos cargados desde la carpeta seleccionada,
+            pero el periodo, nivel o búsqueda actual los oculta.
+          </p>
+          <Button intent="change" onClick={clearFilters}>
+            Mostrar todo
+          </Button>
           <p className="logs-empty__hint">
             Actual: <code>{folderLabel}</code>
           </p>
@@ -336,7 +390,7 @@ export function LogsApp() {
                 </table>
                 <div className="logs-pane__detail">
                   {currentRun ? (
-                    <RunDrawer run={currentRun} tz={tz} onClose={() => {}} />
+                    <RunDrawer run={currentRun} tz={tz} />
                   ) : (
                     <div className="logs-pane__empty">
                       Seleccioná una corrida.
@@ -348,7 +402,7 @@ export function LogsApp() {
           </section>
         </div>
       )}
-    </div>
+    </Module>
   );
 }
 

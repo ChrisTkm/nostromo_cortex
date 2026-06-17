@@ -8,14 +8,14 @@ import {
   ReactFlow,
   type Edge,
   type Node,
+  type NodeTypes,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { toPng } from "html-to-image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   isScriptFlowHostMessage,
-  sendDrawerClick,
   sendOpenGlossary,
   sendReady,
   sendRefresh,
@@ -25,36 +25,24 @@ import {
 } from "../../scriptFlow/bridge.js";
 import {
   isScriptFlowSnapshot,
+  SCRIPT_FLOW_NODE_KINDS,
   type ScriptFlowNode,
   type ScriptFlowNodeKind,
   type ScriptFlowSnapshot,
 } from "../../scriptFlow/types.js";
-import { PageHeader } from "../components/PageHeader";
-import { PanelFooter } from "../components/PanelFooter";
+import { Button, Metric, Search, Toggle } from "../components/atoms";
+import { Footer, Header, SecondBar } from "../components/molecules";
+import { Module } from "../components/organisms";
 import { AnalysisDrawer } from "./components/AnalysisDrawer";
-import { FlowNode, type FlowNodeData } from "./components/FlowNode";
+import { FlowNode, KIND_LABELS, type FlowNodeData } from "./components/FlowNode";
 import { vscode } from "./vscodeApi";
-const nodeTypes = { scriptFlow: FlowNode };
+const nodeTypes = { scriptFlow: FlowNode } as NodeTypes;
 const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = {
   nodes: [],
   edges: [],
 };
 const NODE_WIDTH = 226;
 const NODE_HEIGHT = 100;
-
-const KIND_LABELS: Record<ScriptFlowNodeKind, string> = {
-  entry: "Entry",
-  function: "Function",
-  branch: "Branch",
-  loop: "Loop",
-  tryCatch: "Try/Catch",
-  return: "Return",
-  call: "Call",
-  cte: "CTE",
-  select: "Select",
-  join: "Join",
-  subquery: "Subquery",
-};
 
 type ScriptFlowViewState =
   | {
@@ -111,9 +99,9 @@ export function ScriptFlowApp() {
     }
     return "LR";
   });
-  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<
     Node<FlowNodeData>,
     Edge
@@ -121,16 +109,25 @@ export function ScriptFlowApp() {
   const [isNarrowLayout, setIsNarrowLayout] = useState(
     () => window.innerWidth < 800,
   );
-  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(
-    () => window.innerWidth < 800,
-  );
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [showMiniMap, setShowMiniMap] = useState(true);
 
-  const nodeLabels = useMemo(() => {
+  const kindCounts = useMemo(() => {
     if (state.status !== "snapshot") {
-      return new Map<string, string>();
+      return [];
     }
 
-    return new Map(state.snapshot.nodes.map((node) => [node.id, node.label]));
+    const counts = new Map<ScriptFlowNodeKind, number>();
+    for (const node of state.snapshot.nodes) {
+      counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
+    }
+    return SCRIPT_FLOW_NODE_KINDS.filter((kind) => counts.has(kind)).map(
+      (kind) => ({
+        kind,
+        label: KIND_LABELS[kind],
+        count: counts.get(kind) ?? 0,
+      }),
+    );
   }, [state]);
 
   const searchMatches = useMemo(() => {
@@ -152,7 +149,6 @@ export function ScriptFlowApp() {
   }, [searchQuery, state]);
 
   useEffect(() => {
-    setSearchOpen(false);
     setSearchQuery("");
     setActiveMatchIndex(0);
   }, [state]);
@@ -174,7 +170,6 @@ export function ScriptFlowApp() {
     const mediaQuery = window.matchMedia("(max-width: 800px)");
     const syncLayout = (matches: boolean) => {
       setIsNarrowLayout(matches);
-      setIsDrawerCollapsed(matches);
     };
 
     syncLayout(mediaQuery.matches);
@@ -232,26 +227,20 @@ export function ScriptFlowApp() {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
-        setSearchOpen((open) => {
-          if (!open) {
-            setSearchQuery("");
-            setActiveMatchIndex(0);
-          }
-          return !open;
-        });
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       }
-      if (e.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
         setSearchQuery("");
         setActiveMatchIndex(0);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen]);
+  }, []);
 
   useEffect(() => {
-    if (!searchOpen || searchMatches.length === 0 || !flowInstance) return;
+    if (!searchQuery || searchMatches.length === 0 || !flowInstance) return;
     const matchId = searchMatches[activeMatchIndex]?.nodeId;
     if (!matchId) return;
     const target = flow.nodes.find((n) => n.id === matchId);
@@ -270,59 +259,147 @@ export function ScriptFlowApp() {
     flowInstance,
     isNarrowLayout,
     searchMatches,
-    searchOpen,
+    searchQuery,
   ]);
 
-  return (
-    <div className={`script-flow-app script-flow-app--${state.status}`}>
-      <PageHeader
-        title="CORTEX SCRIPT FLOW"
-        subtitle={
-          state.status === "snapshot"
-            ? shortFilename(state.snapshot.metadata.path)
-            : undefined
-        }
-        actions={
-          <>
-            {state.status === "snapshot" ? (
-              <button
-                className="script-flow-button--with-icon"
-                onClick={() => {
-                  setSearchOpen(true);
-                  setSearchQuery("");
-                  setActiveMatchIndex(0);
-                }}
-                title="Search nodes (Ctrl+K)"
-                type="button"
-              >
-                <span aria-hidden="true" className="script-flow-button__glyph">
-                  {"\u2315"}
-                </span>
-                Search
-              </button>
-            ) : null}
-            <button
-              className="script-flow-button--with-icon"
-              onClick={() => sendOpenGlossary(vscode)}
-              title="Glossary: node and edge types used in the flow"
-              type="button"
-            >
-              <span aria-hidden="true" className="script-flow-button__glyph">
-                ?
-              </span>
-              Glossary
-            </button>
-            <button onClick={() => sendRefresh(vscode)} type="button">
-              Refresh
-            </button>
-          </>
-        }
-      />
+  useEffect(() => {
+    if (activeMatchIndex < searchMatches.length) {
+      return;
+    }
+    setActiveMatchIndex(Math.max(0, searchMatches.length - 1));
+  }, [activeMatchIndex, searchMatches.length]);
 
-      <main
-        className={`script-flow-surface${state.status !== "snapshot" ? " script-flow-surface--state" : ""}${isDrawerCollapsed ? " script-flow-surface--drawer-collapsed" : ""}`}
+  const snapshot = state.status === "snapshot" ? state.snapshot : null;
+
+  const header = (
+    <Header
+      name="CORTEX SCRIPT FLOW"
+      external={Boolean(snapshot)}
+      route={snapshot ? shortFilename(snapshot.metadata.path) : undefined}
+      actions={
+        <>
+          <Button
+            intent="refresh"
+            onClick={() => sendRefresh(vscode)}
+            size="small"
+          >
+            Refresh
+          </Button>
+          <Button
+            intent="change"
+            onClick={() => sendOpenGlossary(vscode)}
+            size="small"
+            title="Glossary: node and edge types used in the flow"
+          >
+            ?
+          </Button>
+        </>
+      }
+    />
+  );
+
+  const secondBar = snapshot ? (
+    <SecondBar
+      search={
+        <Search
+          className="script-flow-second-bar__search"
+          inputRef={searchInputRef}
+          onChange={(value) => {
+            setSearchQuery(value);
+            setActiveMatchIndex(0);
+          }}
+          placeholder="Buscar nodos por nombre o tipo"
+          value={searchQuery}
+        />
+      }
+    />
+  ) : undefined;
+
+  const footer = snapshot ? (
+    <Footer
+      left={
+        <div className="sf-footer__left">
+          <span
+            className={`sf-lang sf-lang--${snapshot.metadata.language}`}
+            title={snapshot.metadata.path}
+          >
+            {snapshot.metadata.language}
+          </span>
+          <Metric>{snapshot.nodes.length} nodes</Metric>
+          {kindCounts.map(({ count, kind, label }) => (
+            <Metric key={kind}>
+              {count} {label}
+            </Metric>
+          ))}
+          <Metric>{snapshot.edges.length} edges</Metric>
+        </div>
+      }
+      right={
+        <div className="sf-footer__right">
+          <Button
+            className={isDrawerOpen ? "is-active" : undefined}
+            intent="change"
+            onClick={() => setIsDrawerOpen((current) => !current)}
+            size="small"
+            title="Lista de nodos"
+          >
+            Nodos
+          </Button>
+          <Button
+            className={showMiniMap ? "is-active" : undefined}
+            intent="change"
+            onClick={() => setShowMiniMap((current) => !current)}
+            size="small"
+          >
+            MiniMap
+          </Button>
+          <Toggle
+            onChange={(value) => {
+              if (value === "LR" || value === "TB") {
+                setOrientation(value);
+              }
+            }}
+            options={[
+              { value: "LR", label: "⇄ LR", title: "Diseño horizontal" },
+              { value: "TB", label: "⇅ TB", title: "Diseño vertical" },
+            ]}
+            value={orientation}
+          />
+          <Button
+            intent="change"
+            onClick={() => downloadFlowAsPng(snapshot.metadata.path)}
+            size="small"
+            title="Export PNG (2x)"
+          >
+            PNG
+          </Button>
+        </div>
+      }
+    />
+  ) : undefined;
+
+  const drawer = snapshot ? (
+    <AnalysisDrawer
+      activeNodeId={selectedNodeId}
+      isOpen={isDrawerOpen}
+      nodes={snapshot.nodes}
+      onClose={() => setIsDrawerOpen(false)}
+      onSelectNode={(nodeId) => {
+        setSelectedNodeId(nodeId);
+        sendSelectNode(vscode, nodeId);
+        if (isNarrowLayout) {
+          setIsDrawerOpen(false);
+        }
+      }}
+    />
+  ) : undefined;
+
+  return (
+    <Module drawer={drawer} footer={footer} header={header} secondBar={secondBar}>
+      <div
+        className={`script-flow-surface${state.status !== "snapshot" ? " script-flow-surface--state" : ""}`}
       >
-        {state.status === "snapshot" ? (
+        {snapshot ? (
           <section className="script-flow-panel">
             <div className="script-flow-canvas">
               <ReactFlow
@@ -339,14 +416,16 @@ export function ScriptFlowApp() {
                 proOptions={{ hideAttribution: true }}
               >
                 <Controls />
-                <MiniMap
-                  pannable
-                  zoomable
-                  nodeStrokeWidth={3}
-                  nodeColor={(node) =>
-                    colorForKind((node.data as FlowNodeData).kind)
-                  }
-                />
+                {showMiniMap ? (
+                  <MiniMap
+                    pannable
+                    zoomable
+                    nodeStrokeWidth={3}
+                    nodeColor={(node) =>
+                      colorForKind((node.data as FlowNodeData).kind)
+                    }
+                  />
+                ) : null}
                 <Background
                   color="rgba(148, 163, 184, 0.18)"
                   gap={18}
@@ -354,64 +433,12 @@ export function ScriptFlowApp() {
                   variant={BackgroundVariant.Dots}
                 />
               </ReactFlow>
-              {searchOpen ? (
-                <div className="script-flow-search">
-                  <input
-                    autoFocus
-                    className="script-flow-search__input"
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setActiveMatchIndex(0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        if (e.shiftKey) {
-                          setActiveMatchIndex(
-                            (i) =>
-                              (i - 1 + searchMatches.length) %
-                              searchMatches.length,
-                          );
-                        } else {
-                          setActiveMatchIndex(
-                            (i) => (i + 1) % searchMatches.length,
-                          );
-                        }
-                        e.preventDefault();
-                      }
-                      if (e.key === "Escape") {
-                        setSearchOpen(false);
-                        setSearchQuery("");
-                        setActiveMatchIndex(0);
-                      }
-                    }}
-                    placeholder="Search nodes by name or kind..."
-                    type="text"
-                    value={searchQuery}
-                  />
-                  <span className="script-flow-search__count">
-                    {searchQuery && searchMatches.length > 0
-                      ? `${activeMatchIndex + 1}/${searchMatches.length}`
-                      : searchQuery
-                        ? "0/0"
-                        : ""}
-                  </span>
-                  <button
-                    className="script-flow-button"
-                    onClick={() => {
-                      setSearchOpen(false);
-                      setSearchQuery("");
-                      setActiveMatchIndex(0);
-                    }}
-                    type="button"
-                  >
-                    Close
-                  </button>
-                </div>
-              ) : null}
             </div>
           </section>
         ) : (
-          <section className="script-flow-state-card">
+          <section
+            className={`script-flow-state-card script-flow-state-card--${state.status}`}
+          >
             <div className="script-flow-state-card__label">
               {formatStatusLabel(state.status)}
             </div>
@@ -426,79 +453,16 @@ export function ScriptFlowApp() {
                 ))}
               </div>
             ) : null}
-            <button
-              className="script-flow-button script-flow-button--cta"
+            <Button
+              intent="action"
               onClick={() => sendSelectScript(vscode)}
-              type="button"
             >
               Select script…
-            </button>
+            </Button>
           </section>
         )}
-
-        {state.status === "snapshot" ? (
-          <AnalysisDrawer
-            activeNodeId={selectedNodeId}
-            analysis={state.snapshot.analysis}
-            isCollapsed={isDrawerCollapsed}
-            nodeLabels={nodeLabels}
-            onSelectNode={(nodeId, section) => {
-              setSelectedNodeId(nodeId);
-              sendDrawerClick(vscode, section);
-              sendSelectNode(vscode, nodeId);
-              if (isNarrowLayout) {
-                setIsDrawerCollapsed(true);
-              }
-            }}
-            onToggle={() => setIsDrawerCollapsed((current) => !current)}
-          />
-        ) : null}
-      </main>
-
-      {state.status === "snapshot" ? (
-        <PanelFooter
-          left={
-            <>
-              <span
-                className="panel-footer__label"
-                title={state.snapshot.metadata.path}
-              >
-                {shortFilename(state.snapshot.metadata.path)}
-              </span>
-              <span className="panel-footer__label">
-                {state.snapshot.metadata.language}
-              </span>
-              <span className="panel-footer__label">
-                {state.snapshot.nodes.length} nodes ·{" "}
-                {state.snapshot.edges.length} edges
-              </span>
-            </>
-          }
-          right={
-            <>
-              <button
-                className="panel-footer__button"
-                onClick={() =>
-                  setOrientation((o) => (o === "LR" ? "TB" : "LR"))
-                }
-                title={`Switch to ${orientation === "LR" ? "top-bottom" : "left-right"} layout`}
-                type="button"
-              >
-                {orientation === "LR" ? "Layout: ⇄" : "Layout: ⇅"}
-              </button>
-              <button
-                className="panel-footer__button"
-                onClick={() => downloadFlowAsPng(state.snapshot.metadata.path)}
-                title="Export PNG (2x)"
-                type="button"
-              >
-                PNG
-              </button>
-            </>
-          }
-        />
-      ) : null}
-    </div>
+      </div>
+    </Module>
   );
 }
 
@@ -523,9 +487,8 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
 
   return {
     status: "unsupported",
-    title: "Script Flow language not supported yet",
-    description:
-      "The bridge is active, but only the TypeScript, Python, and SQL analyzers are implemented right now.",
+    title: "Script Flow",
+    description: "Seleccioná un script con alguna de estas extensiones:",
     ...(message.language ? { language: message.language } : {}),
   } satisfies ScriptFlowViewState;
 }
@@ -539,7 +502,7 @@ function formatStatusLabel(status: ScriptFlowViewState["status"]) {
     case "error":
       return "Bridge error";
     case "unsupported":
-      return "Unsupported source";
+      return "Análisis de Script";
   }
 }
 
@@ -605,6 +568,9 @@ function buildFlowModel(
       ...(node.meta?.crossFile === true ? { crossFile: true } : {}),
       ...(typeof node.meta?.sourceFile === "string"
         ? { sourceFile: node.meta.sourceFile }
+        : {}),
+      ...(Array.isArray(node.meta?.autoObservations)
+        ? { autoObservations: node.meta.autoObservations }
         : {}),
       searchHit: searchHitIds.has(node.id),
     },
