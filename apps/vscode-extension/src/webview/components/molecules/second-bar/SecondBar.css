@@ -1,0 +1,16 @@
+.molecule-second-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.molecule-second-bar__search,
+.molecule-second-bar__filters,
+.molecule-second-bar__status {
+  min-width: 0;
+}
+
+.molecule-second-bar__filters {
+  flex: 1 1 auto;
+}

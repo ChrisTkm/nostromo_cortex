@@ -1,0 +1,26 @@
+.atom-field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.atom-field__label {
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.atom-field__required {
+  color: var(--status-failed);
+  margin-left: 2px;
+}
+
+.atom-field__hint {
+  color: var(--cortex-text-faint);
+  font-size: var(--cortex-text-xs);
+  background: var(--cortex-background-emphasis);
+}

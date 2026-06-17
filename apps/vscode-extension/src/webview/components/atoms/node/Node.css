@@ -1,0 +1,108 @@
+.atom-node {
+  position: relative;
+  width: 244px;
+  min-height: 120px;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--node-accent, var(--vscode-widget-border));
+  border-radius: 16px;
+  background: var(--vscode-editorWidget-background);
+  box-shadow: var(--cortex-shadow);
+  backdrop-filter: blur(12px);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.atom-node:hover {
+  transform: scale(1.02);
+}
+
+.atom-node--selected {
+  border-color: var(--cortex-accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--cortex-accent) 24%, transparent),
+    var(--cortex-shadow);
+}
+
+.atom-node--current {
+  border-width: 2px;
+  border-color: var(--cortex-accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cortex-accent) 30%, transparent),
+    0 0 20px color-mix(in srgb, var(--cortex-accent) 14%, transparent),
+    var(--cortex-shadow);
+}
+
+.atom-node__corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.atom-node__avatar {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.atom-node__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.atom-node__code {
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+}
+
+.atom-node__label {
+  margin-top: 10px;
+  color: var(--cortex-text-strong);
+  font-size: var(--cortex-text-sm);
+  font-weight: 400;
+  line-height: var(--cortex-line-height);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.atom-node__subtitle {
+  margin-top: 4px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+}
+
+.atom-node__footer {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.atom-node__tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--cortex-text-muted);
+  background: color-mix(in srgb, var(--status-pending) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-pending) 20%, transparent);
+}

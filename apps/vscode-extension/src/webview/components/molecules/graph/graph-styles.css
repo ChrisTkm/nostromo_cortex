@@ -1,0 +1,75 @@
+.graph-shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  z-index: var(--z-graph);
+}
+
+.graph-empty {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 6;
+  padding: 10px 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cortex-surface-strong) 92%, transparent);
+  color: var(--cortex-text-muted);
+}
+
+.react-flow {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-graph);
+  background: var(--cortex-canvas-bg);
+}
+
+.react-flow__controls,
+.react-flow__minimap {
+  z-index: var(--z-flow-chrome);
+  background: color-mix(
+    in srgb,
+    var(--cortex-surface-strong) 92%,
+    transparent
+  ) !important;
+  border: 1px solid var(--cortex-border);
+  box-shadow: var(--cortex-shadow-soft);
+  backdrop-filter: blur(12px);
+  color: var(--cortex-text);
+}
+
+.react-flow__minimap svg {
+  background: transparent;
+}
+
+.react-flow__minimap-node {
+  stroke: color-mix(in srgb, var(--cortex-text-faint) 46%, transparent);
+}
+
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--cortex-bg) 55%, transparent);
+}
+
+.react-flow__controls-button {
+  background: color-mix(in srgb, var(--cortex-surface) 94%, transparent) !important;
+  border-bottom: 1px solid var(--cortex-border) !important;
+  color: var(--cortex-text) !important;
+  fill: var(--cortex-text) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--cortex-hover-bg) !important;
+  color: var(--cortex-accent) !important;
+  fill: var(--cortex-accent) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__controls-button:disabled {
+  opacity: 0.42;
+}

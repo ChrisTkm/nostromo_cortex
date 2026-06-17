@@ -1,0 +1,86 @@
+.atom-bar-chart {
+  width: 100%;
+}
+
+.atom-bar-chart--empty {
+  padding: 18px 0;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-sm);
+  text-align: center;
+}
+
+.atom-bar-chart__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.atom-bar-chart__plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--cortex-border) 60%, transparent);
+}
+
+.atom-bar-chart__col {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 3px;
+}
+
+.atom-bar-chart__value {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--cortex-text-muted);
+}
+
+.atom-bar-chart__track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.atom-bar-chart__bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--cortex-accent) 42%, transparent);
+  transition:
+    height 200ms ease,
+    background 160ms ease;
+}
+
+.atom-bar-chart__bar:hover {
+  background: color-mix(in srgb, var(--cortex-accent) 70%, transparent);
+}
+
+.atom-bar-chart__bar--peak {
+  background: var(--cortex-accent);
+}
+
+.atom-bar-chart__bar--zero {
+  background: color-mix(in srgb, var(--cortex-text-muted) 22%, transparent);
+}
+
+.atom-bar-chart__label {
+  position: absolute;
+  bottom: -18px;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  color: var(--cortex-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

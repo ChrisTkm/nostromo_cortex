@@ -1,0 +1,91 @@
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.data-table__th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  text-align: left;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  user-select: none;
+}
+
+.data-table__th--right {
+  text-align: right;
+}
+
+.data-table__label {
+  display: inline-block;
+  max-width: calc(100% - 28px);
+  overflow: hidden;
+  vertical-align: middle;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table__th--sortable {
+  cursor: pointer;
+}
+
+.data-table__arrow {
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.4;
+}
+
+.data-table__th--active {
+  color: var(--cortex-text-strong);
+}
+
+.data-table__th--active .data-table__arrow {
+  opacity: 0.9;
+}
+
+.data-table__resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.data-table__resizer:hover {
+  background: color-mix(in srgb, var(--cortex-accent) 45%, transparent);
+}
+
+.data-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table__td--right {
+  text-align: right;
+}
+
+.data-table__row--clickable {
+  cursor: pointer;
+}
+
+.data-table__row--clickable:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.data-table__empty {
+  padding: 24px 8px;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}

@@ -1,0 +1,12 @@
+.atom-filter-select {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 58%, transparent);
+  border-radius: 8px;
+  /* Extra right padding so the option text never runs under the native ∨. */
+  padding: 4px 28px 4px 8px;
+  background: color-mix(in srgb, var(--cortex-bg) 98%, transparent);
+  color: var(--cortex-text);
+  font-family: var(--cortex-font);
+  font-size: var(--cortex-text-xs);
+  text-overflow: ellipsis;
+}

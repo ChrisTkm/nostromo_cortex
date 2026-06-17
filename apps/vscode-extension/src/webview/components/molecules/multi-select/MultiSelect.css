@@ -1,0 +1,46 @@
+.molecule-multi-select {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.multi-select__panel {
+  position: static;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--cortex-radius-md);
+  background: color-mix(in srgb, var(--cortex-surface-strong) 96%, transparent);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(18px);
+}
+
+.multi-select__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.multi-select__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.multi-select__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--cortex-text-sm);
+  cursor: pointer;
+}
+
+.multi-select__empty {
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-sm);
+}

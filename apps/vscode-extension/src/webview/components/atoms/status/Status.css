@@ -1,0 +1,35 @@
+.atom-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  white-space: nowrap;
+}
+
+.atom-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--status-pending);
+}
+
+.atom-status--pending .atom-status__dot {
+  background: var(--status-pending);
+}
+
+.atom-status--in-progress .atom-status__dot {
+  background: var(--status-in-progress);
+}
+
+.atom-status--blocked .atom-status__dot {
+  background: var(--status-blocked);
+}
+
+.atom-status--done .atom-status__dot {
+  background: var(--status-done);
+}
+
+.atom-status--failed .atom-status__dot {
+  background: var(--status-failed);
+}
