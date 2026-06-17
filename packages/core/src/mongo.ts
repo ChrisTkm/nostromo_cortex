@@ -344,7 +344,9 @@ export class MongoActionPlanStore {
     const collection = await this.collection();
     await collection.createIndexes([
       { key: { code: 1 }, name: "code_unique", unique: true },
-      { key: { status: 1 }, name: "status_idx" }
+      { key: { status: 1 }, name: "status_idx" },
+      { key: { project: 1 }, name: "project_idx" },
+      { key: { product: 1, release: 1 }, name: "product_release_idx" }
     ]);
   }
 
@@ -641,7 +643,10 @@ export async function ensureAiAgentRuns(
 ): Promise<void> {
   const collection = db.collection(collectionName ?? "agent_runs");
   await collection.createIndexes([
-    { key: { agent_slug: 1, started_at: -1 }, name: "agent_slug_started_at_desc" }
+    { key: { agent_slug: 1, started_at: -1 }, name: "agent_slug_started_at_desc" },
+    { key: { started_at: -1 }, name: "started_at_desc" },
+    { key: { task_codes: 1 }, name: "task_codes_idx" },
+    { key: { plan_codes: 1 }, name: "plan_codes_idx" }
   ]);
 }
 
