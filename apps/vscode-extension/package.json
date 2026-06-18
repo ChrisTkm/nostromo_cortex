@@ -1,8 +1,8 @@
 {
-  "name": "cortex",
-  "displayName": "Cortex",
-  "publisher": "cortex-local",
-  "version": "0.1.5",
+  "name": "cortex-local",
+  "displayName": "Cortex Local",
+  "publisher": "AlbornozStudio",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -17,7 +17,6 @@
     "vscode": "^1.100.0"
   },
   "activationEvents": [
-    "onStartupFinished",
     "onView:cortex.overview",
     "onCommand:cortex.openGraph",
     "onCommand:cortex.openArchive",
@@ -31,9 +30,12 @@
     "onCommand:cortex.importArchive",
     "onCommand:cortex.setMongoUrl",
     "onCommand:cortex.clearMongoUrl",
+    "onCommand:cortex.setTheme",
     "onCommand:cortex.openLedger",
     "onCommand:cortex.openPlans",
-    "onCommand:cortex.openPlanEditor"
+    "onCommand:cortex.openPlanEditor",
+    "onCommand:cortex.registerMCP",
+    "onCommand:cortex.installSkills"
   ],
   "contributes": {
     "commands": [
@@ -43,11 +45,11 @@
       },
       {
         "command": "cortex.openTasks",
-        "title": "Cortex: Focus task navigator"
+        "title": "Cortex: Focus control"
       },
       {
         "command": "cortex.switchPanel",
-        "title": "Cortex: Switch panel"
+        "title": "Cortex: Modules"
       },
       {
         "command": "cortex.openGraph",
@@ -55,8 +57,7 @@
       },
       {
         "command": "cortex.togglePlanStatusFilter",
-        "title": "Cortex: Toggle plan status filter",
-        "icon": "$(filter)"
+        "title": "Cortex: Open Plans"
       },
       {
         "command": "cortex.showOptions",
@@ -192,6 +193,11 @@
         "title": "Cortex: Set AI Agent icon"
       },
       {
+        "command": "cortex.setTheme",
+        "title": "Cortex: Set Theme",
+        "icon": "$(color-mode)"
+      },
+      {
         "command": "cortex.openLedger",
         "title": "Cortex: Open Ledger"
       },
@@ -202,6 +208,14 @@
       {
         "command": "cortex.openPlanEditor",
         "title": "Cortex: Open Plan Editor"
+      },
+      {
+        "command": "cortex.registerMCP",
+        "title": "Cortex: Register MCP server"
+      },
+      {
+        "command": "cortex.installSkills",
+        "title": "Cortex: Install AI skills"
       }
     ],
     "viewsContainers": {
@@ -217,14 +231,14 @@
       "cortex": [
         {
           "id": "cortex.overview",
-          "name": "Task Navigator"
+          "name": "Cortex Control"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "cortex.overview",
-        "contents": "Connect Cortex to MongoDB or create a sample local database to get started.\n[Create sample local database](command:cortex.bootstrapDatabase)\n[Select Mongo database](command:cortex.selectDatabase)\n[Set Mongo URL](command:cortex.setMongoUrl)\n[Open graph](command:cortex.openGraph)"
+        "contents": "Cortex Control centralizes modules, options, settings, theme, and status.\n[Open modules](command:cortex.switchPanel)\n[Options](command:cortex.showOptions)\n[Select Mongo database](command:cortex.selectDatabase)"
       }
     ],
     "keybindings": [
@@ -257,12 +271,12 @@
           "group": "navigation@2"
         },
         {
-          "command": "cortex.togglePlanStatusFilter",
+          "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@3"
         },
         {
-          "command": "cortex.newTask",
+          "command": "cortex.setTheme",
           "when": "view == cortex.overview",
           "group": "navigation@4"
         },
@@ -270,38 +284,6 @@
           "command": "cortex.showOptions",
           "when": "view == cortex.overview",
           "group": "navigation@5"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "cortex.editTask",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "inline@1"
-        },
-        {
-          "command": "cortex.openGraph",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "inline@2"
-        },
-        {
-          "command": "cortex.markDone",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@1"
-        },
-        {
-          "command": "cortex.markInProgress",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@2"
-        },
-        {
-          "command": "cortex.markBlocked",
-          "when": "view == cortex.overview && viewItem == cortex.task",
-          "group": "1_status@3"
-        },
-        {
-          "command": "cortex.archivePlan",
-          "when": "view == cortex.overview && viewItem == cortex.plan.done",
-          "group": "inline@1"
         }
       ],
       "editor/context": [
@@ -348,10 +330,10 @@
         },
         "cortex.logsLimit": {
           "type": "number",
-          "default": 500,
+          "default": 5000,
           "minimum": 50,
           "maximum": 5000,
-          "description": "Number of most recent logs fetched from Mongo per refresh. Higher values increase memory and initial latency."
+          "description": "Max number of most recent log events read from the source folder per refresh. Higher values surface more processes/runs at the cost of memory."
         },
         "cortex.scriptFlowMaxDepth": {
           "type": "number",
@@ -367,24 +349,20 @@
           "maximum": 600,
           "description": "Auto-refresh interval for the Cortex Logs panel, in seconds. 0 disables it."
         },
-        "cortex.logsSource": {
-          "type": "string",
-          "enum": [
-            "mongo",
-            "file"
-          ],
-          "default": "mongo",
-          "description": "Where the Cortex Logs panel reads from. 'mongo' queries the MongoDB logs collection (default). 'file' tails a JSONL file written by your app following docs/log-contract.md."
+        "cortex.logsLivePollMs": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Poll interval in milliseconds when LIVE mode is toggled on. Lower values update more frequently but increase I/O."
         },
-        "cortex.logsFilePath": {
-          "type": "string",
-          "default": "",
-          "description": "JSONL file path used when cortex.logsSource is 'file'. Empty resolves to <workspaceFolder>/logs/cortex.jsonl. Relative paths resolve against the first workspace folder."
-        },
-        "cortex.logsChangeStreams": {
-          "type": "boolean",
-          "default": false,
-          "description": "Subscribe to MongoDB Change Streams for real-time log updates instead of polling. Requires a replica set or Atlas. On single-node Mongo the extension logs a warning and falls back to polling (cortex.logsAutoRefreshSeconds)."
+        "cortex.logsSources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["C:\\dev\\Nostromo\\logs"],
+          "description": "External directories or globs to scan for log files (.jsonl, .json, .log, .txt). Cortex reads these read-only — no mongo storage. Default points to the Nostromo logs repo."
         },
         "cortex.mongoPlansCollection": {
           "type": "string",
@@ -395,6 +373,35 @@
           "type": "string",
           "default": "",
           "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
+        },
+        "cortex.backup.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run lightweight Cortex JSON backups in the background."
+        },
+        "cortex.backup.path": {
+          "type": "string",
+          "default": "",
+          "description": "Backup output directory. If empty, Cortex uses ~/cortex-backups."
+        },
+        "cortex.backup.intervalMinutes": {
+          "type": "number",
+          "default": 240,
+          "minimum": 15,
+          "maximum": 1440,
+          "description": "Background backup interval in minutes."
+        },
+        "cortex.backup.retentionDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Number of days to keep automatic backup folders."
+        },
+        "cortex.backup.notify": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a VS Code notification after successful automatic backups."
         },
         "cortex.brainMaxFiles": {
           "type": "number",
@@ -430,6 +437,22 @@
           "type": "string",
           "default": "any",
           "description": "Default agent assigned to new tasks created via cortex.newTask (e.g. codex, cursor, human). Falls back to 'any' if empty."
+        },
+        "cortex.uiFont": {
+          "type": "string",
+          "default": "JetBrains Mono",
+          "description": "Font family for Cortex panels. Default is 'JetBrains Mono'. Set to 'Inter' for a sans-serif UI."
+        },
+        "cortex.theme": {
+          "type": "string",
+          "default": "cortex",
+          "enum": [
+            "cortex",
+            "light",
+            "vscode",
+            "space"
+          ],
+          "description": "Visual theme for Cortex panels. 'cortex' (default) dark retro-space design. 'light' tema claro. 'vscode' sigue el tema del editor VS Code. 'space' azul profundo con acento cian neón."
         }
       }
     }
@@ -438,6 +461,7 @@
     "dev": "node esbuild.mjs --watch",
     "build": "node esbuild.mjs",
     "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "package:vsix": "vsce package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {

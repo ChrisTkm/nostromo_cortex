@@ -6,6 +6,8 @@ import {
   isPersistedState,
   reconcileHiddenNodeIds,
   reconcileSelectedNodeId,
+  reconcileVisibleEdges,
+  reconcileVisibleKinds,
 } from "./state.js";
 
 function snapshot(nodes: string[]): BrainSnapshot {
@@ -43,12 +45,43 @@ describe("reconcileHiddenNodeIds", () => {
   });
 });
 
+describe("reconcileVisibleKinds", () => {
+  it("preserves available kinds and drops kinds absent from the snapshot", () => {
+    const snap: BrainSnapshot = {
+      ...snapshot(["doc:a"]),
+      nodes: [
+        { id: "doc:a", kind: "doc", label: "A", route: "a" },
+        { id: "tag:x", kind: "tag", label: "x" },
+      ],
+    };
+    const result = reconcileVisibleKinds(["doc", "tag", "external"], snap);
+    expect(result).toEqual(["doc", "tag"]);
+  });
+
+  it("falls back to docs when no selected kind exists in the snapshot", () => {
+    const result = reconcileVisibleKinds(["external"], snapshot(["doc:a"]));
+    expect(result).toEqual(["doc"]);
+  });
+});
+
+describe("reconcileVisibleEdges", () => {
+  it("drops edge filters that are no longer available in the toolbar", () => {
+    const result = reconcileVisibleEdges(
+      ["link", "account", "tag"],
+      ["link", "tag"],
+    );
+    expect(result).toEqual(["link", "tag"]);
+  });
+});
+
 describe("isPersistedState", () => {
   it("returns true for state with snapshot, hiddenNodeIds, and selectedNodeId", () => {
     const state = {
       snapshot: snapshot(["doc:a"]),
       hiddenNodeIds: ["doc:b"],
       selectedNodeId: "doc:a",
+      visibleKinds: ["doc"],
+      visibleEdges: ["link"],
     };
     expect(isPersistedState(state)).toBe(true);
   });

@@ -1,0 +1,39 @@
+.molecule-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 5px;
+  padding: 8px 8px;
+}
+
+.molecule-footer__left {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.molecule-footer__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.molecule-footer__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.molecule-footer__summary {
+  font-size: var(--cortex-text-xs);
+  line-height: 1;
+  font-family: var(--cortex-font);
+  letter-spacing: 0.02em;
+  color: var(--cortex-text-muted);
+  white-space: nowrap;
+}

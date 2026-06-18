@@ -1,0 +1,27 @@
+.atom-text-input {
+  width: 100%;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--cortex-radius-sm);
+  background: color-mix(in srgb, var(--cortex-bg) 98%, transparent);
+  color: var(--cortex-text-strong);
+  font-family: var(--cortex-font);
+  font-size: var(--cortex-text-sm);
+  padding: 7px 10px;
+  transition: border-color 0.15s;
+  margin-bottom: 6px;
+}
+
+.atom-text-input:focus {
+  outline: none;
+  border-color: var(--cortex-border-strong);
+}
+
+.atom-text-input:read-only {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.atom-text-input[type="number"]::-webkit-inner-spin-button,
+.atom-text-input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}

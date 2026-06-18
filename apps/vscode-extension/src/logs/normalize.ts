@@ -4,6 +4,29 @@ export type LogDetail = {
   value: string;
 };
 
+export type CanonicalEvent = {
+  timestamp: string;
+  level: string;
+  process: string;
+  event: "BEGIN" | "STEP" | "INFO" | "WARN" | "ERROR" | "END" | string;
+  message: string;
+  execution_id?: string;
+  duration_ms?: number;
+  source?: string;
+  target?: string;
+  operation?: string;
+  rows_read?: number;
+  rows_inserted?: number;
+  rows_updated?: number;
+  rows_deleted?: number;
+  entity?: string;
+  host?: string;
+  project?: string;
+  script?: string;
+  env?: string;
+  inferred?: boolean;
+};
+
 export type LogRecord = {
   id?: string;
   className?: string;
@@ -21,7 +44,33 @@ export type LogRecord = {
   tag?: string;
   timestamp: string;
   title?: string;
+  durationMs?: number;
+  inferred?: boolean;
+  facets?: {
+    source?: string;
+    target?: string;
+    operation?: string;
+    rowsRead?: number;
+    rowsInserted?: number;
+    rowsUpdated?: number;
+    rowsDeleted?: number;
+    entity?: string;
+  };
+  context?: {
+    host?: string;
+    project?: string;
+    script?: string;
+    env?: string;
+  };
   details: LogDetail[];
+};
+
+const SYNONYM_MAP: Record<string, string> = {
+  severity: "level",
+  proc: "process",
+  job: "process",
+  msg: "message",
+  created_at: "timestamp",
 };
 
 const CORE_KEYS = new Set([
@@ -34,10 +83,22 @@ const CORE_KEYS = new Set([
   "event",
   "message",
   "execution_id",
+  "duration_ms",
   "tag",
   "class",
   "method",
-  "title"
+  "title",
+  "host",
+  "project",
+  "script",
+  "env",
+  "target",
+  "operation",
+  "rows_read",
+  "rows_inserted",
+  "rows_updated",
+  "rows_deleted",
+  "entity",
 ]);
 const EVENT_SUMMARY_KEYS: Record<string, string[]> = {
   INSERT: ["rows", "table", "schema"],
@@ -56,6 +117,19 @@ const MAX_SUMMARY_KEYS = 3;
 
 const PRIORITY_DETAIL_KEYS = ["file", "schema", "table", "periodo", "rows", "duration_ms", "endpoint", "status", "tipo", "test_run"];
 
+function applySynonyms(record: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const canonical = SYNONYM_MAP[key.toLowerCase()] ?? key;
+    if (canonical !== key && !(canonical in record)) {
+      result[canonical] = value;
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export function normalizeLogCollection(items: unknown[]): LogRecord[] {
   const normalized: LogRecord[] = [];
   for (const item of items) {
@@ -70,34 +144,61 @@ export function normalizeLogCollection(items: unknown[]): LogRecord[] {
 }
 
 export function normalizeLogDocument(record: Record<string, unknown>): LogRecord {
-  const className = optionalString(record.class);
-  const methodName = optionalString(record.method);
+  const synced = applySynonyms(record);
+  const className = optionalString(synced.class);
+  const methodName = optionalString(synced.method);
   const classMethod = [className, methodName].filter(Boolean).join(".");
-  const source = firstString(record.source, record.logger_name, classMethod, record.process) ?? "unknown";
-  const timestamp = normalizeTimestamp(record.timestamp);
-  const event = optionalString(record.event);
-  const tag = firstString(record.tag, event);
-  const title = optionalString(record.title);
-  const message = firstString(record.message, title, event) ?? "No message";
+  const source = firstString(synced.source, synced.logger_name, classMethod, synced.process) ?? "unknown";
+  const timestamp = normalizeTimestamp(synced.timestamp);
+  const event = firstString(synced.event);
+  const tag = firstString(synced.tag, event);
+  const title = optionalString(synced.title);
+  const message = firstString(synced.message, title, event) ?? "No message";
+  const durationMsRaw = synced.duration_ms;
+  const hasDuration = typeof durationMsRaw === "number" || (typeof durationMsRaw === "string" && /^\d+(\.\d+)?$/.test(durationMsRaw));
+  const durationMs = hasDuration ? Number(durationMsRaw) : undefined;
+  const inferred = synced.inferred === true;
+
+  const facets: LogRecord["facets"] = {};
+  for (const f of ["source", "target", "operation", "entity"] as const) {
+    const val = optionalString(synced[f]);
+    if (val) facets[f] = val;
+  }
+  for (const [f, key] of [["rowsRead", "rows_read"], ["rowsInserted", "rows_inserted"], ["rowsUpdated", "rows_updated"], ["rowsDeleted", "rows_deleted"]] as const) {
+    const raw = synced[key];
+    if (typeof raw === "number" || (typeof raw === "string" && /^\d+$/.test(raw))) {
+      (facets as Record<string, unknown>)[f] = Number(raw);
+    }
+  }
+
+  const context: LogRecord["context"] = {};
+  for (const c of ["host", "project", "script", "env"] as const) {
+    const val = optionalString(synced[c]);
+    if (val) context[c] = val;
+  }
 
   return {
-    ...(stringifyUnknown(record._id) ? { id: stringifyUnknown(record._id) } : {}),
+    ...(stringifyUnknown(synced._id) ? { id: stringifyUnknown(synced._id) } : {}),
     ...(className ? { className } : {}),
     day: timestamp.slice(0, 10),
     ...(event ? { event } : {}),
-    ...(optionalString(record.execution_id) ? { executionId: optionalString(record.execution_id) } : {}),
+    ...(optionalString(synced.execution_id) ? { executionId: optionalString(synced.execution_id) } : {}),
     folder: inferFolder(source),
-    level: (firstString(record.level) ?? "INFO").toUpperCase(),
-    ...(optionalString(record.logger_name) ? { loggerName: optionalString(record.logger_name) } : {}),
+    level: (firstString(synced.level) ?? "INFO").toUpperCase(),
+    ...(optionalString(synced.logger_name) ? { loggerName: optionalString(synced.logger_name) } : {}),
     message,
     ...(methodName ? { methodName } : {}),
-    ...(optionalString(record.process) ? { process: optionalString(record.process) } : {}),
+    ...(optionalString(synced.process) ? { process: optionalString(synced.process) } : {}),
     source,
-    summary: buildSummary({ event, message, process: optionalString(record.process), source, tag, title, record }),
+    summary: buildSummary({ event, message, process: optionalString(synced.process), source, tag, title, record: synced }),
     ...(tag ? { tag } : {}),
     timestamp,
     ...(title ? { title } : {}),
-    details: buildDetails(record)
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(inferred ? { inferred: true } : {}),
+    ...(Object.keys(facets).length > 0 ? { facets } : {}),
+    ...(Object.keys(context).length > 0 ? { context } : {}),
+    details: buildDetails(synced)
   };
 }
 

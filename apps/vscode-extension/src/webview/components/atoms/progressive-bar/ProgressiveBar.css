@@ -1,0 +1,49 @@
+.atom-progressive-bar {
+  display: grid;
+  gap: 4px;
+}
+
+.atom-progressive-bar__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--cortex-text-xs);
+}
+
+.atom-progressive-bar__track {
+  overflow: hidden;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-text-faint) 16%, transparent);
+}
+
+/*
+ * Single uniform track height across variants and states. The "complete" state
+ * reads from the full green fill (+ glow below), never from a thicker bar —
+ * otherwise a done row visually jumps vs. other done rows.
+ */
+
+.atom-progressive-bar__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--status-done);
+  transition: width 220ms ease;
+}
+
+/* Fill color follows the shared status palette via data-tone. */
+.atom-progressive-bar[data-tone="pending"] .atom-progressive-bar__fill {
+  background: var(--status-pending);
+}
+.atom-progressive-bar[data-tone="in-progress"] .atom-progressive-bar__fill {
+  background: var(--status-in-progress);
+}
+.atom-progressive-bar[data-tone="blocked"] .atom-progressive-bar__fill {
+  background: var(--status-blocked);
+}
+.atom-progressive-bar[data-tone="done"] .atom-progressive-bar__fill {
+  background: var(--status-done);
+}
+.atom-progressive-bar[data-tone="failed"] .atom-progressive-bar__fill {
+  background: var(--status-failed);
+}

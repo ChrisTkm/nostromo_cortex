@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { Parser, type AST, type LocationRange, type Select } from "node-sql-parser";
 
+import { appendNodeObservation } from "../observations.js";
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowEdgeKind, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
 type ScriptFlowAnalyzerInput = {
@@ -236,8 +237,10 @@ class SqlFlowAnalyzer {
       });
       this.cteNodeIds.set(cteName.toLowerCase(), cteId);
 
-      if (hasSelectStar(cte.stmt)) {
-        this.observations.add(`SELECT * detected in CTE ${cteName}.`);
+      if (hasSelectStar(cte.stmt as unknown as Select)) {
+        const message = `SELECT * detected in CTE ${cteName}.`;
+        this.observations.add(message);
+        this.addFlowGap(cteId, message);
       }
     }
 
@@ -247,7 +250,7 @@ class SqlFlowAnalyzer {
       if (!cteId) {
         continue;
       }
-      this.processSelectBody(cteId, cte.stmt, `CTE ${cteName}`);
+      this.processSelectBody(cteId, cte.stmt as unknown as Select, `CTE ${cteName}`);
     }
   }
 
@@ -272,7 +275,9 @@ class SqlFlowAnalyzer {
       previousJoinId = joinId;
 
       if (!item.on && !(item.using && item.using.length > 0)) {
-        this.observations.add(`Cartesian join detected in ${joinLabel}.`);
+        const message = `Cartesian join detected in ${joinLabel}.`;
+        this.observations.add(message);
+        this.addFlowGap(joinId, message);
       }
 
       const subqueryCarrier = this.readSubqueryCarrier(item);
@@ -350,7 +355,9 @@ class SqlFlowAnalyzer {
     this.addEdge(subqueryId, parentId, "dataflow");
 
     if (hasSelectStar(select)) {
-      this.observations.add(`SELECT * detected in ${nodeLabel}.`);
+      const message = `SELECT * detected in ${nodeLabel}.`;
+      this.observations.add(message);
+      this.addFlowGap(subqueryId, message);
     }
 
     this.connectReferencedCtes(subqueryId, select);
@@ -482,6 +489,20 @@ class SqlFlowAnalyzer {
     const nextCount = (this.idCounters.get(base) ?? 0) + 1;
     this.idCounters.set(base, nextCount);
     return nextCount === 1 ? base : `${base}-${nextCount}`;
+  }
+
+  private addFlowGap(id: string, message: string) {
+    const node = this.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      return;
+    }
+    appendNodeObservation(node, {
+      kind: "flow-gap",
+      severity: "warning",
+      message,
+      source: "script-flow",
+      line: node.range?.startLine,
+    });
   }
 
   private addEdge(from: string, to: string, kind: ScriptFlowEdgeKind, label?: string) {

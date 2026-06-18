@@ -1,9 +1,12 @@
-import type { BrainSnapshot } from "../../brain/types.js";
+import type { BrainNode, BrainSnapshot } from "../../brain/types.js";
 
 export type PersistedBrainState = {
   snapshot: BrainSnapshot;
   hiddenNodeIds?: string[];
   selectedNodeId?: string | null;
+  visibleKinds?: Array<BrainNode["kind"]>;
+  visibleEdges?: string[];
+  showMiniMap?: boolean;
 };
 
 export function isSnapshot(value: unknown): value is BrainSnapshot {
@@ -38,4 +41,22 @@ export function reconcileHiddenNodeIds(
 ): string[] {
   const knownIds = new Set(snapshot.nodes.map((node) => node.id));
   return current.filter((id) => knownIds.has(id));
+}
+
+export function reconcileVisibleKinds(
+  current: ReadonlyArray<BrainNode["kind"]>,
+  snapshot: BrainSnapshot,
+  fallback: ReadonlyArray<BrainNode["kind"]> = ["doc"]
+): Array<BrainNode["kind"]> {
+  const availableKinds = new Set(snapshot.nodes.map((node) => node.kind));
+  const reconciled = current.filter((kind) => availableKinds.has(kind));
+  return reconciled.length > 0 ? reconciled : [...fallback];
+}
+
+export function reconcileVisibleEdges<T extends string>(
+  current: ReadonlyArray<T>,
+  available: ReadonlyArray<T>
+): T[] {
+  const allowed = new Set(available);
+  return current.filter((edge) => allowed.has(edge));
 }

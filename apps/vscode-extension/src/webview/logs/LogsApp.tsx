@@ -1,36 +1,31 @@
 import type { LogRecord } from "../../logs/normalize";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type { RunGroup } from "../../logs/runModel";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  buildExecutionGroups,
-  buildLogJson,
-  buildLogKey,
-  buildLogsCsvExport,
-  buildLogsJsonExport,
-  coerceLogFilterValue,
+  buildProcessRows,
   countLogsByLevel,
-  filterLogsByTime,
-  getLogsEmptyState,
-  getOldestLogTimestamp,
-  LOGS_PYTHON_SNIPPET,
-  mergeLogPages,
-  reconcileSelectedLogKey,
-  shouldShowFilter,
-  sortLogLevelKeys,
+  filterLogsByPeriod,
+  formatDuration,
+  formatLiveSince,
+  formatRelativeTime,
+  runStatusClass,
+  runStatusIcon,
+  type PeriodFilter,
+  type ProcessRow,
 } from "./state";
-import { highlightLogText } from "./highlightText";
+import { RunDrawer } from "./components/RunDrawer";
+import { Button, FilterSelect, Metric, Search } from "../components/atoms";
+import { Footer, Header, SecondBar } from "../components/molecules";
+import { Module } from "../components/organisms";
 
 type LogsMessage =
   | {
       type: "logs:list";
       logs: LogRecord[];
-      autoRefreshSeconds: number;
+      sources?: string[];
       hasMore: boolean;
     }
-  | {
-      type: "logs:append";
-      logs: LogRecord[];
-      hasMore: boolean;
-    };
+  | { type: "logs:liveStatus"; live: boolean; refreshAt: string };
 
 declare global {
   interface Window {
@@ -46,860 +41,380 @@ const vscode = window.acquireVsCodeApi();
 
 export function LogsApp() {
   const [logs, setLogs] = useState<LogRecord[]>([]);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(true);
+  const [sources, setSources] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
-  const [source, setSource] = useState("all");
-  const [folder, setFolder] = useState("all");
-  const [tag, setTag] = useState("all");
-  const [process, setProcess] = useState("all");
-  const [timeRange, setTimeRange] = useState<"all" | "1h" | "24h" | "7d">(
-    "all",
-  );
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(0);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  const [period, setPeriod] = useState<PeriodFilter>("all");
+  const [tz, setTz] = useState<string>("UTC");
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(null);
+  const [selectedRunIndex, setSelectedRunIndex] = useState(0);
+  const [live, setLive] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const liveTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     function onMessage(event: MessageEvent<LogsMessage>) {
       const message = event.data;
       if (message?.type === "logs:list" && Array.isArray(message.logs)) {
         setLogs(message.logs);
-        setAutoRefreshSeconds(message.autoRefreshSeconds ?? 0);
-        setHasMore(Boolean(message.hasMore));
-        setLoadingOlder(false);
-        setLevel((current) =>
-          coerceLogFilterValue(
-            current,
-            message.logs.map((entry) => entry.level),
-          ),
-        );
-        setSource((current) =>
-          coerceLogFilterValue(
-            current,
-            message.logs.map((entry) => entry.source),
-          ),
-        );
-        setFolder((current) =>
-          coerceLogFilterValue(
-            current,
-            message.logs.map((entry) => entry.folder),
-          ),
-        );
-        setTag((current) =>
-          coerceLogFilterValue(
-            current,
-            message.logs.map((entry) => entry.tag ?? entry.event ?? "untagged"),
-          ),
-        );
-        setProcess((current) =>
-          coerceLogFilterValue(
-            current,
-            message.logs.map((entry) => entry.process ?? "unknown"),
-          ),
-        );
-        setSelectedKey((current) => {
-          return reconcileSelectedLogKey(current, message.logs);
-        });
-        setDetailOpen((current) =>
-          message.logs.length === 0 ? false : current,
-        );
+        if (Array.isArray(message.sources)) setSources(message.sources);
         return;
       }
-      if (message?.type === "logs:append" && Array.isArray(message.logs)) {
-        setLogs((current) => mergeLogPages(current, message.logs));
-        setHasMore(Boolean(message.hasMore));
-        setLoadingOlder(false);
+      if (message?.type === "logs:liveStatus") {
+        setLive(Boolean(message.live));
+        setLastRefreshAt(message.refreshAt);
       }
     }
-
     window.addEventListener("message", onMessage);
     vscode.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const levels = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.level))],
-    [logs],
-  );
-  const sources = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.source))],
-    [logs],
-  );
-  const folders = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.folder))],
-    [logs],
-  );
-  const tags = useMemo(
-    () => [
-      "all",
-      ...new Set(logs.map((entry) => entry.tag ?? entry.event ?? "untagged")),
-    ],
-    [logs],
-  );
-  const processes = useMemo(
-    () => ["all", ...new Set(logs.map((entry) => entry.process ?? "unknown"))],
-    [logs],
-  );
+  useEffect(() => {
+    if (!live) {
+      if (liveTickRef.current) clearInterval(liveTickRef.current);
+      liveTickRef.current = null;
+      return;
+    }
+    liveTickRef.current = setInterval(() => {
+      setLastRefreshAt((c) => (c ? c.slice(0) : c));
+    }, 5000);
+    return () => {
+      if (liveTickRef.current) clearInterval(liveTickRef.current);
+      liveTickRef.current = null;
+    };
+  }, [live]);
+
+  const deferredSearch = search.trim().toLowerCase();
 
   const baseFilteredLogs = useMemo(() => {
-    const timeFiltered = filterLogsByTime(logs, timeRange);
-    return timeFiltered.filter((entry) => {
-      if (source !== "all" && entry.source !== source) {
-        return false;
-      }
-      if (folder !== "all" && entry.folder !== folder) {
-        return false;
-      }
-      if (tag !== "all" && (entry.tag ?? entry.event ?? "untagged") !== tag) {
-        return false;
-      }
-      if (process !== "all" && (entry.process ?? "unknown") !== process) {
-        return false;
-      }
-      if (!deferredSearch) {
-        return true;
-      }
+    const periodFiltered =
+      period !== "all" ? filterLogsByPeriod(logs, period) : logs;
+    if (!deferredSearch) return periodFiltered;
+    return periodFiltered.filter((entry) => {
       const haystack = [
         entry.summary,
         entry.message,
-        entry.source,
-        entry.folder,
         entry.process,
-        entry.loggerName,
         entry.event,
         entry.executionId,
-        entry.tag,
-        entry.className,
-        entry.methodName,
-        entry.title,
-        ...entry.details.map((detail) => `${detail.label} ${detail.value}`),
       ]
         .filter(Boolean)
         .join("\n")
         .toLowerCase();
       return haystack.includes(deferredSearch);
     });
-  }, [deferredSearch, folder, logs, process, source, tag, timeRange]);
+  }, [logs, period, deferredSearch]);
 
-  const filteredLogs = useMemo(() => {
-    if (level === "all") return baseFilteredLogs;
-    return baseFilteredLogs.filter((entry) => entry.level === level);
-  }, [baseFilteredLogs, level]);
+  const filteredLogs = useMemo(
+    () =>
+      level === "all"
+        ? baseFilteredLogs
+        : baseFilteredLogs.filter((e) => e.level === level),
+    [baseFilteredLogs, level],
+  );
 
   const levelCounts = useMemo(
     () => countLogsByLevel(baseFilteredLogs),
     [baseFilteredLogs],
   );
-  const orderedLevelKeys = useMemo(
-    () => sortLogLevelKeys(Object.keys(levelCounts)),
-    [levelCounts],
-  );
-
-  const hasActiveFilters =
-    Boolean(search.trim()) ||
-    level !== "all" ||
-    source !== "all" ||
-    folder !== "all" ||
-    tag !== "all" ||
-    process !== "all" ||
-    timeRange !== "all";
-  const emptyState = getLogsEmptyState(
-    logs.length,
-    filteredLogs.length,
-    hasActiveFilters,
-  );
-  const groupedLogs = useMemo(
-    () => buildExecutionGroups(filteredLogs),
+  const processRows = useMemo(
+    () => buildProcessRows(filteredLogs),
     [filteredLogs],
   );
 
-  const selectedLog = useMemo(() => {
-    if (!selectedKey) {
-      return filteredLogs[0] ?? null;
-    }
+  const currentProcess: ProcessRow | null = useMemo(() => {
+    if (processRows.length === 0) return null;
     return (
-      filteredLogs.find((entry) => buildLogKey(entry) === selectedKey) ??
-      filteredLogs[0] ??
-      null
+      processRows.find((p) => p.process === selectedProcess) ?? processRows[0]
     );
-  }, [filteredLogs, selectedKey]);
+  }, [processRows, selectedProcess]);
 
-  function handleSelect(entry: LogRecord) {
-    setSelectedKey(buildLogKey(entry));
-    setDetailOpen(true);
+  const currentRuns: RunGroup[] = currentProcess?.runs ?? [];
+  const currentRun: RunGroup | null =
+    currentRuns[selectedRunIndex] ?? currentRuns[0] ?? null;
+
+  useEffect(() => {
+    if (selectedRunIndex >= currentRuns.length) {
+      setSelectedRunIndex(0);
+    }
+  }, [currentRuns.length, selectedRunIndex]);
+
+  function pickProcess(name: string) {
+    setSelectedProcess(name);
+    setSelectedRunIndex(0);
+  }
+
+  function processStatus(row: ProcessRow): "ok" | "err" | "open" {
+    if (row.errorCount > 0) return "err";
+    if (row.runs.some((r) => r.status === "abierta")) return "open";
+    return "ok";
   }
 
   function clearFilters() {
     setSearch("");
     setLevel("all");
-    setSource("all");
-    setFolder("all");
-    setTag("all");
-    setProcess("all");
-    setTimeRange("all");
+    setPeriod("all");
   }
 
-  useEffect(() => {
-    return () => {
-      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
-    };
-  }, []);
+  const folderLabel =
+    sources.length > 0 ? sources[0] : "Sin carpeta configurada";
 
-  function copyValue(value: string, key: string) {
-    if (!value) return;
-    vscode.postMessage({ type: "logs:copy", value });
-    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
-    setCopiedKey(key);
-    copiedTimeoutRef.current = setTimeout(() => {
-      setCopiedKey((current) => (current === key ? null : current));
-      copiedTimeoutRef.current = null;
-    }, 1500);
-  }
-
-  function exportLogs(format: "csv" | "json") {
-    if (filteredLogs.length === 0) return;
-    const content =
-      format === "csv"
-        ? buildLogsCsvExport(filteredLogs)
-        : buildLogsJsonExport(filteredLogs);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const defaultFilename = `cortex-logs-${timestamp}.${format}`;
-    vscode.postMessage({
-      type: "logs:export",
-      format,
-      content,
-      defaultFilename,
-    });
-  }
-
-  function loadOlder() {
-    if (loadingOlder || !hasMore) return;
-    const cursor = getOldestLogTimestamp(logs);
-    if (!cursor) return;
-    setLoadingOlder(true);
-    vscode.postMessage({ type: "logs:loadOlder", beforeTimestamp: cursor });
-  }
-
-  function toggleGroup(groupId: string) {
-    setCollapsedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
+  const header = (
+    <Header
+      external={sources.length > 0}
+      title="CORTEX LOGS"
+      route={
+        <span className="logs-head__folder" title={sources.join(", ")}>
+          {folderLabel}
+        </span>
       }
-      return next;
-    });
-  }
+      actions={
+        <>
+          <Button
+            intent="change"
+            onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
+            size="small"
+          >
+            Carpeta
+          </Button>
+          <Button
+            className={live ? "is-active logs-live-button" : "logs-live-button"}
+            intent="change"
+            onClick={() => {
+              const next = !live;
+              setLive(next);
+              vscode.postMessage({ type: "logs:toggleLive", live: next });
+            }}
+            size="small"
+          >
+            {live ? "LIVE" : "Live"}
+            {live && lastRefreshAt
+              ? ` · ${formatLiveSince(lastRefreshAt)}`
+              : ""}
+          </Button>
+          <Button
+            intent="refresh"
+            onClick={() => vscode.postMessage({ type: "logs:refresh" })}
+            size="small"
+          >
+            Actualizar
+          </Button>
+        </>
+      }
+    />
+  );
 
-  return (
-    <div
-      className={`logs-app${detailOpen && selectedLog ? "" : " logs-app--list-only"}`}
-    >
-      <section className="logs-list-panel">
-        <header className="logs-toolbar">
-          <div>
-            <div className="logs-toolbar__eyebrow">Mongo collection</div>
-            <h1 className="logs-toolbar__title">Cortex Logs</h1>
-          </div>
-          <div className="logs-toolbar__actions">
-            <span className="logs-toolbar__count">
-              {filteredLogs.length} visible
-              {logs.length !== filteredLogs.length ? ` of ${logs.length}` : ""}
-            </span>
-            <button
-              className="logs-button logs-button--primary"
-              onClick={() => vscode.postMessage({ type: "logs:refresh" })}
-              type="button"
-            >
-              Refresh
-            </button>
-            <button
-              className="logs-button"
-              onClick={() => exportLogs("csv")}
-              disabled={filteredLogs.length === 0}
-              type="button"
-              title="Export the currently filtered logs as CSV"
-            >
-              Export CSV
-            </button>
-            <button
-              className="logs-button"
-              onClick={() => exportLogs("json")}
-              disabled={filteredLogs.length === 0}
-              type="button"
-              title="Export the currently filtered logs as JSON"
-            >
-              Export JSON
-            </button>
-            {autoRefreshSeconds > 0 ? (
-              <span
-                className="logs-toolbar__autorefresh"
-                title={`Auto-refreshing every ${autoRefreshSeconds}s`}
-              >
-                <span className="logs-toolbar__autorefresh-dot" />
-                {autoRefreshSeconds}s
-              </span>
-            ) : null}
-          </div>
-        </header>
-
-        {orderedLevelKeys.length > 0 ? (
-          <div className="logs-counters">
-            {orderedLevelKeys.map((lvl) => {
+  const secondBar = (
+    <SecondBar
+      search={
+        <Search
+          className="logs-search"
+          onChange={setSearch}
+          placeholder="Search messages…"
+          value={search}
+        />
+      }
+      filters={
+        <div className="logs-filterbar">
+          <FilterSelect
+            onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
+            value={period}
+          >
+            <option value="month">Month</option>
+            <option value="semester">Semester</option>
+            <option value="year">Year</option>
+            <option value="all">All time</option>
+          </FilterSelect>
+          <FilterSelect
+            onChange={(e) => setTz(e.target.value)}
+            title="Zona horaria de visualización"
+            value={tz}
+          >
+            <option value="UTC">UTC (log)</option>
+            <option value="America/Santiago">Chile</option>
+            <option value="America/New_York">New York</option>
+            <option value="local">Local</option>
+          </FilterSelect>
+          <div className="logs-levelchips">
+            {(["ERROR", "WARN", "INFO"] as const).map((lvl) => {
               const active = level === lvl;
-              const count = levelCounts[lvl] ?? 0;
               return (
                 <button
                   key={lvl}
                   type="button"
-                  className={`logs-counter-chip${active ? " logs-counter-chip--active" : ""}`}
+                  aria-pressed={active}
+                  className={`logs-chip logs-chip--${lvl.toLowerCase()}${active ? " logs-chip--active" : ""}`}
                   onClick={() => setLevel(active ? "all" : lvl)}
-                  aria-pressed={active}
                 >
-                  <span className={`log-pill log-pill--${lvl.toLowerCase()}`}>
-                    {lvl}
-                  </span>
-                  <span className="logs-counter-chip__count">{count}</span>
+                  {lvl}
+                  <span className="logs-chip__n">{levelCounts[lvl] ?? 0}</span>
                 </button>
               );
             })}
           </div>
-        ) : null}
-
-        <div className="logs-filters">
-          <input
-            className="logs-input logs-filters__search"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search source, process, event, message..."
-            type="search"
-            value={search}
-          />
-          <div className="logs-filters__time-row">
-            {(["1h", "24h", "7d"] as const).map((range) => {
-              const label =
-                range === "1h"
-                  ? "Last hour"
-                  : range === "24h"
-                    ? "Last 24h"
-                    : "Last 7d";
-              const active = timeRange === range;
-              return (
-                <button
-                  key={range}
-                  type="button"
-                  className={`logs-time-chip${active ? " logs-time-chip--active" : ""}`}
-                  onClick={() => setTimeRange(active ? "all" : range)}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {shouldShowFilter(processes) ? (
-            <select
-              className="logs-input"
-              onChange={(event) => setProcess(event.target.value)}
-              value={process}
-            >
-              {processes.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all" ? "All processes" : option}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {shouldShowFilter(levels) ? (
-            <select
-              className="logs-input"
-              onChange={(event) => setLevel(event.target.value)}
-              value={level}
-            >
-              {levels.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all" ? "All levels" : option}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {shouldShowFilter(folders) ? (
-            <select
-              className="logs-input"
-              onChange={(event) => setFolder(event.target.value)}
-              value={folder}
-            >
-              {folders.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all" ? "All folders" : option}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {shouldShowFilter(tags) ? (
-            <select
-              className="logs-input"
-              onChange={(event) => setTag(event.target.value)}
-              value={tag}
-            >
-              {tags.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all" ? "All tags" : option}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {shouldShowFilter(sources) ? (
-            <select
-              className="logs-input"
-              onChange={(event) => setSource(event.target.value)}
-              value={source}
-            >
-              {sources.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all" ? "All sources" : option}
-                </option>
-              ))}
-            </select>
-          ) : null}
         </div>
+      }
+    />
+  );
 
-        <div className="logs-list">
-          {emptyState === "empty" ? (
-            <div className="logs-empty-state logs-empty-state--onboarding">
-              <div className="logs-toolbar__eyebrow">No logs yet</div>
-              <h2 className="logs-empty-state__title">
-                Start emitting logs to Cortex
-              </h2>
-              <p className="logs-empty-state__text">
-                Cortex Logs reads from your MongoDB <code>logs</code>{" "}
-                collection. Emit one document per event following the Cortex log
-                contract. Below is a runnable Python snippet using{" "}
-                <code>pymongo</code>.
-              </p>
-              <pre className="logs-empty-state__snippet">
-                <code>{LOGS_PYTHON_SNIPPET}</code>
-              </pre>
-              <div className="logs-empty-state__actions">
-                <button
-                  type="button"
-                  className="logs-button logs-button--primary"
-                  onClick={() => copyValue(LOGS_PYTHON_SNIPPET, "snippet")}
-                >
-                  {copiedKey === "snippet" ? "Copied" : "Copy snippet"}
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() =>
-                    vscode.postMessage({ type: "logs:openContract" })
-                  }
-                >
-                  View log contract
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => vscode.postMessage({ type: "logs:refresh" })}
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-          ) : emptyState === "filtered" ? (
-            <div className="logs-empty-state">
-              <div className="logs-toolbar__eyebrow">No matches</div>
-              <h2 className="logs-empty-state__title">
-                No logs match the current filters.
-              </h2>
-              <p className="logs-empty-state__text">
-                Try clearing a filter or broadening the search query.
-              </p>
-              {hasActiveFilters ? (
-                <button
-                  className="logs-button"
-                  onClick={clearFilters}
-                  type="button"
-                >
-                  Clear filters
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            groupedLogs.map((group) => (
-              <section
-                className={`logs-execution-group${group.isUngrouped ? " logs-execution-group--ungrouped" : ""}${group.kind === "process" ? " logs-execution-group--process" : ""}`}
-                key={group.id}
-              >
-                <button
-                  className="logs-execution-group__header"
-                  onClick={() => toggleGroup(group.id)}
-                  type="button"
-                >
-                  <span className="logs-execution-group__chevron">
-                    {collapsedGroups.has(group.id) ? ">" : "v"}
-                  </span>
-                  <span
-                    className={`log-pill log-pill--${group.dominantTag.toLowerCase()}`}
+  const footer = (
+    <Footer
+      left={
+        <div className="logs-stats">
+          <Metric label="Total">{logs.length}</Metric>
+          <Metric label="Visibles">{filteredLogs.length}</Metric>
+          <Metric label="Procesos">{processRows.length}</Metric>
+          {live ? <Metric label="Live">On</Metric> : null}
+        </div>
+      }
+    />
+  );
+
+  return (
+    <Module
+      className="logs-module"
+      footer={footer}
+      header={header}
+      secondBar={secondBar}
+    >
+      {logs.length === 0 ? (
+        <div className="logs-empty">
+          <div className="logs-eyebrow">No logs yet</div>
+          <h2 className="logs-empty__title">Configurá una carpeta de logs</h2>
+          <p className="logs-empty__text">
+            Cortex lee archivos (.jsonl / .log) de una carpeta externa,
+            read-only. Sin MongoDB.
+          </p>
+          <Button
+            intent="action"
+            onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
+          >
+            Carpeta
+          </Button>
+          <p className="logs-empty__hint">
+            Actual: <code>{folderLabel}</code>
+          </p>
+        </div>
+      ) : filteredLogs.length === 0 ? (
+        <div className="logs-empty logs-empty--filtered">
+          <div className="logs-eyebrow">No visible logs</div>
+          <h2 className="logs-empty__title">Los filtros no dejan resultados visibles</h2>
+          <p className="logs-empty__text">
+            Hay {logs.length} eventos cargados desde la carpeta seleccionada,
+            pero el periodo, nivel o búsqueda actual los oculta.
+          </p>
+          <Button intent="change" onClick={clearFilters}>
+            Mostrar todo
+          </Button>
+          <p className="logs-empty__hint">
+            Actual: <code>{folderLabel}</code>
+          </p>
+        </div>
+      ) : (
+        <div className="logs-master">
+          {/* LEFT: processes */}
+          <aside className="logs-proclist">
+            <div className="logs-eyebrow">Processes</div>
+            {processRows.length === 0 ? (
+              <div className="logs-proclist__empty">No processes match.</div>
+            ) : (
+              processRows.map((row) => {
+                const st = processStatus(row);
+                const selected = currentProcess?.process === row.process;
+                return (
+                  <button
+                    key={row.process}
+                    type="button"
+                    className={`logs-proc${selected ? " logs-proc--sel" : ""}`}
+                    onClick={() => pickProcess(row.process)}
                   >
-                    {group.dominantTag}
-                  </span>
-                  {group.kind === "process" ? (
-                    <>
-                      <span className="logs-execution-group__title">
-                        {group.label}
+                    <span className={`logs-dot logs-dot--${st}`} />
+                    <span className="logs-proc__body">
+                      <span className="logs-proc__name">{row.process}</span>
+                      <span className="logs-proc__sub">
+                        {row.runCount} runs ·{" "}
+                        {formatRelativeTime(row.lastRunAt)}
+                        {row.errorCount > 0 ? ` · ${row.errorCount} err` : ""}
                       </span>
-                      <span className="logs-execution-group__time">
-                        {formatTime(group.beginTimestamp)} &rarr;{" "}
-                        {formatTime(group.endTimestamp ?? group.beginTimestamp)}
-                      </span>
-                      <span className="log-chip">{group.logs.length} logs</span>
-                    </>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </aside>
+
+          {/* RIGHT: runs + detail */}
+          <section className="logs-pane">
+            {!currentProcess ? (
+              <div className="logs-pane__empty">Seleccioná un proceso.</div>
+            ) : (
+              <>
+                <h2 className="logs-pane__title">
+                  {currentProcess.process} — corridas
+                </h2>
+                <table className="logs-runs">
+                  <thead>
+                    <tr>
+                      <th>Inicio</th>
+                      <th>Duración</th>
+                      <th>Estado</th>
+                      <th className="num">Filas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentRuns.map((run, i) => {
+                      const sel = i === selectedRunIndex;
+                      const rows = run.rowsInserted ?? run.rowsRead;
+                      return (
+                        <tr
+                          key={i}
+                          className={`logs-runs__row${sel ? " logs-runs__row--sel" : ""}`}
+                          onClick={() => setSelectedRunIndex(i)}
+                        >
+                          <td>{formatStart(run.startedAt, tz)}</td>
+                          <td>{formatDuration(run.durationMs)}</td>
+                          <td>
+                            <span
+                              className={`logs-run-status ${runStatusClass(run.status)}`}
+                            >
+                              {runStatusIcon(run.status)}
+                            </span>{" "}
+                            {run.status}
+                          </td>
+                          <td className="num">{rows ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div className="logs-pane__detail">
+                  {currentRun ? (
+                    <RunDrawer run={currentRun} tz={tz} />
                   ) : (
-                    <>
-                      <span className="logs-execution-group__title">
-                        {group.classMethod}
-                      </span>
-                      <span className="logs-execution-group__time">
-                        {formatTimestamp(group.beginTimestamp)}
-                      </span>
-                      {group.endTimestamp ? (
-                        <span className="log-chip">
-                          END {formatTime(group.endTimestamp)}
-                        </span>
-                      ) : (
-                        <span className="log-chip">open</span>
-                      )}
-                      {typeof group.durationMs === "number" ? (
-                        <span className="log-chip">
-                          {formatDuration(group.durationMs)}
-                        </span>
-                      ) : null}
-                      <span className="log-chip">{group.logs.length} logs</span>
-                      <span className="logs-execution-group__id">
-                        {group.label}
-                      </span>
-                    </>
-                  )}
-                </button>
-                <div
-                  className="logs-day-group__items"
-                  hidden={collapsedGroups.has(group.id)}
-                >
-                  {group.runs
-                    ? group.runs.map((run) => {
-                        const runKey = `${group.id}::${run.id}`;
-                        return (
-                          <div className="logs-process-run" key={runKey}>
-                            <button
-                              className="logs-process-run__header"
-                              onClick={() => toggleGroup(runKey)}
-                              type="button"
-                            >
-                              <span className="logs-execution-group__chevron">
-                                {collapsedGroups.has(runKey) ? ">" : "v"}
-                              </span>
-                              <span
-                                className={`log-pill log-pill--${run.dominantTag.toLowerCase()}`}
-                              >
-                                {run.dominantTag}
-                              </span>
-                              <span className="logs-process-run__label">
-                                {run.label}
-                              </span>
-                              <span className="logs-execution-group__time">
-                                {formatTime(run.beginTimestamp)} &rarr;{" "}
-                                {formatTime(
-                                  run.endTimestamp ?? run.beginTimestamp,
-                                )}
-                              </span>
-                              {typeof run.durationMs === "number" ? (
-                                <span className="log-chip">
-                                  {formatDuration(run.durationMs)}
-                                </span>
-                              ) : null}
-                              <span className="log-chip">
-                                {run.logs.length} logs
-                              </span>
-                            </button>
-                            <div
-                              className="logs-process-run__logs"
-                              hidden={collapsedGroups.has(runKey)}
-                            >
-                              {run.logs.map((entry) => {
-                                const isSelected = selectedLog
-                                  ? buildLogKey(selectedLog) ===
-                                    buildLogKey(entry)
-                                  : false;
-                                return (
-                                  <button
-                                    className={`log-row${isSelected ? " log-row--selected" : ""}`}
-                                    key={buildLogKey(entry)}
-                                    onClick={() => handleSelect(entry)}
-                                    type="button"
-                                  >
-                                    <div className="log-row__top">
-                                      <span
-                                        className={`log-pill log-pill--${entry.level.toLowerCase()}`}
-                                      >
-                                        {entry.level}
-                                      </span>
-                                      <span className="log-row__time">
-                                        {formatTime(entry.timestamp)}
-                                      </span>
-                                      <span className="log-row__source">
-                                        {highlightLogText(
-                                          entry.source,
-                                          deferredSearch,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div className="log-row__summary">
-                                      {highlightLogText(
-                                        entry.summary,
-                                        deferredSearch,
-                                      )}
-                                    </div>
-                                    <div className="log-row__meta">
-                                      {entry.executionId ? (
-                                        <span className="log-chip">
-                                          {entry.executionId}
-                                        </span>
-                                      ) : null}
-                                      {entry.tag ? (
-                                        <span className="log-chip">
-                                          {entry.tag}
-                                        </span>
-                                      ) : null}
-                                      <span className="log-chip">
-                                        {entry.folder}
-                                      </span>
-                                      {entry.process ? (
-                                        <span className="log-chip">
-                                          {entry.process}
-                                        </span>
-                                      ) : null}
-                                      {entry.event ? (
-                                        <span className="log-chip">
-                                          {entry.event}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })
-                    : group.logs.map((entry) => {
-                        const isSelected = selectedLog
-                          ? buildLogKey(selectedLog) === buildLogKey(entry)
-                          : false;
-                        return (
-                          <button
-                            className={`log-row${isSelected ? " log-row--selected" : ""}`}
-                            key={buildLogKey(entry)}
-                            onClick={() => handleSelect(entry)}
-                            type="button"
-                          >
-                            <div className="log-row__top">
-                              <span
-                                className={`log-pill log-pill--${entry.level.toLowerCase()}`}
-                              >
-                                {entry.level}
-                              </span>
-                              <span className="log-row__time">
-                                {formatTime(entry.timestamp)}
-                              </span>
-                              <span className="log-row__source">
-                                {highlightLogText(entry.source, deferredSearch)}
-                              </span>
-                            </div>
-                            <div className="log-row__summary">
-                              {highlightLogText(entry.summary, deferredSearch)}
-                            </div>
-                            <div className="log-row__meta">
-                              {entry.executionId ? (
-                                <span className="log-chip">
-                                  {entry.executionId}
-                                </span>
-                              ) : null}
-                              {entry.tag ? (
-                                <span className="log-chip">{entry.tag}</span>
-                              ) : null}
-                              <span className="log-chip">{entry.folder}</span>
-                              {entry.process ? (
-                                <span className="log-chip">
-                                  {entry.process}
-                                </span>
-                              ) : null}
-                              {entry.event ? (
-                                <span className="log-chip">{entry.event}</span>
-                              ) : null}
-                            </div>
-                          </button>
-                        );
-                      })}
-                </div>
-              </section>
-            ))
-          )}
-          {hasMore && filteredLogs.length > 0 ? (
-            <div className="logs-load-older">
-              <button
-                type="button"
-                className="logs-button"
-                onClick={loadOlder}
-                disabled={loadingOlder}
-              >
-                {loadingOlder ? "Loading older..." : "Load older"}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {detailOpen && selectedLog ? (
-        <aside className="logs-detail">
-          <header className="logs-detail__header">
-            <div>
-              <div className="logs-toolbar__eyebrow">Log detail</div>
-              <h2 className="logs-detail__title">
-                {highlightLogText(selectedLog.summary, deferredSearch)}
-              </h2>
-            </div>
-            <div className="logs-detail__header-actions">
-              <button
-                className="logs-button logs-detail__copy-json"
-                onClick={() => copyValue(buildLogJson(selectedLog), "json")}
-                type="button"
-                title="Copy the full log entry as formatted JSON"
-              >
-                {copiedKey === "json" ? "Copied" : "Copy JSON"}
-              </button>
-              <button
-                className="logs-button"
-                onClick={() => setDetailOpen(false)}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          </header>
-
-          <div className="logs-detail__meta">
-            <span
-              className={`log-pill log-pill--${selectedLog.level.toLowerCase()}`}
-            >
-              {selectedLog.level}
-            </span>
-            <span className="log-chip">{selectedLog.source}</span>
-            <span className="log-chip">
-              {formatTimestamp(selectedLog.timestamp)}
-            </span>
-            {selectedLog.executionId ? (
-              <button
-                type="button"
-                className={`log-chip logs-detail__copy-chip${copiedKey === "executionId" ? " logs-detail__copy-chip--copied" : ""}`}
-                onClick={() =>
-                  copyValue(selectedLog.executionId!, "executionId")
-                }
-                title="Click to copy executionId"
-              >
-                {copiedKey === "executionId"
-                  ? "Copied"
-                  : selectedLog.executionId}
-              </button>
-            ) : null}
-            {selectedLog.tag ? (
-              <span className="log-chip">{selectedLog.tag}</span>
-            ) : null}
-            {selectedLog.className || selectedLog.methodName ? (
-              <span className="log-chip">
-                {[selectedLog.className, selectedLog.methodName]
-                  .filter(Boolean)
-                  .join(".")}
-              </span>
-            ) : null}
-            {selectedLog.process ? (
-              <span className="log-chip">{selectedLog.process}</span>
-            ) : null}
-            {selectedLog.event ? (
-              <span className="log-chip">{selectedLog.event}</span>
-            ) : null}
-          </div>
-
-          <section className="logs-detail__section">
-            <div className="logs-detail__label">Message</div>
-            <pre className="logs-detail__message">
-              {highlightLogText(selectedLog.message, deferredSearch)}
-            </pre>
-          </section>
-
-          {selectedLog.details.length > 0 ? (
-            <section className="logs-detail__section">
-              <div className="logs-detail__label">Structured fields</div>
-              <div className="logs-detail__fields">
-                {selectedLog.details.map((detail) => {
-                  const fieldKey = `field:${detail.key}`;
-                  const isCopied = copiedKey === fieldKey;
-                  return (
-                    <div className="logs-detail__field" key={detail.key}>
-                      <div className="logs-detail__field-label">
-                        {detail.label}
-                      </div>
-                      <button
-                        type="button"
-                        className={`logs-detail__field-value logs-detail__field-value--copyable${isCopied ? " logs-detail__field-value--copied" : ""}`}
-                        onClick={() => copyValue(detail.value, fieldKey)}
-                        title="Click to copy value"
-                      >
-                        {isCopied ? "Copied" : detail.value}
-                      </button>
+                    <div className="logs-pane__empty">
+                      Seleccioná una corrida.
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
-        </aside>
-      ) : null}
-    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+    </Module>
   );
 }
 
-function formatTime(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleTimeString(undefined, {
+function formatStart(value: string, tz: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
+    ...(tz === "local" ? {} : { timeZone: tz }),
   });
-}
-
-function formatTimestamp(value: string) {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function formatDuration(durationMs: number) {
-  if (durationMs < 1000) {
-    return `${Math.round(durationMs)} ms`;
-  }
-  if (durationMs < 60_000) {
-    return `${(durationMs / 1000).toFixed(1)} s`;
-  }
-  return `${Math.round(durationMs / 1000)} s`;
 }

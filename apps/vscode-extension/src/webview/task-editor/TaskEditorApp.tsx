@@ -7,7 +7,7 @@ export function TaskEditorApp() {
   if (!controller.task || !controller.draft) {
     return (
       <div className="task-editor task-editor--loading">
-        <p>Loading task...</p>
+        <p>Cargando tarea...</p>
       </div>
     );
   }

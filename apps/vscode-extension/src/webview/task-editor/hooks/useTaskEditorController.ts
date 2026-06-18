@@ -70,7 +70,7 @@ export function useTaskEditorController() {
       return;
     }
     const result = buildSavePayload(draft, task, catalog);
-    if (!result.ok) {
+    if (result.ok === false) {
       setError(result.error);
       return;
     }

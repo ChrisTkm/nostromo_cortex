@@ -2,14 +2,20 @@ import {
   buildTaskGraph,
   criticalPathEstimate,
   createMongoAiAgentStore,
+  TASK_AGENTS,
+  TASK_SEVERITIES,
+  type AgentRunDocument,
   type ActionPlanDocument,
   type NoteDocumentInput,
+  type TaskAgent,
   type TaskDocumentInput,
   type TaskFilter,
   type TaskRecord,
+  type TaskSeverity,
 } from "@cortex/core";
-import { MongoClient } from "mongodb";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -22,16 +28,9 @@ import {
   webviewPlanPatchToDocumentPatch,
 } from "./service.js";
 import { clampAutoRefreshSeconds, clampLogsLimit } from "./logs/autoRefresh.js";
-import {
-  analyzeScriptFlowDocument,
-  clearScriptFlowCache,
-  resolveScriptFlowLanguage,
-} from "./scriptFlow/analyzers/index.js";
-import {
-  clearCrossFileCache,
-  expandCrossFileImports,
-} from "./scriptFlow/crossFileResolver.js";
 import { SCRIPT_FLOW_GLOSSARY_MD } from "./scriptFlow/glossary.js";
+import { BRAIN_GLOSSARY_MD } from "./brain/glossary.js";
+import { appendNodeObservation } from "./scriptFlow/observations.js";
 import {
   isScriptFlowWebviewMessage,
   sendError,
@@ -40,21 +39,16 @@ import {
 } from "./scriptFlow/bridge.js";
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
-import {
-  CortexTreeProvider,
-  type GroupTreeNode,
-  type PlanStatusFilter,
-  type TaskTreeNode,
-} from "./tree.js";
+import { CortexTreeProvider } from "./tree.js";
 import { getArchiveHtml } from "./webview/archive/getHtml.js";
-import { getGraphHtml } from "./webview/html.js";
+import { getGraphHtml } from "./webview/graph/getHtml.js";
 import { getLogsHtml } from "./webview/logs/getHtml.js";
 import { getBrainHtml } from "./webview/brain/getHtml.js";
 import { getNotesHtml } from "./webview/notes/getHtml.js";
 import { getScriptFlowHtml } from "./webview/script-flow/getHtml.js";
 import { getTaskEditorHtml } from "./webview/task-editor/getHtml.js";
 import { getPlanEditorHtml } from "./webview/plan-editor/getHtml.js";
-import type { CatalogAgent } from "./webview/components/AgentSelect.js";
+import type { CatalogAgent } from "./webview/components/atoms/agent-select/AgentSelect.js";
 import { getLedgerHtml } from "./webview/ledger/getHtml.js";
 import { getPlansHtml } from "./webview/plans/getHtml.js";
 
@@ -72,6 +66,9 @@ type PlanQuickPickItem = vscode.QuickPickItem & {
 };
 type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
+type TaskCommandArg = { kind?: string; task?: { code?: string } };
+type PlanCommandArg = { planCode?: string; kind?: string; label?: string };
+type McpClientFormat = "claude" | "codex" | "cursor" | "vscode" | "opencode";
 type ScriptFlowScope = "file" | "selection";
 type ScriptFlowRequest = {
   scope: ScriptFlowScope;
@@ -96,8 +93,8 @@ type ScriptFlowDelivery =
   | { type: "unsupported"; language?: string };
 
 let activeService: ExtensionTaskService | undefined;
-const PLAN_STATUS_FILTER_KEY = "cortex.planStatusFilter";
 const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
+const BRAIN_LAST_ROOT_KEY = "cortex.brainLastRootPath";
 
 function nonce() {
   return Math.random().toString(36).slice(2);
@@ -116,6 +113,9 @@ function setWebviewPanelIcon(
   );
 }
 
+let initPromise: Promise<void> | undefined;
+let initDone = false;
+
 export async function activate(context: vscode.ExtensionContext) {
   await migrateLegacyMongoUrlSetting(context);
   const service = new ExtensionTaskService(context);
@@ -123,16 +123,6 @@ export async function activate(context: vscode.ExtensionContext) {
   service.logger.debug("activate", {
     extensionMode: vscode.ExtensionMode[context.extensionMode],
   });
-  try {
-    await service.initialize();
-    service.logger.debug("initialize succeeded", {});
-  } catch (err) {
-    await service.dispose();
-    activeService = undefined;
-    service.logger.error("initialize failed", { error: String(err) });
-    throw err;
-  }
-
   const reminderStatusBar = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     30,
@@ -141,22 +131,109 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(reminderStatusBar, {
     dispose: disposeReminderTimers,
   });
-  await fireDue(service, reminderStatusBar, "startup");
-  await scheduleAll(service, reminderStatusBar);
 
-  let planStatusFilter = normalizePlanStatusFilter(
-    context.workspaceState.get<PlanStatusFilter>(
-      PLAN_STATUS_FILTER_KEY,
-      "active",
-    ),
-  );
-  const treeProvider = new CortexTreeProvider(service, planStatusFilter);
+  const treeProvider = new CortexTreeProvider(service);
   const treeView = vscode.window.createTreeView("cortex.overview", {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
   });
-  treeView.title = titleForPlanStatusFilter(planStatusFilter);
+  treeView.title = "Cortex Control";
   context.subscriptions.push(treeView);
+  let backupTimer: NodeJS.Timeout | undefined;
+  let backupRunning = false;
+
+  async function lazyInit(): Promise<void> {
+    if (initDone) return;
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      try {
+        await service.initialize();
+        service.logger.debug("initialize succeeded", {});
+      } catch (err) {
+        await service.dispose();
+        activeService = undefined;
+        service.logger.error("initialize failed", { error: String(err) });
+        throw err;
+      }
+
+      await fireDue(service, reminderStatusBar, "startup");
+      await scheduleAll(service, reminderStatusBar);
+      scheduleBackups();
+      void runBackgroundBackup("startup");
+
+      treeProvider.refresh();
+
+      initDone = true;
+    })();
+    return initPromise;
+  }
+
+  function scheduleBackups() {
+    if (backupTimer) {
+      clearInterval(backupTimer);
+      backupTimer = undefined;
+    }
+    const config = vscode.workspace.getConfiguration("cortex");
+    if (!config.get<boolean>("backup.enabled", true)) return;
+    const intervalMinutes = Math.max(
+      15,
+      Math.min(1440, config.get<number>("backup.intervalMinutes", 240)),
+    );
+    backupTimer = setInterval(() => {
+      void runBackgroundBackup("interval");
+    }, intervalMinutes * 60 * 1000);
+  }
+
+  async function runBackgroundBackup(reason: string) {
+    const config = vscode.workspace.getConfiguration("cortex");
+    if (!config.get<boolean>("backup.enabled", true) || backupRunning) return;
+    backupRunning = true;
+    try {
+      if (reason !== "manual" && !reason.startsWith("pre-restore:")) {
+        const dataDocumentCount = await service.countBackupDataDocuments();
+        if (dataDocumentCount === 0) {
+          service.logger.info("backup skipped: no data documents", {
+            reason,
+          });
+          return;
+        }
+      }
+      const result = await service.createBackup(reason);
+      service.logger.info("backup completed", {
+        reason,
+        backupId: result.id,
+        path: result.path,
+        documentCount: result.documentCount,
+        dataDocumentCount: result.dataDocumentCount,
+      });
+      if (archivePanelReady) {
+        await postArchiveList();
+      }
+      if (config.get<boolean>("backup.notify", true)) {
+        void vscode.window.showInformationMessage(
+          `Cortex backup ${result.id} listo (${result.dataDocumentCount} data docs).`,
+        );
+      }
+    } catch (error) {
+      service.logger.warn("backup failed", {
+        reason,
+        error: String(error),
+      });
+      void vscode.window.showWarningMessage(
+        `Cortex backup failed: ${String(error)}`,
+      );
+    } finally {
+      backupRunning = false;
+    }
+  }
+  context.subscriptions.push({
+    dispose: () => {
+      if (backupTimer) {
+        clearInterval(backupTimer);
+        backupTimer = undefined;
+      }
+    },
+  });
 
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
@@ -188,6 +265,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let plansPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
+  let scriptFlowEditorViewColumn: vscode.ViewColumn | undefined;
   let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
 
   function isPathWithinRoot(
@@ -213,6 +291,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(cortexOutput, { dispose: disposeBrainWatcher });
 
   async function postSnapshot(selectedTaskCode?: string) {
+    await lazyInit();
     if (!graphPanel) {
       return;
     }
@@ -302,9 +381,7 @@ export async function activate(context: vscode.ExtensionContext) {
         pan: state.pan,
       },
       agentIconBase,
-      connection: (({ mongoUrl: _omit, ...safe }) => safe)(
-        service.getConnectionSettings(),
-      ),
+      connection: service.getConnectionSettings(),
       filters: snapshotFilter,
       criticalPath,
       catalog,
@@ -321,11 +398,13 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function refreshView() {
+    await lazyInit();
     treeProvider.refresh();
     await postSnapshot();
   }
 
   async function postNotesList(search?: string) {
+    await lazyInit();
     const panel = notesPanel;
     if (!panel) {
       return;
@@ -342,6 +421,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function postLogsList() {
+    await lazyInit();
     const panel = logsPanel;
     if (!panel) {
       return;
@@ -353,9 +433,13 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
     lastLogsHasMore = logs.length === limit;
+    const logsSources = vscode.workspace
+      .getConfiguration("cortex")
+      .get<string[]>("logsSources", ["C:\\dev\\Nostromo\\logs"]);
     await panel.webview.postMessage({
       type: "logs:list",
       logs,
+      sources: logsSources,
       autoRefreshSeconds: clampAutoRefreshSeconds(
         vscode.workspace
           .getConfiguration("cortex")
@@ -389,19 +473,26 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function postArchiveList() {
+    await lazyInit();
     const panel = archivePanel;
     if (!panel) {
       return;
     }
 
-    const plans = await service.listArchivedPlans();
+    const [plans, stats, backups] = await Promise.all([
+      service.listArchivedPlans(),
+      service.getArchiveStorageStats(),
+      service.listBackups(),
+    ]);
     if (archivePanel !== panel) {
       return;
     }
     await panel.webview.postMessage({
       type: "archive:list",
       plans,
-      archivePath: service.getArchivePath(),
+      archivePath: stats.plansPath,
+      stats,
+      backups,
     });
   }
 
@@ -622,6 +713,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 `;
 
   async function openLogsPanel() {
+    await lazyInit();
     if (logsPanel) {
       logsPanel.reveal(vscode.ViewColumn.One);
       if (logsPanelReady) {
@@ -713,14 +805,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           refreshLogsPollFromConfig();
         }
         if (
-          e.affectsConfiguration("cortex.logsSource") ||
-          e.affectsConfiguration("cortex.logsFilePath") ||
+          e.affectsConfiguration("cortex.logsSources") ||
           e.affectsConfiguration("cortex.logsLimit")
         ) {
-          postLogsList();
-        }
-        if (e.affectsConfiguration("cortex.logsChangeStreams")) {
-          await setupLogsChangeStream();
           postLogsList();
         }
         if (e.affectsConfiguration("cortex.brainAccountPattern")) {
@@ -757,6 +844,25 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         logsPanelReady = true;
         await postLogsList();
         refreshLogsPollFromConfig();
+        return;
+      }
+      if (message?.type === "logs:selectFolder") {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true,
+          canSelectFiles: false,
+          canSelectMany: false,
+          openLabel: "Carpeta",
+        });
+        if (picked && picked[0]) {
+          await vscode.workspace
+            .getConfiguration("cortex")
+            .update(
+              "logsSources",
+              [picked[0].fsPath],
+              vscode.ConfigurationTarget.Global,
+            );
+          await postLogsList();
+        }
         return;
       }
       if (
@@ -802,10 +908,32 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       ) {
         await postLogsOlder(message.beforeTimestamp);
       }
+      if (
+        message?.type === "logs:toggleLive" &&
+        typeof message.live === "boolean"
+      ) {
+        if (message.live) {
+          const liveMs = vscode.workspace
+            .getConfiguration("cortex")
+            .get<number>("logsLivePollMs", 4000);
+          startLogsPoll(Math.max(1, Math.trunc(liveMs / 1000)));
+        } else {
+          stopLogsPoll();
+          refreshLogsPollFromConfig();
+        }
+        if (logsPanel) {
+          await logsPanel.webview.postMessage({
+            type: "logs:liveStatus",
+            live: message.live,
+            refreshAt: new Date().toISOString(),
+          });
+        }
+      }
     });
   }
 
   async function openArchivePanel() {
+    await lazyInit();
     if (archivePanel) {
       archivePanel.reveal(vscode.ViewColumn.One);
       if (archivePanelReady) {
@@ -843,8 +971,41 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "archive:openFolder") {
         await vscode.commands.executeCommand(
           "revealFileInOS",
-          vscode.Uri.file(service.getArchivePath()),
+          vscode.Uri.file(path.join(service.getArchivePath(), "plans")),
         );
+        return;
+      }
+      if (message?.type === "backup:create") {
+        await runBackgroundBackup("manual");
+        await postArchiveList();
+        return;
+      }
+      if (
+        message?.type === "backup:restore" &&
+        typeof message.backupId === "string" &&
+        service.isBackupId(message.backupId)
+      ) {
+        const backupId = message.backupId.trim();
+        const confirmed = await vscode.window.showWarningMessage(
+          `Restore Cortex backup ${backupId}? This replaces the backed-up Cortex collections in Mongo with the JSON backup contents.`,
+          { modal: true },
+          "Restore backup",
+        );
+        if (confirmed !== "Restore backup") return;
+        try {
+          await service.createBackup(`pre-restore:${backupId}`);
+          const result = await service.restoreBackup(backupId);
+          treeProvider.refresh();
+          await postSnapshot();
+          await postArchiveList();
+          void vscode.window.showInformationMessage(
+            `Cortex backup ${result.id} restored (${result.restoredDocuments} docs in ${result.restoredCollections} collections).`,
+          );
+        } catch (error) {
+          void vscode.window.showErrorMessage(
+            `Could not restore backup ${backupId}: ${String(error)}`,
+          );
+        }
         return;
       }
       if (
@@ -894,34 +1055,39 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     rootUri?: vscode.Uri,
     options?: { promptWhenMissing?: boolean },
   ) {
+    await lazyInit();
     const selectedRoot =
       rootUri ??
       currentBrainRoot ??
+      (await resolveRememberedBrainRoot(context)) ??
       (await resolveConfiguredBrainRoot()) ??
-      (options?.promptWhenMissing === false
-        ? undefined
-        : await pickBrainRoot());
-    if (!selectedRoot) {
-      return;
-    }
+      (options?.promptWhenMissing ? await pickBrainRoot() : undefined);
 
     if (brainPanel) {
       brainPanel.reveal(vscode.ViewColumn.One);
+      if (!selectedRoot) {
+        return;
+      }
       if (selectedRoot.fsPath !== currentBrainRoot?.fsPath) {
         clearBrainCache();
         setupBrainWatcher(selectedRoot);
       }
       if (brainPanelReady) {
+        await rememberBrainRoot(context, selectedRoot);
         await postBrainSnapshot(selectedRoot);
       } else {
         currentBrainRoot = selectedRoot;
+        await rememberBrainRoot(context, selectedRoot);
       }
       return;
     }
 
     currentBrainRoot = selectedRoot;
-    if (!brainCache) brainCache = createBrainCache();
-    setupBrainWatcher(selectedRoot);
+    if (selectedRoot) {
+      await rememberBrainRoot(context, selectedRoot);
+      if (!brainCache) brainCache = createBrainCache();
+      setupBrainWatcher(selectedRoot);
+    }
     brainPanelReady = false;
     brainPanel = vscode.window.createWebviewPanel(
       "cortex.brain",
@@ -960,11 +1126,28 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         }
         return;
       }
+      if (message?.type === "brain:openGlossary") {
+        await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+        const glossaryUri = vscode.Uri.joinPath(
+          context.globalStorageUri,
+          "brain-glossary.md",
+        );
+        await vscode.workspace.fs.writeFile(
+          glossaryUri,
+          new TextEncoder().encode(BRAIN_GLOSSARY_MD),
+        );
+        await vscode.commands.executeCommand(
+          "markdown.showPreview",
+          glossaryUri,
+        );
+        return;
+      }
       if (message?.type === "brain:pickFolder") {
         const picked = await pickBrainRoot();
         if (picked) {
           clearBrainCache();
           currentBrainRoot = picked;
+          await rememberBrainRoot(context, picked);
           setupBrainWatcher(picked);
           await postBrainSnapshot(picked);
         }
@@ -1002,6 +1185,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openLedgerPanel() {
+    await lazyInit();
     if (ledgerPanel) {
       ledgerPanel.reveal(vscode.ViewColumn.One);
       if (ledgerPanelReady) {
@@ -1033,6 +1217,64 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "ready" || message?.type === "ledger:refresh") {
         ledgerPanelReady = true;
         await postLedgerSnapshot();
+        return;
+      }
+      if (message?.type === "ledger:updateRunReport") {
+        const id = String(message.id ?? "");
+        if (!id) return;
+        try {
+          const patch = message.patch as Record<string, unknown>;
+          const reportPatch: Partial<AgentRunDocument> = {};
+          if (typeof patch.agent_slug === "string") {
+            reportPatch.agent_slug = patch.agent_slug;
+          }
+          if (typeof patch.model_id === "string") {
+            reportPatch.model_id = patch.model_id.trim() || null;
+          }
+          if (typeof patch.started_at === "string") {
+            reportPatch.started_at = patch.started_at;
+          }
+          if (typeof patch.ended_at === "string") {
+            reportPatch.ended_at = patch.ended_at.trim() || null;
+          }
+          if (Array.isArray(patch.plan_codes)) {
+            reportPatch.plan_codes = patch.plan_codes.map(String);
+          }
+          if (Array.isArray(patch.task_codes)) {
+            reportPatch.task_codes = patch.task_codes.map(String);
+          }
+          if (Array.isArray(patch.files_touched)) {
+            reportPatch.files_touched = patch.files_touched.map(String);
+          }
+          if (Array.isArray(patch.commits)) {
+            reportPatch.commits = patch.commits.map(String);
+          }
+          const tokensIn = patch.tokens_in;
+          if (typeof tokensIn === "number" || tokensIn === null) {
+            reportPatch.tokens_in = tokensIn as number | null;
+          }
+          const tokensOut = patch.tokens_out;
+          if (typeof tokensOut === "number" || tokensOut === null) {
+            reportPatch.tokens_out = tokensOut as number | null;
+          }
+          if (
+            patch.status === "running" ||
+            patch.status === "completed" ||
+            patch.status === "failed"
+          ) {
+            reportPatch.status = patch.status;
+          }
+          if (typeof patch.notes === "string") {
+            reportPatch.notes = patch.notes.trim() || null;
+          }
+          await service.updateAgentRunReport(id, reportPatch);
+          await postLedgerSnapshot();
+        } catch (err) {
+          await ledgerPanel?.webview.postMessage({
+            type: "ledger:error",
+            message: String(err),
+          });
+        }
         return;
       }
     });
@@ -1071,6 +1313,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openPlansPanel() {
+    await lazyInit();
     if (plansPanel) {
       plansPanel.reveal(vscode.ViewColumn.One);
       if (plansPanelReady) {
@@ -1092,6 +1335,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       context.extensionUri,
       nonce(),
     );
+    const panel = plansPanel;
 
     plansPanel.onDidDispose(() => {
       plansPanel = undefined;
@@ -1112,6 +1356,15 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         return;
       }
 
+      if (message?.type === "plans:viewGraph") {
+        const pCode: string = message.code;
+        cortexOutput.appendLine(`[Plans] View graph for plan: ${pCode}`);
+        await service.updateFilterState({ selectedPlanCode: pCode });
+        await openGraph();
+        await refreshView();
+        return;
+      }
+
       if (message?.type === "plans:create") {
         const plan = message.plan as Record<string, unknown>;
         const tasks = message.tasks as Record<string, unknown>[];
@@ -1127,6 +1380,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
             context: String(plan.context ?? ""),
             status: "PLANNING",
             project: plan.project ? String(plan.project) : undefined,
+            product: plan.product ? String(plan.product) : undefined,
+            release: plan.release ? String(plan.release) : undefined,
             tags: Array.isArray(plan.tags) ? plan.tags.map(String) : [],
             progress: {
               total: tasks.length,
@@ -1138,7 +1393,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
             },
             current_task_code: null,
             assigned_agent: plan.assignedAgent
-              ? String(plan.assignedAgent)
+              ? normalizeTaskAgent(plan.assignedAgent)
               : undefined,
             author: plan.author ? String(plan.author) : undefined,
             notes: `[${new Date().toISOString()}] Plan creado desde wizard PE-02`,
@@ -1147,11 +1402,12 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           const taskDocs: TaskDocumentInput[] = tasks.map(
             (t: Record<string, unknown>) => ({
               code: String(t.code),
+              project: plan.project ? String(plan.project) : undefined,
               short_task: String(t.short_task ?? ""),
               detail: String(t.detail ?? ""),
               status: "PENDING",
-              agent: String(t.agent ?? "any"),
-              severity: String(t.severity ?? "MEDIUM"),
+              agent: normalizeTaskAgent(t.agent),
+              severity: normalizeTaskSeverity(t.severity),
               tags: Array.isArray(t.tags) ? t.tags.map(String) : [],
               depends_on: [],
               duration_estimate:
@@ -1191,7 +1447,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         try {
           await service.archivePlan(code);
         } catch (err) {
-          void vscode.window.showWarningMessage(`Archive failed: ${String(err)}`);
+          void vscode.window.showWarningMessage(
+            `Archive failed: ${String(err)}`,
+          );
         }
         await postPlansSnapshot();
         return;
@@ -1217,7 +1475,9 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
             planEditorPanel.dispose();
           }
         } catch (err) {
-          void vscode.window.showWarningMessage(`Delete failed: ${String(err)}`);
+          void vscode.window.showWarningMessage(
+            `Delete failed: ${String(err)}`,
+          );
         }
         await postPlansSnapshot();
         return;
@@ -1229,11 +1489,12 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     const panel = plansPanel;
     if (!panel) return;
     try {
-      const [plans, rawAgents] = await Promise.all([
-        service.loadPlans(),
+      const [bundle, rawAgents] = await Promise.all([
+        service.loadBundle(),
         service.listAiAgents(),
       ]);
       if (plansPanel !== panel) return;
+      const plans = withComputedPlanProgress(bundle.plans, bundle.tasks);
       const catalogAgents = mapAgentsForWebview(
         rawAgents,
         panel.webview,
@@ -1264,6 +1525,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openPlanEditorPanel(planCode: string) {
+    await lazyInit();
     const plan = await service.getPlan(planCode);
     if (!plan) {
       void vscode.window.showWarningMessage(`Plan ${planCode} not found.`);
@@ -1474,10 +1736,12 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openScriptFlowPanel(request: ScriptFlowRequest) {
+    await lazyInit();
     pendingScriptFlowRequest = request;
+    await revealScriptFlowDocumentBesidePanel(request);
 
     if (scriptFlowPanel) {
-      scriptFlowPanel.reveal(vscode.ViewColumn.One);
+      scriptFlowPanel.reveal(vscode.ViewColumn.Beside);
       if (scriptFlowPanelReady) {
         await postScriptFlowInit(request);
       }
@@ -1505,6 +1769,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       scriptFlowPanelReady = false;
       currentScriptFlowSnapshot = undefined;
       currentScriptFlowDocumentUri = undefined;
+      scriptFlowEditorViewColumn = undefined;
     });
     scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
       if (!isScriptFlowWebviewMessage(message)) {
@@ -1520,11 +1785,46 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         return;
       }
       if (message.type === "scriptFlow:openGlossary") {
-        const doc = await vscode.workspace.openTextDocument({
-          content: SCRIPT_FLOW_GLOSSARY_MD,
-          language: "markdown",
+        // Write to a real file under global storage (not an untitled doc) so we
+        // can open ONLY the rendered preview: no editable/dirty source tab and
+        // no save prompt when the user closes it.
+        await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+        const glossaryUri = vscode.Uri.joinPath(
+          context.globalStorageUri,
+          "script-flow-glossary.md",
+        );
+        await vscode.workspace.fs.writeFile(
+          glossaryUri,
+          new TextEncoder().encode(SCRIPT_FLOW_GLOSSARY_MD),
+        );
+        await vscode.commands.executeCommand(
+          "markdown.showPreview",
+          glossaryUri,
+        );
+        return;
+      }
+      if (message.type === "scriptFlow:selectScript") {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: "Analyze in Script Flow",
+          filters: {
+            "Supported scripts": ["ts", "tsx", "js", "jsx", "py", "sql"],
+          },
         });
-        await vscode.window.showTextDocument(doc, { preview: false });
+        const uri = picked?.[0];
+        if (!uri) {
+          return;
+        }
+        const document = await vscode.workspace.openTextDocument(uri);
+        const editor = await vscode.window.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false,
+          viewColumn: vscode.ViewColumn.One,
+        });
+        scriptFlowEditorViewColumn = editor.viewColumn;
+        scriptFlowPanel?.reveal(vscode.ViewColumn.Beside);
+        pendingScriptFlowRequest = { scope: "file" };
+        await postScriptFlowInit(pendingScriptFlowRequest);
         return;
       }
       if (message.type === "scriptFlow:drawerClick") {
@@ -1547,20 +1847,84 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         if (!currentScriptFlowDocumentUri || !selectedNode.range) {
           return;
         }
-        await vscode.window.showTextDocument(currentScriptFlowDocumentUri, {
-          selection: new vscode.Range(
-            new vscode.Position(
-              selectedNode.range.startLine - 1,
-              selectedNode.range.startCol - 1,
-            ),
-            new vscode.Position(
-              selectedNode.range.endLine - 1,
-              selectedNode.range.endCol - 1,
-            ),
-          ),
-        });
+        await revealScriptFlowNodeRange(
+          currentScriptFlowDocumentUri,
+          selectedNode.range,
+        );
       }
     });
+  }
+
+  async function revealScriptFlowDocumentBesidePanel(request: ScriptFlowRequest) {
+    const documentUri =
+      request.documentUri ?? vscode.window.activeTextEditor?.document.uri;
+    if (!documentUri) {
+      return;
+    }
+    const visibleEditor = vscode.window.visibleTextEditors.find(
+      (editor) => uriIdentity(editor.document.uri) === uriIdentity(documentUri),
+    );
+    if (visibleEditor) {
+      scriptFlowEditorViewColumn = visibleEditor.viewColumn;
+      return;
+    }
+    const activeEditor = vscode.window.activeTextEditor;
+    const document =
+      activeEditor &&
+      uriIdentity(activeEditor.document.uri) === uriIdentity(documentUri)
+        ? activeEditor.document
+        : await vscode.workspace.openTextDocument(documentUri);
+    const editor = await vscode.window.showTextDocument(document, {
+      preview: false,
+      preserveFocus: false,
+      viewColumn: vscode.ViewColumn.One,
+    });
+    scriptFlowEditorViewColumn = editor.viewColumn;
+  }
+
+  async function revealScriptFlowNodeRange(
+    documentUri: vscode.Uri,
+    range: NonNullable<ScriptFlowSnapshot["nodes"][number]["range"]>,
+  ) {
+    const selection = toVsCodeRange(range);
+    const documentUriKey = uriIdentity(documentUri);
+    const visibleEditor = vscode.window.visibleTextEditors.find(
+      (editor) => uriIdentity(editor.document.uri) === documentUriKey,
+    );
+    const editor =
+      visibleEditor ??
+      (await vscode.window.showTextDocument(documentUri, {
+        preview: false,
+        preserveFocus: true,
+        selection,
+        viewColumn: scriptFlowEditorViewColumn ?? vscode.ViewColumn.One,
+      }));
+
+    scriptFlowEditorViewColumn = editor.viewColumn;
+    editor.selection = new vscode.Selection(selection.start, selection.end);
+    editor.revealRange(
+      selection,
+      vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+    );
+  }
+
+  function toVsCodeRange(
+    range: NonNullable<ScriptFlowSnapshot["nodes"][number]["range"]>,
+  ) {
+    return new vscode.Range(
+      new vscode.Position(
+        Math.max(range.startLine - 1, 0),
+        Math.max(range.startCol - 1, 0),
+      ),
+      new vscode.Position(
+        Math.max(range.endLine - 1, 0),
+        Math.max(range.endCol - 1, 0),
+      ),
+    );
+  }
+
+  function uriIdentity(uri: vscode.Uri) {
+    return uri.fsPath || uri.toString();
   }
 
   async function pickNoteCode(options: {
@@ -1592,6 +1956,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   }
 
   async function openGraph(selectedTaskCode?: string) {
+    await lazyInit();
     if (!graphPanel) {
       graphPanel = vscode.window.createWebviewPanel(
         "cortex.graph",
@@ -1748,8 +2113,8 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
   async function switchPanel() {
     const items: PanelQuickPickItem[] = [
       {
-        label: "Tasks",
-        description: "Focus the Task Navigator sidebar",
+        label: "Control",
+        description: "Focus the Cortex Control sidebar",
         command: "cortex.openTasks",
       },
       {
@@ -1822,57 +2187,11 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     vscode.commands.registerCommand(
       "cortex.togglePlanStatusFilter",
       async () => {
-        planStatusFilter = planStatusFilter === "active" ? "done" : "active";
-        await context.workspaceState.update(
-          PLAN_STATUS_FILTER_KEY,
-          planStatusFilter,
-        );
-        treeProvider.setPlanStatusFilter(planStatusFilter);
-        treeView.title = titleForPlanStatusFilter(planStatusFilter);
+        await openPlansPanel();
       },
     ),
     vscode.commands.registerCommand("cortex.showOptions", async () => {
       const items: OptionsQuickPickItem[] = [
-        {
-          label: "Tasks",
-          description: "Focus the Task Navigator sidebar",
-          command: "cortex.openTasks",
-        },
-        {
-          label: "Graph",
-          description: "Open the PERT graph panel",
-          command: "cortex.openGraph",
-        },
-        {
-          label: "Notes",
-          description: "Open the notes panel",
-          command: "cortex.openNotes",
-        },
-        {
-          label: "Logs",
-          description: "Open the logs panel",
-          command: "cortex.openLogs",
-        },
-        {
-          label: "Archive",
-          description: "Open the archived plans panel",
-          command: "cortex.openArchive",
-        },
-        {
-          label: "Brain",
-          description: "Scan a markdown folder into a graph",
-          command: "cortex.openBrain",
-        },
-        {
-          label: "Script Flow",
-          description: "Open the Script Flow panel",
-          command: "cortex.openScriptFlow",
-        },
-        {
-          label: "Ledger",
-          description: "Open the runs ledger panel",
-          command: "cortex.openLedger",
-        },
         {
           label: "Search query",
           description: "Update search text",
@@ -1921,7 +2240,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       ];
       const picked = await vscode.window.showQuickPick(items, {
         title: "Cortex Options",
-        placeHolder: "Run a Cortex command",
+        placeHolder: "Run an operational option",
       });
       if (!picked) {
         return;
@@ -1950,7 +2269,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       await openArchivePanel();
     }),
     vscode.commands.registerCommand("cortex.openBrain", async () => {
-      await openBrainPanel(undefined, { promptWhenMissing: true });
+      await openBrainPanel(undefined, { promptWhenMissing: false });
     }),
     vscode.commands.registerCommand("cortex.openMdxGraph", async () => {
       await vscode.commands.executeCommand("cortex.openBrain");
@@ -2187,6 +2506,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
         try {
           const result = await service.archivePlan(planCode);
+          await lazyInit();
           treeProvider.refresh();
           await postSnapshot();
           const picked = await vscode.window.showInformationMessage(
@@ -2363,6 +2683,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       }
 
       await service.saveMongoUrl(mongoUrl);
+      await lazyInit();
       treeProvider.refresh();
       void vscode.window.showInformationMessage("Mongo URL guardada.");
     }),
@@ -2407,6 +2728,181 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       await postSnapshot();
       void vscode.window.showInformationMessage(
         formatCollectionMessage("Sample tasks created", picked, inspection),
+      );
+    }),
+    vscode.commands.registerCommand("cortex.registerMCP", async () => {
+      const installMCP = await vscode.window.showInformationMessage(
+        "This will register the Cortex MCP server in your AI client settings (Claude Code, Codex, Cursor, etc.). Continue?",
+        { modal: true },
+        "Register MCP",
+      );
+      if (installMCP !== "Register MCP") return;
+
+      const clients = [
+        { label: "Claude Code", id: "claude", dir: ".claude", file: "settings.json", key: "mcpServers", format: "claude" as McpClientFormat },
+        { label: "Codex CLI", id: "codex", dir: ".codex", file: "config.toml", key: "mcp_servers", format: "codex" as McpClientFormat },
+        { label: "Cursor", id: "cursor", dir: ".cursor", file: "mcp.json", key: "mcpServers", format: "cursor" as McpClientFormat },
+        { label: "VS Code Copilot", id: "vscode", dir: ".vscode", file: "mcp.json", key: "servers", format: "vscode" as McpClientFormat },
+        { label: "OpenCode (project)", id: "opencode-project", dir: "", file: "opencode.json", key: "mcp", format: "opencode" as McpClientFormat },
+        { label: "OpenCode (global)", id: "opencode-global", dir: path.join(".config", "opencode"), file: "opencode.json", key: "mcp", format: "opencode" as McpClientFormat },
+      ];
+      const picked = await vscode.window.showQuickPick(clients, {
+        placeHolder: "Select your AI client",
+        title: "Register Cortex MCP server",
+      });
+      if (!picked) return;
+
+      const extPath = context.extensionUri.fsPath;
+      const mcpDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "index.js");
+      const mcpBundledPath = path.join(extPath, "dist", "mcp-server", "index.js");
+      const mcpPath = fs.existsSync(mcpDevPath) ? mcpDevPath : fs.existsSync(mcpBundledPath) ? mcpBundledPath : null;
+
+      if (!mcpPath) {
+        void vscode.window.showErrorMessage(
+          `MCP server dist not found. Expected at ${mcpDevPath} or ${mcpBundledPath}. Build the MCP server first (pnpm --filter @cortex/mcp-server build) and try again.`,
+        );
+        return;
+      }
+
+      if (picked.id === "opencode-project") {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders?.length) {
+          void vscode.window.showErrorMessage("OpenCode project config requires an open workspace.");
+          return;
+        }
+        picked.dir = workspaceFolders[0].uri.fsPath;
+      } else if (picked.id === "vscode") {
+        const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsFolder) {
+          void vscode.window.showErrorMessage("VS Code Copilot MCP config requires an open workspace.");
+          return;
+        }
+        picked.dir = path.join(wsFolder, ".vscode");
+      } else {
+        picked.dir = path.join(os.homedir(), picked.dir);
+      }
+
+      const settingsPath = path.join(picked.dir, picked.file);
+      const mongoUrl = vscode.workspace.getConfiguration("cortex")
+        .get<string>("mongoUrl", "mongodb://127.0.0.1:27017");
+
+      if (picked.format === "codex") {
+        const existingConfig = fs.existsSync(settingsPath)
+          ? fs.readFileSync(settingsPath, "utf-8")
+          : "";
+        const nextConfig = upsertCodexMcpServerConfig(existingConfig, {
+          command: "node",
+          args: [mcpPath.replace(/\\/g, "/")],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        });
+
+        fs.mkdirSync(picked.dir, { recursive: true });
+        fs.writeFileSync(settingsPath, nextConfig, "utf-8");
+
+        void vscode.window.showInformationMessage(
+          `Cortex MCP server registered in ${picked.label} (${settingsPath}). Restart ${picked.label} for changes to take effect.`,
+        );
+        return;
+      }
+
+      let settings: Record<string, unknown> = {};
+      if (fs.existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as Record<string, unknown>;
+        } catch { /* ignore malformed */ }
+      }
+
+      if (picked.format === "vscode") {
+        const servers = (settings.servers ?? {}) as Record<string, unknown>;
+        servers.cortex = {
+          type: "stdio",
+          command: "node",
+          args: [mcpPath],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.servers = servers;
+      } else if (picked.format === "opencode") {
+        const mcp = (settings.mcp ?? {}) as Record<string, unknown>;
+        mcp.cortex = {
+          type: "local",
+          command: ["node", mcpPath],
+          enabled: true,
+          environment: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.mcp = mcp;
+      } else {
+        const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
+        mcpServers.cortex = {
+          command: "node",
+          args: [mcpPath],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.mcpServers = mcpServers;
+      }
+
+      fs.mkdirSync(picked.dir, { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+
+      void vscode.window.showInformationMessage(
+        `Cortex MCP server registered in ${picked.label} (${settingsPath}). Restart ${picked.label} for changes to take effect.`,
+      );
+    }),
+    vscode.commands.registerCommand("cortex.installSkills", async () => {
+      const install = await vscode.window.showInformationMessage(
+        "This will install Cortex AI skills into your AI client's skill directory (Claude Code, Codex, Copilot, etc.). Continue?",
+        { modal: true },
+        "Install Skills",
+      );
+      if (install !== "Install Skills") return;
+
+      const clients = [
+        { label: "Claude Code", id: "claude", dir: ".claude/skills" },
+        { label: "Codex", id: "codex", dir: ".codex/skills" },
+        { label: "VS Code Copilot", id: "copilot", dir: ".copilot/skills" },
+        { label: "OpenCode (global)", id: "opencode-global", dir: path.join(".config", "opencode", "skills") },
+      ];
+      const picked = await vscode.window.showQuickPick(clients, {
+        placeHolder: "Select your AI client",
+        title: "Install Cortex Skills",
+      });
+      if (!picked) return;
+
+      const extPath = context.extensionUri.fsPath;
+      const skillsDevPath = path.resolve(extPath, "..", "..", "..", "ai-skills", "skills", "global");
+      const skillsBundledPath = path.join(extPath, "dist", "skills");
+      const skillsSource = fs.existsSync(skillsDevPath) ? skillsDevPath : fs.existsSync(skillsBundledPath) ? skillsBundledPath : null;
+
+      if (!skillsSource) {
+        void vscode.window.showErrorMessage(
+          `Skills not found. Expected at ${skillsBundledPath}. Rebuild the extension and try again.`,
+        );
+        return;
+      }
+
+      const targetDir = path.join(os.homedir(), picked.dir);
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      const entries = fs.readdirSync(skillsSource, { withFileTypes: true });
+      let copied = 0;
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const src = path.join(skillsSource, entry.name);
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) continue;
+        const dest = path.join(targetDir, entry.name);
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.cpSync(src, dest, { recursive: true, force: true });
+        copied++;
+      }
+
+      if (copied === 0) {
+        void vscode.window.showErrorMessage(
+          `No installable skills found in ${skillsSource}. Expected folders with SKILL.md.`,
+        );
+        return;
+      }
+
+      void vscode.window.showInformationMessage(
+        `${copied} skills installed to ${picked.label} (${targetDir}). Restart ${picked.label} for changes to take effect.`,
       );
     }),
     vscode.commands.registerCommand(
@@ -2460,25 +2956,19 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     }),
     vscode.commands.registerCommand(
       "cortex.markDone",
-      async (
-        arg?: TaskTreeNode | { kind?: string; task?: { code?: string } },
-      ) => {
+      async (arg?: TaskCommandArg) => {
         await markTaskStatus(arg, "DONE");
       },
     ),
     vscode.commands.registerCommand(
       "cortex.markInProgress",
-      async (
-        arg?: TaskTreeNode | { kind?: string; task?: { code?: string } },
-      ) => {
+      async (arg?: TaskCommandArg) => {
         await markTaskStatus(arg, "IN_PROGRESS");
       },
     ),
     vscode.commands.registerCommand(
       "cortex.markBlocked",
-      async (
-        arg?: TaskTreeNode | { kind?: string; task?: { code?: string } },
-      ) => {
+      async (arg?: TaskCommandArg) => {
         await markTaskStatus(arg, "BLOCKED");
       },
     ),
@@ -2548,6 +3038,34 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         await store.close();
       }
     }),
+    vscode.commands.registerCommand(
+      "cortex.setTheme",
+      async (theme?: "cortex" | "light" | "vscode" | "space") => {
+        const valid = ["cortex", "light", "vscode", "space"] as const;
+        const selectedTheme = valid.includes(theme as typeof valid[number])
+          ? (theme as typeof valid[number])
+          : (
+              await vscode.window.showQuickPick(
+                [
+                  { label: "Retro Space", description: "Tema oscuro por defecto", value: "cortex" as const },
+                  { label: "Light", description: "Tema claro", value: "light" as const },
+                  { label: "VS Code", description: "Sigue el tema del editor", value: "vscode" as const },
+                  { label: "Space", description: "Azul profundo con acento cian neón", value: "space" as const },
+                ],
+                { title: "Cortex Theme", placeHolder: "Choose panel theme" },
+              )
+            )?.value;
+        if (!selectedTheme) return;
+        await vscode.workspace
+          .getConfiguration("cortex")
+          .update("theme", selectedTheme, vscode.ConfigurationTarget.Workspace);
+        treeProvider.refresh();
+        const label = { cortex: "Retro Space", light: "Light", vscode: "VS Code", space: "Space" }[selectedTheme];
+        void vscode.window.showInformationMessage(
+          `Cortex theme set to ${label}. Reopen panels to apply it.`,
+        );
+      },
+    ),
     vscode.commands.registerCommand("cortex.openLedger", async () => {
       await openLedgerPanel();
     }),
@@ -2567,14 +3085,260 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     ),
   );
 
-  treeView.onDidChangeSelection(async (event) => {
-    const selected = event.selection[0] as TaskTreeNode | undefined;
-    if (selected?.kind === "task") {
-      await openGraph(selected.task.code);
+  async function markTaskStatus(
+    arg: TaskCommandArg | undefined,
+    newStatus: TaskRecord["status"],
+  ) {
+    const code =
+      arg?.kind === "task"
+        ? arg.task?.code
+        : service.getFilterState().selectedTaskCode;
+    if (!code) {
+      void vscode.window.showInformationMessage("Select a task first.");
+      return;
     }
-  });
 
-  treeProvider.refresh();
+    const task = await service.getTask(code);
+    if (!task) {
+      void vscode.window.showWarningMessage(`Task ${code} not found.`);
+      return;
+    }
+
+    await service.saveTask({
+      code: task.code,
+      short_task: task.shortTask,
+      detail: task.detail,
+      status: newStatus,
+      agent: task.agent,
+      severity: task.severity,
+      created_at: task.createdAt,
+      updated_at: new Date().toISOString(),
+    });
+    await lazyInit();
+    treeProvider.refresh();
+    await postSnapshot(task.code);
+    void vscode.window.showInformationMessage(
+      `Task ${task.code} marked as ${newStatus.toLowerCase().replace("_", " ")}.`,
+    );
+  }
+
+  async function createNewTask(arg?: {
+    kind?: string;
+    task?: { code?: string; planCode?: string; lane?: string };
+    planCode?: string;
+  }) {
+    const filterState = service.getFilterState();
+
+    // Resolve context from arg (tree selection) or active filter state
+    let contextPlanCode: string | undefined;
+    let contextLane: string | undefined;
+
+    if (arg?.kind === "task" && arg.task) {
+      contextPlanCode = arg.task.planCode;
+      contextLane = arg.task.lane;
+    } else if (arg?.kind === "group") {
+      contextPlanCode = arg.planCode;
+    } else {
+      contextPlanCode = filterState.selectedPlanCode;
+      if (filterState.selectedTaskCode) {
+        const selectedTask = await service.getTask(
+          filterState.selectedTaskCode,
+        );
+        contextLane = selectedTask?.lane;
+      }
+    }
+
+    // Load bundle once for both code uniqueness check and plan list
+    const bundle = await service.loadBundle();
+    const existingCodes = new Set(bundle.tasks.map((t) => t.code));
+
+    // Step 1 – code
+    const codeRaw = await vscode.window.showInputBox({
+      title: "New Cortex task",
+      prompt: "Task code (must be unique)",
+      placeHolder: "TASK-123",
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return "Code cannot be empty.";
+        }
+        if (existingCodes.has(trimmed)) {
+          return `Code "${trimmed}" already exists.`;
+        }
+        return undefined;
+      },
+    });
+    const code = codeRaw?.trim();
+    if (!code) {
+      return;
+    }
+
+    // Belt-and-suspenders uniqueness guard (validates after confirm)
+    if (existingCodes.has(code)) {
+      void vscode.window.showWarningMessage(
+        `Task code "${code}" already exists.`,
+      );
+      return;
+    }
+
+    // Step 2 – title
+    const shortTaskRaw = await vscode.window.showInputBox({
+      title: "New Cortex task",
+      prompt: `Title for ${code}`,
+      placeHolder: "Short task description",
+      ignoreFocusOut: true,
+      validateInput: (value) =>
+        value.trim() ? undefined : "Title cannot be empty.",
+    });
+    const shortTask = shortTaskRaw?.trim();
+    if (!shortTask) {
+      return;
+    }
+
+    // Step 3 – plan (optional)
+    const plans = await service.loadPlans();
+    type PlanPickItem = vscode.QuickPickItem & { planCode?: string };
+    const noPlanItem: PlanPickItem = { label: "$(close) No plan" };
+    const planItems: PlanPickItem[] = plans.map((plan) => ({
+      label: plan.code,
+      description: plan.title,
+      detail: `${plan.progress.done}/${plan.progress.total} done · ${plan.status}`,
+      planCode: plan.code,
+    }));
+
+    // Surface the contextually active plan first
+    if (contextPlanCode) {
+      planItems.sort((a, b) => {
+        if (a.planCode === contextPlanCode) {
+          return -1;
+        }
+        if (b.planCode === contextPlanCode) {
+          return 1;
+        }
+        return 0;
+      });
+    }
+
+    const pickedPlan = await vscode.window.showQuickPick<PlanPickItem>(
+      [noPlanItem, ...planItems],
+      {
+        title: `Plan for ${code}`,
+        placeHolder: contextPlanCode
+          ? `Active: ${contextPlanCode}`
+          : "Select a plan (optional)",
+        ignoreFocusOut: true,
+      },
+    );
+    if (pickedPlan === undefined) {
+      return;
+    }
+
+    // Read default agent from settings
+    const defaultAgent =
+      vscode.workspace
+        .getConfiguration("cortex")
+        .get<string>("defaultAgent")
+        ?.trim() || "any";
+
+    const now = new Date().toISOString();
+    await service.saveTask({
+      code,
+      short_task: shortTask,
+      detail: "",
+      status: "PENDING",
+      severity: "MEDIUM",
+      agent: defaultAgent,
+      tags: [],
+      depends_on: [],
+      ...(pickedPlan.planCode ? { plan_code: pickedPlan.planCode } : {}),
+      ...(contextLane ? { lane: contextLane } : {}),
+      created_at: now,
+      updated_at: now,
+    });
+
+    await lazyInit();
+    treeProvider.refresh();
+    await postSnapshot(code);
+    void vscode.window.showInformationMessage(`Task ${code} created.`);
+  }
+
+  async function openTaskEditorPanel(
+    task: TaskRecord,
+    catalogCodes: string[],
+    agents: CatalogAgent[],
+  ) {
+    pendingTaskEditorLoad = { task, catalogCodes, agents };
+
+    if (taskEditorPanel) {
+      taskEditorPanel.reveal(vscode.ViewColumn.Beside);
+      if (taskEditorPanelReady) {
+        await taskEditorPanel.webview.postMessage({
+          type: "taskEditor:load",
+          task,
+          catalog: { taskCodes: catalogCodes, agents },
+        });
+        pendingTaskEditorLoad = undefined;
+      }
+      return;
+    }
+
+    taskEditorPanelReady = false;
+    taskEditorPanel = vscode.window.createWebviewPanel(
+      "cortex.taskEditor",
+      `Edit: ${task.code}`,
+      vscode.ViewColumn.Beside,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    taskEditorPanel.webview.html = getTaskEditorHtml(
+      taskEditorPanel.webview,
+      context.extensionUri,
+      nonce(),
+    );
+
+    taskEditorPanel.onDidDispose(() => {
+      taskEditorPanel = undefined;
+      taskEditorPanelReady = false;
+      pendingTaskEditorLoad = undefined;
+    });
+
+    taskEditorPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "ready") {
+        taskEditorPanelReady = true;
+        if (pendingTaskEditorLoad) {
+          await taskEditorPanel?.webview.postMessage({
+            type: "taskEditor:load",
+            task: pendingTaskEditorLoad.task,
+            catalog: {
+              taskCodes: pendingTaskEditorLoad.catalogCodes,
+              agents: pendingTaskEditorLoad.agents,
+            },
+          });
+          pendingTaskEditorLoad = undefined;
+        }
+        return;
+      }
+
+      if (
+        message?.type === "taskEditor:save" &&
+        isTaskDocumentInput(message.input)
+      ) {
+        await service.saveTask(message.input);
+        await lazyInit();
+        treeProvider.refresh();
+        await postSnapshot(message.input.code);
+        void vscode.window.showInformationMessage(
+          `Task ${message.input.code} updated.`,
+        );
+        taskEditorPanel?.dispose();
+        return;
+      }
+
+      if (message?.type === "taskEditor:cancel") {
+        taskEditorPanel?.dispose();
+      }
+    });
+  }
 
   async function markTaskStatus(
     arg: TaskTreeNode | { kind?: string; task?: { code?: string } } | undefined,
@@ -2854,12 +3618,19 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
 
     await openTaskEditorPanel(task, catalogCodes, agents);
   }
+
+  // Fire lazy init but don't block activation
+  void lazyInit();
 }
 
 export async function deactivate() {
   disposeReminderTimers();
   await activeService?.dispose();
   activeService = undefined;
+  const { clearScriptFlowCache } =
+    await import("./scriptFlow/analyzers/index.js");
+  const { clearCrossFileCache } =
+    await import("./scriptFlow/crossFileResolver.js");
   clearScriptFlowCache();
   clearCrossFileCache();
 }
@@ -2944,6 +3715,49 @@ function buildPlanTasks(
   }
 
   return grouped;
+}
+
+function withComputedPlanProgress<
+  T extends {
+    code: string;
+    progress: {
+      total: number;
+      pending: number;
+      in_progress: number;
+      blocked: number;
+      done: number;
+      failed: number;
+    };
+  },
+>(plans: readonly T[], tasks: readonly TaskRecord[]): T[] {
+  const counts = new Map<string, T["progress"]>();
+  for (const task of tasks) {
+    const planCode = task.planCode;
+    if (!planCode) continue;
+    const progress =
+      counts.get(planCode) ??
+      ({
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        blocked: 0,
+        done: 0,
+        failed: 0,
+      } satisfies T["progress"]);
+
+    progress.total += 1;
+    if (task.status === "PENDING") progress.pending += 1;
+    if (task.status === "IN_PROGRESS") progress.in_progress += 1;
+    if (task.status === "BLOCKED") progress.blocked += 1;
+    if (task.status === "DONE") progress.done += 1;
+    if (task.status === "FAILED") progress.failed += 1;
+    counts.set(planCode, progress);
+  }
+
+  return plans.map((plan) => {
+    const computed = counts.get(plan.code);
+    return computed ? { ...plan, progress: computed } : plan;
+  });
 }
 
 function sanitizeFilterState(
@@ -3071,25 +3885,15 @@ function sameArray(left: readonly string[], right: readonly string[]) {
   );
 }
 
-function normalizePlanStatusFilter(
-  value: PlanStatusFilter | undefined,
-): PlanStatusFilter {
-  return value === "done" ? "done" : "active";
-}
-
-function titleForPlanStatusFilter(filter: PlanStatusFilter) {
-  return filter === "done" ? "Cortex · Cerrados" : "Cortex · En curso";
-}
-
 async function resolveArchivePlanCode(
   service: ExtensionTaskService,
-  arg?: string | { planCode?: string; kind?: string; label?: string },
+  arg?: string | PlanCommandArg,
 ) {
   if (typeof arg === "string" && arg.trim()) {
     return arg.trim();
   }
 
-  const candidate = arg as Partial<GroupTreeNode> | undefined;
+  const candidate = arg as PlanCommandArg | undefined;
   if (candidate?.planCode?.trim()) {
     return candidate.planCode.trim();
   }
@@ -3124,7 +3928,7 @@ async function pickBrainRoot() {
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    openLabel: "Scan folder",
+    openLabel: "Carpeta",
     title: "Choose a Markdown / MDX knowledge folder",
   });
   return picked?.[0];
@@ -3150,6 +3954,30 @@ async function resolveConfiguredBrainRoot() {
   }
 }
 
+async function resolveRememberedBrainRoot(context: vscode.ExtensionContext) {
+  const remembered = context.workspaceState
+    .get<string>(BRAIN_LAST_ROOT_KEY)
+    ?.trim();
+  if (!remembered) {
+    return undefined;
+  }
+  const uri = vscode.Uri.file(remembered);
+  try {
+    const stat = await vscode.workspace.fs.stat(uri);
+    return stat.type === vscode.FileType.Directory ? uri : undefined;
+  } catch {
+    await context.workspaceState.update(BRAIN_LAST_ROOT_KEY, undefined);
+    return undefined;
+  }
+}
+
+async function rememberBrainRoot(
+  context: vscode.ExtensionContext,
+  rootUri: vscode.Uri,
+) {
+  await context.workspaceState.update(BRAIN_LAST_ROOT_KEY, rootUri.fsPath);
+}
+
 async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration("cortex");
   const legacyMongoUrl = config.get<string>("mongoUrl")?.trim();
@@ -3168,6 +3996,7 @@ async function migrateLegacyMongoUrlSetting(context: vscode.ExtensionContext) {
 }
 
 async function canConnectToMongoUrl(url: string) {
+  const { MongoClient } = await import("mongodb");
   const client = new MongoClient(url, { serverSelectionTimeoutMS: 3000 });
   try {
     await client.connect();
@@ -3231,6 +4060,9 @@ async function pickConnectionSettings(
       mongoUrl,
       mongoDbName,
       mongoTasksCollection: current.mongoTasksCollection,
+      mongoNotesCollection: current.mongoNotesCollection,
+      mongoLogsCollection: current.mongoLogsCollection,
+      mongoPlansCollection: current.mongoPlansCollection,
     }),
   );
   const collectionPick = await vscode.window.showQuickPick(
@@ -3267,6 +4099,8 @@ async function pickConnectionSettings(
     mongoUrl,
     mongoDbName,
     mongoTasksCollection,
+    mongoNotesCollection: current.mongoNotesCollection,
+    mongoLogsCollection: current.mongoLogsCollection,
     mongoPlansCollection: current.mongoPlansCollection,
   };
 }
@@ -3274,6 +4108,13 @@ async function pickConnectionSettings(
 async function buildScriptFlowDelivery(
   request: ScriptFlowRequest,
 ): Promise<ScriptFlowDelivery> {
+  const [
+    { resolveScriptFlowLanguage, analyzeScriptFlowDocument },
+    { expandCrossFileImports },
+  ] = await Promise.all([
+    import("./scriptFlow/analyzers/index.js"),
+    import("./scriptFlow/crossFileResolver.js"),
+  ]);
   const resolved = await resolveScriptFlowDocument(request);
   if (resolved.kind === "error") {
     return { type: "error", error: resolved.error };
@@ -3336,6 +4177,9 @@ async function buildScriptFlowDelivery(
         // fall through to base snapshot
       }
     }
+    if (request.scope !== "selection") {
+      enrichScriptFlowWithDiagnostics(snapshot, document.uri);
+    }
     return {
       type: "snapshot",
       snapshot,
@@ -3347,6 +4191,69 @@ async function buildScriptFlowDelivery(
       type: "error",
       error: String(error),
     };
+  }
+}
+
+function enrichScriptFlowWithDiagnostics(
+  snapshot: ScriptFlowSnapshot,
+  documentUri: vscode.Uri,
+) {
+  const diagnostics = vscode.languages.getDiagnostics(documentUri);
+  for (const diagnostic of diagnostics) {
+    const node = findScriptFlowNodeForDiagnostic(
+      snapshot.nodes,
+      diagnostic.range,
+    );
+    if (!node) {
+      continue;
+    }
+    appendNodeObservation(node, {
+      kind: "diagnostic",
+      severity: mapDiagnosticSeverity(diagnostic.severity),
+      message: diagnostic.message,
+      line: diagnostic.range.start.line + 1,
+      source: diagnostic.source ?? "vscode",
+    });
+  }
+}
+
+function findScriptFlowNodeForDiagnostic(
+  nodes: readonly ScriptFlowSnapshot["nodes"][number][],
+  range: vscode.Range,
+) {
+  const startLine = range.start.line + 1;
+  const endLine = range.end.line + 1;
+  return [...nodes]
+    .filter(
+      (node) =>
+        node.range &&
+        node.range.startLine <= endLine &&
+        node.range.endLine >= startLine,
+    )
+    .sort(
+      (left, right) =>
+        scriptFlowNodeLineSpan(left) - scriptFlowNodeLineSpan(right) ||
+        left.label.localeCompare(right.label),
+    )[0];
+}
+
+function scriptFlowNodeLineSpan(node: ScriptFlowSnapshot["nodes"][number]) {
+  if (!node.range) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return node.range.endLine - node.range.startLine;
+}
+
+function mapDiagnosticSeverity(
+  severity: vscode.DiagnosticSeverity,
+): "info" | "warning" | "error" {
+  switch (severity) {
+    case vscode.DiagnosticSeverity.Error:
+      return "error";
+    case vscode.DiagnosticSeverity.Warning:
+      return "warning";
+    default:
+      return "info";
   }
 }
 
@@ -3406,6 +4313,38 @@ function formatCollectionMessage(
   return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} loaded ${inspection.validTaskCount} tasks.`;
 }
 
+function upsertCodexMcpServerConfig(
+  existingConfig: string,
+  server: {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+  },
+) {
+  const block = [
+    "[mcp_servers.cortex]",
+    `command = ${tomlString(server.command)}`,
+    `args = [${server.args.map(tomlString).join(", ")}]`,
+    `env = { ${Object.entries(server.env)
+      .map(([key, value]) => `${key} = ${tomlString(value)}`)
+      .join(", ")} }`,
+  ].join("\n");
+
+  const normalized = existingConfig.replace(/\r\n/g, "\n").trimEnd();
+  const existingBlockPattern =
+    /(^|\n)\[mcp_servers\.cortex\]\n[\s\S]*?(?=\n\[|$)/m;
+
+  if (existingBlockPattern.test(normalized)) {
+    return `${normalized.replace(existingBlockPattern, `$1${block}`)}\n`;
+  }
+
+  return `${normalized}${normalized ? "\n\n" : ""}${block}\n`;
+}
+
+function tomlString(value: string) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 async function safeList(loader: () => Promise<string[]>) {
   try {
     return await loader();
@@ -3460,6 +4399,20 @@ function isNoteDocumentInput(value: unknown): value is NoteDocumentInput {
     typeof candidate.title === "string" &&
     candidate.title.trim().length > 0
   );
+}
+
+function normalizeTaskAgent(value: unknown): TaskAgent {
+  const candidate = typeof value === "string" ? value : "any";
+  return TASK_AGENTS.includes(candidate as TaskAgent)
+    ? (candidate as TaskAgent)
+    : "any";
+}
+
+function normalizeTaskSeverity(value: unknown): TaskSeverity {
+  const candidate = typeof value === "string" ? value : "MEDIUM";
+  return TASK_SEVERITIES.includes(candidate as TaskSeverity)
+    ? (candidate as TaskSeverity)
+    : "MEDIUM";
 }
 
 /**

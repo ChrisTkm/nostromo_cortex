@@ -1,0 +1,23 @@
+.atom-text-area {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--cortex-radius-sm);
+  background: color-mix(in srgb, var(--cortex-bg) 98%, transparent);
+  color: var(--cortex-text-strong);
+  font-family: var(--cortex-font);
+  font-size: var(--cortex-text-sm);
+  line-height: var(--cortex-line-height);
+  padding: 7px 10px;
+  transition: border-color 0.15s;
+}
+
+.atom-text-area:focus {
+  outline: none;
+  border-color: var(--cortex-border-strong);
+}
+
+.atom-text-area--tall {
+  min-height: 120px;
+}

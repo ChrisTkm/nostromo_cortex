@@ -28,7 +28,6 @@ export function NoteList(props: {
       <header className="notes-list__header">
         <div>
           <div className="notes-list__eyebrow">Workspace notes</div>
-          <h1 className="notes-list__title">Cortex Notes</h1>
           <div className="notes-list__count">{visibleCountLabel}</div>
         </div>
         <div className="notes-list__actions">
@@ -37,9 +36,6 @@ export function NoteList(props: {
               Hide editor
             </button>
           ) : null}
-          <button className="notes-button notes-button--primary" onClick={props.onCreate} type="button">
-            + New
-          </button>
         </div>
       </header>
 

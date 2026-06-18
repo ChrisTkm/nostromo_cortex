@@ -52,6 +52,8 @@ export interface ActionPlanDocument {
   context: string;
   status: PlanStatus;
   project?: string | null;
+  product?: string | null;
+  release?: string | null;
   tags?: string[];
   progress: PlanProgress;
   current_task_code?: string | null;
@@ -74,6 +76,8 @@ export interface ActionPlanRecord {
   context: string;
   status: PlanStatus;
   project?: string;
+  product?: string;
+  release?: string;
   tags: string[];
   progress: PlanProgress;
   currentTaskCode?: string;
@@ -383,8 +387,12 @@ export interface AgentRunDocument {
   started_at: string | Date;
   /** null mientras status === "running". */
   ended_at?: string | Date | null;
+  /** Duración calculada de la sesión en milisegundos. */
+  duration_ms?: number | null;
   /** Tasks tocadas en la sesión. */
   task_codes: string[];
+  /** Plans afectados por las tasks de la sesión. */
+  plan_codes?: string[];
   /** Rutas relativas modificadas en la sesión. */
   files_touched: string[];
   /** Hashes de commits corridos por el agente. */
@@ -409,7 +417,9 @@ export interface AgentRunRecord {
   modelId?: string;
   startedAt: string;
   endedAt: string | null;
+  durationMs?: number;
   taskCodes: string[];
+  planCodes: string[];
   filesTouched: string[];
   commits: string[];
   tokensIn?: number;

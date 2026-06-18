@@ -1,4 +1,4 @@
-import { MongoClient, ObjectId, type Collection } from "mongodb";
+import type { Collection, MongoClient } from "mongodb";
 
 import { normalizeActionPlan, normalizeAiAgentDocument, normalizeAgentRunDocument, normalizeNote, normalizeTaskDocument } from "./schema.js";
 import type {
@@ -47,45 +47,62 @@ const LEGACY_NOTE_INDEX_NAMES = ["notes_created_at", "notes_tags"] as const;
 export class SharedMongoClient {
   readonly mongoUrl: string;
 
-  private readonly client: MongoClient;
+  private _client: MongoClient | undefined;
 
   constructor(mongoUrl: string) {
     this.mongoUrl = mongoUrl;
-    this.client = new MongoClient(mongoUrl);
   }
 
   async connect(): Promise<MongoClient> {
-    return this.client.connect();
+    if (!this._client) {
+      const { MongoClient: MC } = await import("./mongo-loader.js");
+      this._client = new MC(this.mongoUrl);
+    }
+    await this._client.connect();
+    return this._client;
   }
 
   get(): MongoClient {
-    return this.client;
+    if (!this._client) throw new Error("SharedMongoClient not connected yet");
+    return this._client;
   }
 
   db(name?: string) {
-    return this.client.db(name);
+    if (!this._client) throw new Error("SharedMongoClient not connected yet");
+    return this._client.db(name);
   }
 
   async close(): Promise<void> {
-    await this.client.close();
+    if (this._client) {
+      await this._client.close();
+    }
   }
 }
 
 export class MongoTaskStore implements TaskStore {
-  private readonly client: MongoClientLike;
+  private _client: MongoClientLike | undefined;
 
   constructor(private readonly options: MongoTaskStoreOptions) {
-    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
+    this._client = options.sharedClient;
+  }
+
+  private async getClient(): Promise<MongoClientLike> {
+    if (this._client) return this._client;
+    const { MongoClient } = await import("./mongo-loader.js");
+    this._client = new MongoClient(this.options.mongoUrl);
+    return this._client;
   }
 
   private async collection() {
-    await this.client.connect();
-    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+    const client = await this.getClient();
+    await client.connect();
+    return client.db(this.options.dbName).collection(this.options.collectionName);
   }
 
   async listDatabaseNames(): Promise<string[]> {
-    await this.client.connect();
-    const result = await this.client
+    const client = await this.getClient();
+    await client.connect();
+    const result = await client
       .db()
       .admin()
       .listDatabases();
@@ -93,8 +110,9 @@ export class MongoTaskStore implements TaskStore {
   }
 
   async listCollectionNames(): Promise<string[]> {
-    await this.client.connect();
-    const result = await this.client
+    const client = await this.getClient();
+    await client.connect();
+    const result = await client
       .db(this.options.dbName)
       .listCollections()
       .toArray();
@@ -133,6 +151,7 @@ export class MongoTaskStore implements TaskStore {
       return normalizeTaskDocument(byCode as TaskDocumentInput);
     }
 
+    const { ObjectId } = await import("./mongo-loader.js");
     if (ObjectId.isValid(codeOrId)) {
       const byId = await collection.findOne({ _id: new ObjectId(codeOrId) });
       return byId ? normalizeTaskDocument(byId as TaskDocumentInput) : null;
@@ -221,22 +240,30 @@ export class MongoTaskStore implements TaskStore {
   }
 
   async close(): Promise<void> {
-    if (!this.options.sharedClient) {
-      await this.client.close();
+    if (!this.options.sharedClient && this._client) {
+      await this._client.close();
     }
   }
 }
 
 export class MongoActionPlanStore {
-  private readonly client: MongoClientLike;
+  private _client: MongoClientLike | undefined;
 
   constructor(private readonly options: MongoActionPlanStoreOptions) {
-    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
+    this._client = options.sharedClient;
+  }
+
+  private async getClient(): Promise<MongoClientLike> {
+    if (this._client) return this._client;
+    const { MongoClient } = await import("./mongo-loader.js");
+    this._client = new MongoClient(this.options.mongoUrl);
+    return this._client;
   }
 
   private async collection() {
-    await this.client.connect();
-    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+    const client = await this.getClient();
+    await client.connect();
+    return client.db(this.options.dbName).collection(this.options.collectionName);
   }
 
   async listPlans(): Promise<ActionPlanRecord[]> {
@@ -252,6 +279,7 @@ export class MongoActionPlanStore {
       return normalizeActionPlan(byCode as ActionPlanDocument);
     }
 
+    const { ObjectId } = await import("./mongo-loader.js");
     if (ObjectId.isValid(codeOrId)) {
       const byId = await collection.findOne({ _id: new ObjectId(codeOrId) });
       return byId ? normalizeActionPlan(byId as ActionPlanDocument) : null;
@@ -316,27 +344,37 @@ export class MongoActionPlanStore {
     const collection = await this.collection();
     await collection.createIndexes([
       { key: { code: 1 }, name: "code_unique", unique: true },
-      { key: { status: 1 }, name: "status_idx" }
+      { key: { status: 1 }, name: "status_idx" },
+      { key: { project: 1 }, name: "project_idx" },
+      { key: { product: 1, release: 1 }, name: "product_release_idx" }
     ]);
   }
 
   async close(): Promise<void> {
-    if (!this.options.sharedClient) {
-      await this.client.close();
+    if (!this.options.sharedClient && this._client) {
+      await this._client.close();
     }
   }
 }
 
 export class MongoNoteStore implements NoteStore {
-  private readonly client: MongoClientLike;
+  private _client: MongoClientLike | undefined;
 
   constructor(private readonly options: MongoNoteStoreOptions) {
-    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
+    this._client = options.sharedClient;
+  }
+
+  private async getClient(): Promise<MongoClientLike> {
+    if (this._client) return this._client;
+    const { MongoClient } = await import("./mongo-loader.js");
+    this._client = new MongoClient(this.options.mongoUrl);
+    return this._client;
   }
 
   private async collection() {
-    await this.client.connect();
-    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+    const client = await this.getClient();
+    await client.connect();
+    return client.db(this.options.dbName).collection(this.options.collectionName);
   }
 
   async listNotes(): Promise<NoteRecord[]> {
@@ -405,8 +443,8 @@ export class MongoNoteStore implements NoteStore {
   }
 
   async close(): Promise<void> {
-    if (!this.options.sharedClient) {
-      await this.client.close();
+    if (!this.options.sharedClient && this._client) {
+      await this._client.close();
     }
   }
 }
@@ -431,15 +469,23 @@ export interface MongoAiAgentStoreOptions {
 }
 
 export class MongoAiAgentStore implements AiAgentStore {
-  private readonly client: MongoClientLike;
+  private _client: MongoClientLike | undefined;
 
   constructor(private readonly options: MongoAiAgentStoreOptions) {
-    this.client = options.sharedClient ?? new MongoClient(options.mongoUrl);
+    this._client = options.sharedClient;
+  }
+
+  private async getClient(): Promise<MongoClientLike> {
+    if (this._client) return this._client;
+    const { MongoClient } = await import("./mongo-loader.js");
+    this._client = new MongoClient(this.options.mongoUrl);
+    return this._client;
   }
 
   private async collection() {
-    await this.client.connect();
-    return this.client.db(this.options.dbName).collection(this.options.collectionName);
+    const client = await this.getClient();
+    await client.connect();
+    return client.db(this.options.dbName).collection(this.options.collectionName);
   }
 
   async listAgents(): Promise<AiAgentRecord[]> {
@@ -486,8 +532,8 @@ export class MongoAiAgentStore implements AiAgentStore {
   }
 
   async close(): Promise<void> {
-    if (!this.options.sharedClient) {
-      await this.client.close();
+    if (!this.options.sharedClient && this._client) {
+      await this._client.close();
     }
   }
 }
@@ -597,7 +643,10 @@ export async function ensureAiAgentRuns(
 ): Promise<void> {
   const collection = db.collection(collectionName ?? "agent_runs");
   await collection.createIndexes([
-    { key: { agent_slug: 1, started_at: -1 }, name: "agent_slug_started_at_desc" }
+    { key: { agent_slug: 1, started_at: -1 }, name: "agent_slug_started_at_desc" },
+    { key: { started_at: -1 }, name: "started_at_desc" },
+    { key: { task_codes: 1 }, name: "task_codes_idx" },
+    { key: { plan_codes: 1 }, name: "plan_codes_idx" }
   ]);
 }
 

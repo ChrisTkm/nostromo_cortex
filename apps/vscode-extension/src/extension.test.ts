@@ -12,6 +12,7 @@ const {
   listLogsMock,
   listArchivedPlansMock,
   getLogsSourceMock,
+  getDiagnosticsMock,
   loadBundleMock,
   loadPlansMock,
   loadSnapshotMock,
@@ -42,6 +43,7 @@ const {
   showTextDocumentMock,
   showWarningMessageMock,
   openTextDocumentMock,
+  visibleTextEditorsRef,
   outputAppendLineMock,
   outputClearMock,
   outputShowMock,
@@ -53,7 +55,7 @@ const {
   treeRefreshMock,
   configChangeHandlers
 } = vi.hoisted(() => {
-  const activeTextEditorRef: { current?: unknown } = {};
+  const activeTextEditorRef: { current?: any } = {};
   const commandHandlers = new Map<string, (...args: unknown[]) => unknown>();
   const treeRefreshMock = vi.fn();
   const configChangeHandlers: Array<(event: { affectsConfiguration: (section: string) => boolean }) => void> = [];
@@ -89,6 +91,7 @@ const {
   const listLogsMock = vi.fn();
   const listArchivedPlansMock = vi.fn();
   const getLogsSourceMock = vi.fn(() => ({ subscribe: undefined }));
+  const getDiagnosticsMock = vi.fn(() => []);
   const loadBundleMock = vi.fn();
   const loadPlansMock = vi.fn();
   const loadSnapshotMock = vi.fn();
@@ -119,6 +122,7 @@ const {
   const showWarningMessageMock = vi.fn();
   const showTextDocumentMock = vi.fn();
   const openTextDocumentMock = vi.fn();
+  const visibleTextEditorsRef: { current: any[] } = { current: [] };
   const outputAppendLineMock = vi.fn();
   const outputClearMock = vi.fn();
   const outputShowMock = vi.fn();
@@ -212,6 +216,7 @@ const {
     listLogsMock,
     listArchivedPlansMock,
     getLogsSourceMock,
+    getDiagnosticsMock,
     loadBundleMock,
     loadPlansMock,
     loadSnapshotMock,
@@ -242,6 +247,7 @@ const {
     showTextDocumentMock,
     showWarningMessageMock,
     openTextDocumentMock,
+    visibleTextEditorsRef,
     outputAppendLineMock,
     outputClearMock,
     outputShowMock,
@@ -275,12 +281,27 @@ vi.mock("vscode", () => ({
     One: 1,
     Beside: 2
   },
+  TextEditorRevealType: {
+    InCenterIfOutsideViewport: 2
+  },
   StatusBarAlignment: {
     Left: 1
+  },
+  DiagnosticSeverity: {
+    Error: 0,
+    Warning: 1,
+    Information: 2,
+    Hint: 3
+  },
+  languages: {
+    getDiagnostics: getDiagnosticsMock
   },
   window: {
     get activeTextEditor() {
       return activeTextEditorRef.current;
+    },
+    get visibleTextEditors() {
+      return visibleTextEditorsRef.current;
     },
     createTreeView: createTreeViewMock,
     createWebviewPanel: createWebviewPanelMock,
@@ -305,6 +326,12 @@ vi.mock("vscode", () => ({
     ) {}
   },
   Range: class Range {
+    constructor(
+      public readonly start: { line: number; character: number },
+      public readonly end: { line: number; character: number }
+    ) {}
+  },
+  Selection: class Selection {
     constructor(
       public readonly start: { line: number; character: number },
       public readonly end: { line: number; character: number }
@@ -447,7 +474,7 @@ vi.mock("./tree.js", () => ({
   })
 }));
 
-vi.mock("./webview/html.js", () => ({
+vi.mock("./webview/graph/getHtml.js", () => ({
   getGraphHtml: vi.fn(() => "<html></html>")
 }));
 
@@ -520,7 +547,10 @@ describe("activate notes commands", () => {
     activeTextEditorRef.current = {
       document: {
         fileName: scriptFlowFixturePath,
-        uri: { fsPath: scriptFlowFixturePath },
+        uri: {
+          fsPath: scriptFlowFixturePath,
+          toString: () => `file:///${scriptFlowFixturePath}`
+        },
         languageId: "typescript",
         getText: vi.fn(() => scriptFlowFixtureSource)
       },
@@ -539,6 +569,7 @@ describe("activate notes commands", () => {
     panelState.panel = undefined;
     panelState.messageHandler = undefined;
     panelState.disposeHandler = undefined;
+    visibleTextEditorsRef.current = [];
     vi.clearAllMocks();
     getConfigMock.mockReturnValue(undefined);
     updateConfigMock.mockResolvedValue(undefined);
@@ -612,6 +643,7 @@ describe("activate notes commands", () => {
     listPendingRemindersMock.mockResolvedValue([]);
     markRemindedMock.mockResolvedValue(null);
     recordInteractionMock.mockResolvedValue(undefined);
+    getDiagnosticsMock.mockReturnValue([]);
     rescheduleReminderMock.mockResolvedValue(null);
     loadPlansMock.mockResolvedValue([]);
     archivePlanMock.mockResolvedValue({
@@ -698,6 +730,19 @@ describe("activate notes commands", () => {
     showErrorMessageMock.mockReset();
     showInformationMessageMock.mockReset();
     showWarningMessageMock.mockReset();
+    showTextDocumentMock.mockImplementation(async (documentOrUri: any, options?: any) => ({
+      document:
+        documentOrUri && "uri" in documentOrUri
+          ? documentOrUri
+          : {
+              fileName: documentOrUri?.fsPath,
+              uri: documentOrUri,
+              getText: vi.fn(() => "")
+            },
+      revealRange: vi.fn(),
+      selection: options?.selection,
+      viewColumn: options?.viewColumn ?? 1
+    }));
     openTextDocumentMock.mockRejectedValue(new Error("No mocked document"));
   });
 
@@ -1207,6 +1252,14 @@ describe("activate notes commands", () => {
       2,
       expect.objectContaining({ enableScripts: true })
     );
+    expect(showTextDocumentMock).toHaveBeenCalledWith(
+      activeTextEditorRef.current?.document,
+      expect.objectContaining({
+        preserveFocus: false,
+        preview: false,
+        viewColumn: 1
+      })
+    );
     expect(panelState.panel?.webview.html).toContain("script-flow.js");
     expect(panelState.panel?.webview.postMessage).toHaveBeenCalledWith({
       type: "scriptFlow:snapshot",
@@ -1553,11 +1606,22 @@ describe("activate notes commands", () => {
   });
 
   it("records node selection telemetry from the Script Flow webview", async () => {
+    const revealRangeMock = vi.fn();
+    const openedEditor = {
+      document: activeTextEditorRef.current?.document,
+      revealRange: revealRangeMock,
+      selection: undefined,
+      viewColumn: 1
+    };
+    showTextDocumentMock.mockResolvedValueOnce(openedEditor);
+
     await activate(createContext());
     await executeCommandMock("cortex.openScriptFlow");
     openTextDocumentMock.mockReset();
     openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
     await panelState.messageHandler?.({ type: "ready" });
+    visibleTextEditorsRef.current = [openedEditor];
+    showTextDocumentMock.mockClear();
     await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
 
     expect(recordInteractionMock).toHaveBeenCalledWith(
@@ -1567,14 +1631,87 @@ describe("activate notes commands", () => {
         kind: "function"
       })
     );
-    expect(showTextDocumentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ fsPath: "C:\\dev\\Cortex\\apps\\vscode-extension\\fixtures\\script-flow\\sample.ts" }),
+    expect(showTextDocumentMock).not.toHaveBeenCalled();
+    expect(openedEditor.selection).toEqual(
       expect.objectContaining({
-        selection: expect.objectContaining({
-          start: expect.objectContaining({ line: 0, character: 0 }),
-          end: expect.objectContaining({ line: 12, character: 1 })
-        })
+        start: expect.objectContaining({ line: 0, character: 0 }),
+        end: expect.objectContaining({ line: 12, character: 1 })
       })
+    );
+    expect(revealRangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: expect.objectContaining({ line: 0, character: 0 }),
+        end: expect.objectContaining({ line: 12, character: 1 })
+      }),
+      2
+    );
+  });
+
+  it("reuses the already visible Script Flow editor when selecting another node", async () => {
+    const revealRangeMock = vi.fn();
+    const visibleEditor = {
+      document: activeTextEditorRef.current?.document,
+      revealRange: revealRangeMock,
+      selection: undefined,
+      viewColumn: 1
+    };
+    visibleTextEditorsRef.current = [visibleEditor];
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
+    await panelState.messageHandler?.({ type: "ready" });
+    await panelState.messageHandler?.({ type: "scriptFlow:selectNode", nodeId: "fn:accumulate" });
+
+    expect(showTextDocumentMock).not.toHaveBeenCalled();
+    expect(visibleEditor.selection).toEqual(
+      expect.objectContaining({
+        start: expect.objectContaining({ line: 0, character: 0 }),
+        end: expect.objectContaining({ line: 12, character: 1 })
+      })
+    );
+    expect(revealRangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: expect.objectContaining({ line: 0, character: 0 }),
+        end: expect.objectContaining({ line: 12, character: 1 })
+      }),
+      2
+    );
+  });
+
+  it("maps existing VS Code diagnostics onto Script Flow nodes", async () => {
+    getDiagnosticsMock.mockReturnValueOnce([
+      {
+        message: "limit can be undefined",
+        range: {
+          start: { line: 0, character: 16 },
+          end: { line: 0, character: 21 }
+        },
+        severity: 1,
+        source: "tsserver"
+      }
+    ]);
+
+    await activate(createContext());
+    await executeCommandMock("cortex.openScriptFlow");
+    openTextDocumentMock.mockReset();
+    openTextDocumentMock.mockResolvedValue(activeTextEditorRef.current?.document);
+    await panelState.messageHandler?.({ type: "ready" });
+
+    const snapshotMessage = panelState.panel?.webview.postMessage.mock.calls
+      .map((call) => call[0])
+      .find((message: any) => message?.type === "scriptFlow:snapshot");
+    const fn = snapshotMessage?.snapshot.nodes.find((node: any) => node.kind === "function");
+    expect(fn?.meta?.autoObservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "diagnostic",
+          message: "limit can be undefined",
+          severity: "warning",
+          source: "tsserver"
+        })
+      ])
     );
   });
 
@@ -1600,90 +1737,20 @@ function fireConfigChange(affectedKeys: string[]) {
   });
 }
 
-describe("logs panel change stream", () => {
-  beforeEach(() => {
-    listLogsMock.mockReset();
-    listLogsMock.mockResolvedValue([]);
-  });
-
-  it("subscribe returning cleanup is called on panel dispose", async () => {
-    const cleanup = vi.fn();
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(cleanup) });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    panelState.disposeHandler?.();
-    expect(cleanup).toHaveBeenCalled();
-  });
-
-  it("subscribe returning null does not set up cleanup", async () => {
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(null) });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    expect(() => panelState.disposeHandler?.()).not.toThrow();
-  });
-
-  it("config change logsChangeStreams re-suscribes and refetches", async () => {
-    getLogsSourceMock.mockReturnValue({ subscribe: undefined });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-    await panelState.messageHandler?.({ type: "ready" });
-    getLogsSourceMock.mockClear();
-    listLogsMock.mockClear();
-
-    getLogsSourceMock.mockReturnValue({ subscribe: vi.fn().mockResolvedValue(vi.fn()) });
-    fireConfigChange(["cortex.logsChangeStreams"]);
-    expect(getLogsSourceMock).toHaveBeenCalled();
-    await vi.waitFor(() => {
-      expect(listLogsMock).toHaveBeenCalled();
-    });
-  });
-
-  it("stream append event posts logs:append to webview", async () => {
-    const onAppendRef: { current?: (logs: unknown[]) => void } = {};
-    const subscribeMock = vi.fn(async (onAppend: (logs: unknown[]) => void) => {
-      onAppendRef.current = onAppend;
-      return vi.fn();
-    });
-    getLogsSourceMock.mockReturnValue({ subscribe: subscribeMock });
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-
-    const testLog = { timestamp: "2026-06-07T12:00:00.000Z", level: "INFO", source: "test", message: "streamed" };
-    onAppendRef.current!([testLog]);
-
-    expect(panelState.panel!.webview.postMessage).toHaveBeenCalledWith({
-      type: "logs:append",
-      logs: [testLog],
-      hasMore: false,
-    });
-  });
-});
-
 describe("logs panel config changes", () => {
   beforeEach(() => {
     listLogsMock.mockReset();
     listLogsMock.mockResolvedValue([]);
   });
 
-  it("re-fetches logs when logsSource changes", async () => {
+  it("re-fetches logs when logsSources changes", async () => {
     await activate(createContext());
     await executeCommandMock("cortex.openLogs");
     await panelState.messageHandler?.({ type: "ready" });
     listLogsMock.mockClear();
 
-    fireConfigChange(["cortex.logsSource"]);
-    expect(listLogsMock).toHaveBeenCalled();
-  });
-
-  it("re-fetches logs when logsFilePath changes", async () => {
-    await activate(createContext());
-    await executeCommandMock("cortex.openLogs");
-    await panelState.messageHandler?.({ type: "ready" });
-    listLogsMock.mockClear();
-
-    fireConfigChange(["cortex.logsFilePath"]);
+    fireConfigChange(["cortex.logsSources"]);
+    await new Promise(r => setTimeout(r, 0));
     expect(listLogsMock).toHaveBeenCalled();
   });
 
@@ -1694,6 +1761,7 @@ describe("logs panel config changes", () => {
     listLogsMock.mockClear();
 
     fireConfigChange(["cortex.logsLimit"]);
+    await new Promise(r => setTimeout(r, 0));
     expect(listLogsMock).toHaveBeenCalled();
   });
 

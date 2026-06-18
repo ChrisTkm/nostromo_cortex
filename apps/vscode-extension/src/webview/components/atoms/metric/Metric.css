@@ -1,0 +1,15 @@
+.atom-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+}
+
+.atom-metric__label {
+  color: var(--cortex-text-faint);
+}
+
+.atom-metric__value {
+  color: var(--cortex-text-muted);
+}

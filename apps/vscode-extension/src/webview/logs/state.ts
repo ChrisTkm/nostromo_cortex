@@ -1,3 +1,4 @@
+import { groupIntoRuns, aggregateByProcess, type ProcessAggregation, type RunGroup } from "../../logs/runModel.js";
 import type { LogRecord } from "../../logs/normalize";
 
 export const TIME_RANGE_MS: Record<"1h" | "24h" | "7d", number> = {
@@ -463,4 +464,102 @@ function getDurationMs(
 
 function matchesTag(entry: LogRecord, tag: string) {
   return entry.tag === tag || entry.event === tag;
+}
+
+export const PERIOD_MS: Record<"month" | "semester" | "year", number> = {
+  month: 30 * 24 * 60 * 60 * 1000,
+  semester: 182 * 24 * 60 * 60 * 1000,
+  year: 365 * 24 * 60 * 60 * 1000,
+};
+
+export function filterLogsByPeriod(
+  logs: LogRecord[],
+  period: PeriodFilter,
+): LogRecord[] {
+  if (period === "all") return logs;
+  const cutoff = Date.now() - PERIOD_MS[period];
+  return logs.filter((entry) => new Date(entry.timestamp).getTime() >= cutoff);
+}
+
+export function formatLiveSince(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 2000) return "now";
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s`;
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m`;
+  return `${Math.floor(diff / 3600_000)}h`;
+}
+
+// ---------------------------------------------------------------------------
+// LOGS-V2-03: Historical view types and helpers
+// ---------------------------------------------------------------------------
+
+export type ViewMode = "historico" | "eventos";
+
+export type PeriodFilter = "month" | "semester" | "year" | "all";
+
+export type ProcessRow = {
+  process: string;
+  runCount: number;
+  lastRunAt?: string;
+  lastDurationMs?: number;
+  avgDurationMs?: number;
+  errorCount: number;
+  activityBuckets: number[];
+  runs: RunGroup[];
+};
+
+export function buildProcessRows(logs: LogRecord[]): ProcessRow[] {
+  if (logs.length === 0) return [];
+  const runs = groupIntoRuns(logs);
+  const aggs = aggregateByProcess(runs);
+  return aggs.map((a: ProcessAggregation) => ({
+    process: a.process,
+    runCount: a.runCount,
+    lastRunAt: a.lastRunAt,
+    lastDurationMs: a.lastDurationMs,
+    avgDurationMs: a.avgDurationMs,
+    errorCount: a.errorCount,
+    activityBuckets: a.activityBuckets,
+    runs: runs.filter((r) => r.process === a.process),
+  }));
+}
+
+export function formatDuration(durationMs: number | undefined): string {
+  if (durationMs === undefined) return "—";
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`;
+  if (durationMs < 3600_000) return `${Math.floor(durationMs / 60_000)}m ${Math.round((durationMs % 60_000) / 1000)}s`;
+  return `${(durationMs / 3600_000).toFixed(1)}h`;
+}
+
+export function formatRelativeTime(iso: string | undefined): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return "now";
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+export function runStatusIcon(status: string): string {
+  if (status === "ok") return "✓";
+  if (status === "error") return "✗";
+  return "◷";
+}
+
+export function runStatusClass(status: string): string {
+  if (status === "ok") return "logs-run-status--ok";
+  if (status === "error") return "logs-run-status--error";
+  return "logs-run-status--abierta";
+}
+
+export function sparklinePath(buckets: number[], width = 80, height = 24): string {
+  if (buckets.length === 0) return "";
+  const max = Math.max(...buckets, 1);
+  const points = buckets.map((v, i) => {
+    const x = (i / (buckets.length - 1)) * width;
+    const y = height - (v / max) * (height - 2) - 1;
+    return `${x},${y}`;
+  });
+  return `M0,${height - 1} L${points.join(" L")}`;
 }

@@ -1,0 +1,1 @@
+export { AiAgentAvatar } from "./AiAgentAvatar";

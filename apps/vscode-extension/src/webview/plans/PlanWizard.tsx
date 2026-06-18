@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { AgentSelect, type CatalogAgent } from "../components/AgentSelect";
+import { AgentSelect, Button, type CatalogAgent } from "../components/atoms";
 
 const PLAN_CODE_RE = /^[A-Z][A-Z0-9-]+$/;
 
@@ -23,6 +23,9 @@ export function PlanWizard(props: {
     title: string;
     description: string;
     goal: string;
+    project: string;
+    product: string;
+    release: string;
     author: string;
     assignedAgent: string;
     tags: string[];
@@ -34,6 +37,9 @@ export function PlanWizard(props: {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [goal, setGoal] = useState("");
+  const [project, setProject] = useState("");
+  const [product, setProduct] = useState("");
+  const [release, setRelease] = useState("");
   const [author, setAuthor] = useState("");
   const [assignedAgent, setAssignedAgent] = useState("");
   const [tagsRaw, setTagsRaw] = useState("");
@@ -48,33 +54,23 @@ export function PlanWizard(props: {
 
   const prefix = codePrefix || codePrefixDefault;
 
-  const taskRows = useMemo<TaskRow[]>(() => {
-    return Array.from({ length: taskCount }, (_, i) => ({
-      code: `${prefix}${String(i + 1).padStart(2, "0")}`,
-      short_task: "",
-      lane: "",
-      severity: "MEDIUM" as Severity,
-      duration_estimate: 0,
-      agent: assignedAgent || "any",
-    }));
-  }, [taskCount, prefix, assignedAgent]);
-
   const [tasks, setTasks] = useState<TaskRow[]>([]);
 
-  const prevTaskCount = useMemo(() => taskCount, []);
-  if (tasks.length !== taskCount || (taskCount > 0 && tasks[0]?.code !== `${prefix}01`)) {
-    const fresh = Array.from({ length: taskCount }, (_, i) => ({
-      code: `${prefix}${String(i + 1).padStart(2, "0")}`,
-      short_task: "",
-      lane: "",
-      severity: "MEDIUM" as Severity,
-      duration_estimate: 0,
-      agent: assignedAgent || "any",
-    }));
-    if (tasks.length !== fresh.length || tasks.some((t, i) => t.code !== fresh[i]!.code)) {
-      setTasks(fresh);
-    }
-  }
+  useEffect(() => {
+    setTasks((previous) =>
+      Array.from({ length: taskCount }, (_, i) => {
+        const existing = previous[i];
+        return {
+          code: `${prefix}${String(i + 1).padStart(2, "0")}`,
+          short_task: existing?.short_task ?? "",
+          lane: existing?.lane ?? "",
+          severity: existing?.severity ?? "MEDIUM",
+          duration_estimate: existing?.duration_estimate ?? 0,
+          agent: (existing?.agent ?? assignedAgent) || "any",
+        };
+      }),
+    );
+  }, [assignedAgent, prefix, taskCount]);
 
   const codeError = code && !PLAN_CODE_RE.test(code) ? "Formato: mayúscula inicial, solo A-Z, 0-9 y guiones" : "";
 
@@ -90,6 +86,9 @@ export function PlanWizard(props: {
         title: title.trim(),
         description: description.trim(),
         goal: goal.trim(),
+        project: project.trim(),
+        product: product.trim(),
+        release: release.trim(),
         author: author.trim(),
         assignedAgent,
         tags: tagsRaw
@@ -99,7 +98,7 @@ export function PlanWizard(props: {
       },
       tasks,
     );
-  }, [canStep3, props, code, title, description, goal, author, assignedAgent, tagsRaw, tasks]);
+  }, [canStep3, props, code, title, description, goal, project, product, release, author, assignedAgent, tagsRaw, tasks]);
 
   const updateTask = useCallback((index: number, patch: Partial<TaskRow>) => {
     setTasks((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
@@ -111,7 +110,14 @@ export function PlanWizard(props: {
         <header className="pw__header">
           <h2 className="pw__title">Nuevo Plan</h2>
           <span className="pw__step-indicator">Paso {step} de 3</span>
-          <button className="pw__close" onClick={props.onClose} type="button">&times;</button>
+          <Button
+            aria-label="Cerrar"
+            intent="change"
+            onClick={props.onClose}
+            size="small"
+          >
+            &times;
+          </Button>
         </header>
 
         <div className="pw__body">
@@ -133,6 +139,18 @@ export function PlanWizard(props: {
               <label className="pw__field">
                 <span className="pw__label">Goal</span>
                 <textarea className="pw__textarea" value={goal} onChange={(e) => setGoal(e.target.value)} />
+              </label>
+              <label className="pw__field">
+                <span className="pw__label">Producto</span>
+                <input className="pw__input" type="text" value={product} onChange={(e) => setProduct(e.target.value)} placeholder="cortex" />
+              </label>
+              <label className="pw__field">
+                <span className="pw__label">Release</span>
+                <input className="pw__input" type="text" value={release} onChange={(e) => setRelease(e.target.value)} placeholder="v0.1.6" />
+              </label>
+              <label className="pw__field">
+                <span className="pw__label">Proyecto</span>
+                <input className="pw__input" type="text" value={project} onChange={(e) => setProject(e.target.value)} placeholder="cortex/v0.1.6" />
               </label>
               <label className="pw__field">
                 <span className="pw__label">Autor</span>
@@ -212,18 +230,24 @@ export function PlanWizard(props: {
 
         <footer className="pw__footer">
           {step > 1 ? (
-            <button className="pw__btn pw__btn--secondary" onClick={() => setStep((s) => s - 1)} type="button">
+            <Button intent="change" onClick={() => setStep((s) => s - 1)}>
               Anterior
-            </button>
-          ) : <div />}
-          {step < 3 ? (
-            <button className="pw__btn" disabled={step === 1 ? !canStep1 : !canStep2} onClick={() => setStep((s) => s + 1)} type="button">
-              Siguiente
-            </button>
+            </Button>
           ) : (
-            <button className="pw__btn pw__btn--primary" disabled={!canStep3} onClick={handleCreate} type="button">
+            <div />
+          )}
+          {step < 3 ? (
+            <Button
+              disabled={step === 1 ? !canStep1 : !canStep2}
+              intent="action"
+              onClick={() => setStep((s) => s + 1)}
+            >
+              Siguiente
+            </Button>
+          ) : (
+            <Button disabled={!canStep3} intent="action" onClick={handleCreate}>
               Crear Plan ({tasks.length} tareas)
-            </button>
+            </Button>
           )}
         </footer>
       </div>

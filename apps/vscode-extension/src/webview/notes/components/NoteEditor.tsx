@@ -110,9 +110,9 @@ export function NoteEditor(props: {
             </label>
 
             <label className="note-editor__toggle note-editor__toggle--compact">
-              <span>
+              <span className="note-editor__toggle-copy">
                 <span className="note-editor__label">Pinned</span>
-                <span className="note-editor__field-hint">Keep this note at the top.</span>
+                <span className="note-editor__field-hint note-editor__field-hint--pin">Keep at top</span>
               </span>
               <input
                 checked={props.draft.pinned}

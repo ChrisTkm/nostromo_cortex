@@ -1,0 +1,76 @@
+.molecule-status-bar {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 50%, transparent);
+  background: color-mix(in srgb, var(--cortex-bg) 98%, transparent);
+}
+
+.molecule-status-bar--interactive {
+  cursor: pointer;
+}
+
+.molecule-status-bar--interactive:hover {
+  background: color-mix(in srgb, var(--cortex-accent) 5%, var(--cortex-bg));
+}
+
+.molecule-status-bar__meta {
+  display: grid;
+  gap: 4px;
+}
+
+.molecule-status-bar__eyebrow {
+  color: var(--cortex-text-faint);
+  font-size: var(--cortex-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.molecule-status-bar__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.molecule-status-bar__title-block {
+  min-width: 0;
+}
+
+.molecule-status-bar__code {
+  color: var(--cortex-accent);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+}
+
+.molecule-status-bar__title {
+  margin: 0;
+  font-size: var(--cortex-text-sm);
+  font-weight: 400;
+}
+
+.molecule-status-bar__chip-slot,
+.molecule-status-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.molecule-status-bar__chip {
+  border: 1px solid color-mix(in srgb, var(--cortex-accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cortex-accent) 8%, transparent);
+  color: var(--cortex-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--cortex-text-xs);
+  padding: 3px 8px;
+}
+
+.molecule-status-bar__chip:hover {
+  border-color: color-mix(in srgb, var(--cortex-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 14%, transparent);
+}

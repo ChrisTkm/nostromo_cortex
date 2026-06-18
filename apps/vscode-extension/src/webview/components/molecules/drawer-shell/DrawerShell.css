@@ -1,0 +1,367 @@
+/* Shared drawer chrome — used by graph (inspector), editor (form) and any
+   future module. It can render as a slide-in drawer or as an inline panel. */
+.drawer-shell[data-sidebar="true"] {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: var(--chrome-status-bar-height);
+  z-index: var(--z-drawer);
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 92vw);
+  transform: translateX(100%);
+  transition: transform 200ms ease-out;
+  border-left: 1px solid var(--cortex-border);
+  background: var(--cortex-glass-bg);
+  backdrop-filter: blur(var(--cortex-glass-blur));
+}
+
+.drawer-shell[data-open="true"] {
+  transform: translateX(0);
+  background: var(--cortex-glass-bg);
+  backdrop-filter: blur(var(--cortex-glass-blur));
+}
+
+.drawer-shell[data-expanded="true"] {
+  width: min(66vw, 1080px);
+  z-index: var(--z-prompt-expanded);
+}
+
+.drawer-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  /* Frosted "tempered glass" surface — intrinsic to the drawer atom, so every
+     drawer surface is identical. */
+  background: var(--cortex-glass-bg);
+  backdrop-filter: blur(var(--cortex-glass-blur));
+}
+
+/* BANNER: action buttons (left) + close (corner) */
+.drawer-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--cortex-border);
+}
+
+.drawer-banner__tabs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.drawer-banner__close {
+  flex: 0 0 auto;
+}
+
+/* HEADER: code (accent) + title (not bold) + mini status section */
+.drawer-header {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--cortex-border);
+}
+
+.drawer-header__code {
+  color: var(--cortex-accent);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+}
+
+.drawer-header__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.drawer-header__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* BODY */
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.drawer-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Automatic separator lines between body sections — intrinsic to the atom, so
+   every drawer (graph inspector, ledger, brain…) shows the same dividers
+   without hand-inserting <div class="drawer-divider"> elements. */
+.drawer-panel > .drawer-section {
+  padding: 14px 0;
+}
+
+.drawer-panel > .drawer-section:first-child {
+  padding-top: 0;
+}
+
+.drawer-panel > .drawer-section:last-child {
+  padding-bottom: 0;
+}
+
+.drawer-panel > .drawer-section + .drawer-section {
+  border-top: none;
+  box-shadow: var(--cortex-border-accent) 0 0.5px 0 inset;
+}
+
+.drawer-panel__code {
+  color: var(--cortex-accent);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+}
+
+.drawer-panel__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.drawer-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Variant: vertical, full-width list (e.g. node outline) */
+.drawer-list--stack {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.drawer-list--stack .drawer-link {
+  width: 100%;
+  overflow: hidden;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: var(--cortex-text-strong);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-list--stack .drawer-link:hover {
+  background: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 12%,
+    transparent
+  );
+}
+
+.drawer-list--stack .drawer-link.is-active {
+  background: color-mix(
+    in srgb,
+    var(--vscode-textLink-foreground) 16%,
+    transparent
+  );
+  font-weight: 600;
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.drawer-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, white 4%, transparent);
+  font-size: var(--cortex-text-xs);
+}
+
+.drawer-badge--tag {
+  border-color: color-mix(in srgb, var(--cortex-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 8%, transparent);
+  color: var(--cortex-accent);
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drawer-section--spacious {
+  gap: 10px;
+}
+
+.drawer-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.drawer-section__label {
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.drawer-section__text {
+  font-size: var(--cortex-text-sm);
+  line-height: var(--cortex-line-height);
+  white-space: pre-wrap;
+}
+
+.drawer-section__subtitle {
+  font-size: var(--cortex-text-sm);
+  font-weight: 500;
+  color: var(--cortex-text-muted);
+}
+
+.drawer-divider {
+  height: 1px;
+  background: var(--cortex-border-accent);
+  opacity: 0.6;
+}
+
+.drawer-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--cortex-radius-md);
+  background: color-mix(in srgb, white 3%, transparent);
+}
+
+.drawer-inline-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-sm);
+}
+
+.drawer-inline-stat__label {
+  color: var(--cortex-text-faint);
+}
+
+.drawer-inline-stat__value {
+  color: var(--cortex-text-strong);
+  font-weight: 600;
+}
+
+.drawer-link {
+  width: fit-content;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--cortex-accent);
+  cursor: pointer;
+}
+
+.drawer-prompt {
+  margin: 0;
+  overflow: auto;
+  max-height: 260px;
+  padding: 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, black 22%, transparent);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.drawer-empty {
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-sm);
+}
+
+/* Scrollbars for the body and prompt block */
+.drawer-body,
+.drawer-prompt {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--vscode-scrollbarSlider-background) 72%,
+      transparent
+    )
+    transparent;
+}
+
+.editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.editor-field-row .atom-field {
+  min-width: 0;
+}
+
+.editor-collapse-toggle {
+  width: fit-content;
+}
+
+.editor-collapse-toggle .drawer-section__label {
+  color: currentColor;
+}
+
+.editor-collapse-arrow {
+  color: currentColor;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.editor-collapse-arrow--open {
+  transform: rotate(180deg);
+}
+.drawer-body::-webkit-scrollbar,
+.drawer-prompt::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.drawer-body::-webkit-scrollbar-thumb,
+.drawer-prompt::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--vscode-scrollbarSlider-background) 72%,
+    transparent
+  );
+}
+
+.drawer-body::-webkit-scrollbar-track,
+.drawer-prompt::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.drawer-list--row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

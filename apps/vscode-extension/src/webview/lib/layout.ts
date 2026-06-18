@@ -1,7 +1,7 @@
 import dagre from "@dagrejs/dagre";
 import { Position, type Edge, type Node } from "@xyflow/react";
 
-import type { TaskNodeData } from "../components/TaskNode";
+import type { TaskNodeData } from "../graph/TaskNode";
 import type { GraphDirection } from "../types";
 
 const NODE_WIDTH = 244;

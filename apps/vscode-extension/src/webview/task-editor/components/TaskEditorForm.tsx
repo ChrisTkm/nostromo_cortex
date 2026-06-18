@@ -1,9 +1,19 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TaskRecord } from "@cortex/core";
 
 import { TASK_STATUSES_LOCAL, TASK_SEVERITIES_LOCAL } from "../types";
 import type { TaskEditorDraft } from "../types";
-import { AgentSelect } from "../../components/AgentSelect";
+import {
+  AgentSelect,
+  Button,
+  Field,
+  FilterSelect,
+  Status,
+  TextArea,
+  TextInput,
+  type CatalogAgent,
+} from "../../components/atoms";
+import { DrawerShell } from "../../components/molecules";
 
 export function TaskEditorForm(props: {
   agents: CatalogAgent[];
@@ -18,239 +28,260 @@ export function TaskEditorForm(props: {
   onReset(): void;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedSectionRef = useRef<HTMLElement | null>(null);
 
-  const statusLabel = props.isDirty ? "Unsaved changes" : "Saved";
-  const statusTone = props.isDirty ? "task-editor__status--dirty" : "task-editor__status--saved";
+  useEffect(() => {
+    if (!advancedOpen) return;
+    advancedSectionRef.current?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    });
+  }, [advancedOpen]);
+
+  const actions = (
+    <>
+      <Button intent="action" onClick={props.onSave} size="small">
+        Guardar
+      </Button>
+      <Button
+        disabled={!props.isDirty}
+        intent="change"
+        onClick={props.onReset}
+        size="small"
+      >
+        Restablecer
+      </Button>
+    </>
+  );
+
+  const header = (
+    <>
+      <div className="drawer-header__code">EDITAR TAREA</div>
+      <h2 className="drawer-header__title">
+        {props.draft.shortTask.trim() || props.draft.code}
+      </h2>
+      <div className="drawer-header__status">
+        <Status tone={props.isDirty ? "blocked" : "done"}>
+          {props.isDirty ? "Cambios sin guardar" : "Guardado"}
+        </Status>
+      </div>
+    </>
+  );
 
   return (
-    <div className="task-editor">
-      <header className="task-editor__header">
-        <div>
-          <div className="task-editor__eyebrow">Edit task</div>
-          <h2 className="task-editor__title">{props.draft.shortTask.trim() || props.draft.code}</h2>
-          <div className={`task-editor__status ${statusTone}`}>{statusLabel}</div>
-        </div>
-        <div className="task-editor__actions">
-          <button className="te-button te-button--primary" onClick={props.onSave} type="button">
-            Save
-          </button>
-          <button className="te-button" disabled={!props.isDirty} onClick={props.onReset} type="button">
-            Reset
-          </button>
-          <button className="te-button" onClick={props.onCancel} type="button">
-            Cancel
-          </button>
-        </div>
-      </header>
+    <DrawerShell actions={actions} header={header} onClose={props.onCancel}>
+      <div className="drawer-panel">
+        {props.error ? (
+          <section className="drawer-section drawer-section--spacious">
+            <div className="drawer-section__label">Error</div>
+            <div className="drawer-section__text editor-error">
+              {props.error}
+            </div>
+          </section>
+        ) : null}
 
-      {props.error ? <div className="task-editor__error">{props.error}</div> : null}
-
-      <div className="task-editor__layout">
-        <section className="task-editor__group">
-          <div className="task-editor__group-header">
-            <div className="task-editor__group-title">Identity</div>
-          </div>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Code</span>
-            <input className="te-input" readOnly type="text" value={props.draft.code} />
-          </label>
-        </section>
-
-        <section className="task-editor__group">
-          <div className="task-editor__group-header">
-            <div className="task-editor__group-title">Core</div>
-          </div>
-          <label className="task-editor__field">
-            <span className="task-editor__label">
-              Title <span className="task-editor__required">*</span>
-            </span>
-            <input
-              className="te-input"
-              onChange={(e) => props.onChange({ shortTask: e.target.value })}
-              placeholder="Short task title"
-              type="text"
-              value={props.draft.shortTask}
-            />
-          </label>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Detail</span>
-            <textarea
-              className="te-textarea te-textarea--tall"
-              onChange={(e) => props.onChange({ detail: e.target.value })}
-              placeholder="Detailed description..."
-              value={props.draft.detail}
-            />
-          </label>
-          <div className="task-editor__field-row">
-            <label className="task-editor__field">
-              <span className="task-editor__label">
-                Status <span className="task-editor__required">*</span>
-              </span>
-              <select
-                className="te-select"
-                onChange={(e) => props.onChange({ status: e.target.value as TaskEditorDraft["status"] })}
-                value={props.draft.status}
-              >
-                {TASK_STATUSES_LOCAL.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="task-editor__field">
-              <span className="task-editor__label">
-                Severity <span className="task-editor__required">*</span>
-              </span>
-              <select
-                className="te-select"
-                onChange={(e) => props.onChange({ severity: e.target.value as TaskEditorDraft["severity"] })}
-                value={props.draft.severity}
-              >
-                {TASK_SEVERITIES_LOCAL.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <label className="task-editor__field">
-            <span className="task-editor__label">
-              Agent <span className="task-editor__required">*</span>
-            </span>
-            <AgentSelect
-              agents={props.agents}
-              value={props.draft.agent}
-              onChange={(v) => props.onChange({ agent: v })}
-            />
-          </label>
-        </section>
-
-        <section className="task-editor__group">
-          <div className="task-editor__group-header">
-            <div className="task-editor__group-title">Organization</div>
-          </div>
-          <div className="task-editor__field-row">
-            <label className="task-editor__field">
-              <span className="task-editor__label">Project</span>
-              <input
-                className="te-input"
-                onChange={(e) => props.onChange({ project: e.target.value })}
-                placeholder="project name (empty → null)"
+        <section className="drawer-section drawer-section--spacious">
+          <div className="drawer-section__label">Identidad</div>
+          <div className="editor-fields">
+            <Field label="Código">
+              <TextInput
+                readOnly
                 type="text"
-                value={props.draft.project}
+                value={props.draft.code}
               />
-            </label>
-            <label className="task-editor__field">
-              <span className="task-editor__label">Lane / Group</span>
-              <input
-                className="te-input"
-                onChange={(e) => props.onChange({ lane: e.target.value })}
-                placeholder="lane name (empty → null)"
-                type="text"
-                value={props.draft.lane}
-              />
-            </label>
+            </Field>
           </div>
-          <div className="task-editor__field-row">
-            <label className="task-editor__field">
-              <span className="task-editor__label">Duration estimate (h)</span>
-              <input
-                className="te-input"
-                min="0"
-                onChange={(e) => props.onChange({ durationEstimate: e.target.value })}
-                placeholder="hours (empty → null)"
-                step="0.5"
-                type="number"
-                value={props.draft.durationEstimate}
-              />
-            </label>
-          </div>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Tags</span>
-            <input
-              className="te-input"
-              onChange={(e) => props.onChange({ tags: e.target.value })}
-              placeholder="tag-a, tag-b"
-              type="text"
-              value={props.draft.tags}
-            />
-            <span className="task-editor__field-hint">Comma-separated</span>
-          </label>
-          <label className="task-editor__field">
-            <span className="task-editor__label">Depends on</span>
-            <input
-              className="te-input"
-              list="task-editor-catalog"
-              onChange={(e) => props.onChange({ dependsOn: e.target.value })}
-              placeholder="TASK-1, TASK-2"
-              type="text"
-              value={props.draft.dependsOn}
-            />
-            <datalist id="task-editor-catalog">
-              {props.catalog
-                .filter((code) => code !== props.draft.code)
-                .map((code) => (
-                  <option key={code} value={code} />
-                ))}
-            </datalist>
-            <span className="task-editor__field-hint">Comma-separated task codes. Validated against catalog.</span>
-          </label>
         </section>
 
-        <section className="task-editor__group task-editor__group--collapsible">
-          <button
-            className="task-editor__collapse-toggle"
+        <section className="drawer-section drawer-section--spacious">
+          <div className="drawer-section__label">Principal</div>
+          <div className="editor-fields">
+            <Field label="Título" required>
+              <TextInput
+                onChange={(e) => props.onChange({ shortTask: e.target.value })}
+                placeholder="Título corto de la tarea"
+                type="text"
+                value={props.draft.shortTask}
+              />
+            </Field>
+            <Field label="Detalle">
+              <TextArea
+                onChange={(e) => props.onChange({ detail: e.target.value })}
+                placeholder="Descripción detallada..."
+                tall
+                value={props.draft.detail}
+              />
+            </Field>
+            <div className="editor-field-row">
+              <Field label="Estado" required>
+                <FilterSelect
+                  onChange={(e) =>
+                    props.onChange({
+                      status: e.target.value as TaskEditorDraft["status"],
+                    })
+                  }
+                  value={props.draft.status}
+                >
+                  {TASK_STATUSES_LOCAL.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                    ))}
+                </FilterSelect>
+              </Field>
+              <Field label="Severidad" required>
+                <FilterSelect
+                  onChange={(e) =>
+                    props.onChange({
+                      severity: e.target.value as TaskEditorDraft["severity"],
+                    })
+                  }
+                  value={props.draft.severity}
+                >
+                  {TASK_SEVERITIES_LOCAL.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                    ))}
+                </FilterSelect>
+              </Field>
+            </div>
+            <Field label="Agente" required>
+              <AgentSelect
+                agents={props.agents}
+                value={props.draft.agent}
+                onChange={(v) => props.onChange({ agent: v })}
+              />
+            </Field>
+          </div>
+        </section>
+
+        <section className="drawer-section drawer-section--spacious">
+          <div className="drawer-section__label">Organización</div>
+          <div className="editor-fields">
+            <div className="editor-field-row">
+              <Field label="Proyecto">
+                <TextInput
+                  onChange={(e) => props.onChange({ project: e.target.value })}
+                  placeholder="nombre del proyecto (vacío → null)"
+                  type="text"
+                  value={props.draft.project}
+                />
+              </Field>
+              <Field label="Carril / Grupo">
+                <TextInput
+                  onChange={(e) => props.onChange({ lane: e.target.value })}
+                  placeholder="nombre del carril (vacío → null)"
+                  type="text"
+                  value={props.draft.lane}
+                />
+              </Field>
+            </div>
+            <div className="editor-field-row">
+              <Field label="Estimación (h)">
+                <TextInput
+                  min="0"
+                  onChange={(e) =>
+                    props.onChange({ durationEstimate: e.target.value })
+                  }
+                  placeholder="horas (vacío → null)"
+                  step="0.5"
+                  type="number"
+                  value={props.draft.durationEstimate}
+                />
+              </Field>
+            </div>
+            <Field label="Etiquetas" hint="Separadas por coma">
+              <TextInput
+                onChange={(e) => props.onChange({ tags: e.target.value })}
+                placeholder="tag-a, tag-b"
+                type="text"
+                value={props.draft.tags}
+              />
+            </Field>
+            <Field
+              label="Depende de"
+              hint="Códigos de tarea separados por coma. Validados contra el catálogo."
+            >
+              <TextInput
+                list="task-editor-catalog"
+                onChange={(e) => props.onChange({ dependsOn: e.target.value })}
+                placeholder="TASK-1, TASK-2"
+                type="text"
+                value={props.draft.dependsOn}
+              />
+              <datalist id="task-editor-catalog">
+                {props.catalog
+                  .filter((code) => code !== props.draft.code)
+                  .map((code) => (
+                    <option key={code} value={code} />
+                  ))}
+              </datalist>
+            </Field>
+          </div>
+        </section>
+
+        <section
+          className="drawer-section drawer-section--spacious"
+          ref={advancedSectionRef}
+        >
+          <Button
+            className={`editor-collapse-toggle${advancedOpen ? " is-active" : ""}`}
+            intent="change"
             onClick={() => setAdvancedOpen((o) => !o)}
+            size="small"
             type="button"
           >
-            <span className={`task-editor__collapse-arrow${advancedOpen ? " task-editor__collapse-arrow--open" : ""}`}>&#9662;</span>
-            <span className="task-editor__group-title">Avanzado</span>
-          </button>
+            <span
+              className={`editor-collapse-arrow${advancedOpen ? " editor-collapse-arrow--open" : ""}`}
+            >
+              &#9662;
+            </span>
+            <span className="drawer-section__label">Avanzado</span>
+          </Button>
           {advancedOpen ? (
-            <div className="task-editor__collapse-body">
-              <label className="task-editor__field">
-                <span className="task-editor__label">Source ref</span>
-                <input
-                  className="te-input"
-                  onChange={(e) => props.onChange({ sourceRef: e.target.value })}
-                  placeholder="PR, ticket, or URL (empty → null)"
+            <div className="editor-fields">
+              <Field label="Referencia">
+                <TextInput
+                  onChange={(e) =>
+                    props.onChange({ sourceRef: e.target.value })
+                  }
+                  placeholder="PR, ticket o URL (vacío → null)"
                   type="text"
                   value={props.draft.sourceRef}
                 />
-              </label>
-              <label className="task-editor__field">
-                <span className="task-editor__label">Prompt</span>
-                <textarea
-                  className="te-textarea te-textarea--tall"
+              </Field>
+              <Field label="Prompt">
+                <TextArea
                   onChange={(e) => props.onChange({ prompt: e.target.value })}
-                  placeholder="LLM prompt for this task... (empty → null)"
+                  placeholder="Prompt LLM para esta tarea... (vacío → null)"
+                  tall
                   value={props.draft.prompt}
                 />
-              </label>
-              <label className="task-editor__field">
-                <span className="task-editor__label">Acceptance criteria</span>
-                <textarea
-                  className="te-textarea te-textarea--tall"
-                  onChange={(e) => props.onChange({ acceptance: e.target.value })}
-                  placeholder="How to verify this task is done... (empty → null)"
+              </Field>
+              <Field label="Criterios de aceptación">
+                <TextArea
+                  onChange={(e) =>
+                    props.onChange({ acceptance: e.target.value })
+                  }
+                  placeholder="Cómo verificar que la tarea está lista... (vacío → null)"
+                  tall
                   value={props.draft.acceptance}
                 />
-              </label>
-              <label className="task-editor__field">
-                <span className="task-editor__label">Out of scope</span>
-                <textarea
-                  className="te-textarea"
-                  onChange={(e) => props.onChange({ outOfScope: e.target.value })}
-                  placeholder="Explicitly excluded from this task... (empty → null)"
+              </Field>
+              <Field label="Fuera de alcance">
+                <TextArea
+                  onChange={(e) =>
+                    props.onChange({ outOfScope: e.target.value })
+                  }
+                  placeholder="Explícitamente excluido de esta tarea... (vacío → null)"
                   value={props.draft.outOfScope}
                 />
-              </label>
+              </Field>
             </div>
           ) : null}
         </section>
       </div>
-    </div>
+    </DrawerShell>
   );
 }

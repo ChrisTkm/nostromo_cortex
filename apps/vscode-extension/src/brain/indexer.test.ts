@@ -256,7 +256,7 @@ describe("buildBrainSnapshot", () => {
     expect(snapshot.nodes).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tag:no-deberia-ser-tag" })]));
   });
 
-  it("flags documents outside any indexed folder as orphans", async () => {
+  it("hangs documents outside indexed folders from synthetic folders", async () => {
     const rootUri = { fsPath: "C:\\site\\src\\content\\docs" } as any;
     const rootPath = "C:\\site\\src\\content\\docs\\accounting\\index.mdx";
     const childPath = "C:\\site\\src\\content\\docs\\accounting\\activos-fijos\\index.mdx";
@@ -268,8 +268,12 @@ describe("buildBrainSnapshot", () => {
 
     const snapshot = await buildBrainSnapshot(rootUri);
 
-    expect(snapshot.stats.orphanCount).toBe(1);
-    expect(snapshot.nodes.find((node) => node.title === "Suelto")?.isOrphan).toBe(true);
+    expect(snapshot.stats.orphanCount).toBe(0);
+    expect(snapshot.nodes.find((node) => node.id === "folder:huerfano")).toEqual(
+      expect.objectContaining({ kind: "folder", label: "huerfano" }),
+    );
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:huerfano" && e.to === "doc:huerfano/suelto.mdx")).toBe(true);
+    expect(snapshot.nodes.find((node) => node.title === "Suelto")?.isOrphan).toBeFalsy();
     expect(snapshot.nodes.find((node) => node.title === "Activos fijos")?.isOrphan).toBeFalsy();
     expect(snapshot.nodes.find((node) => node.title === "Accounting")?.isOrphan).toBeFalsy();
   });
@@ -299,8 +303,8 @@ describe("buildBrainSnapshot", () => {
 
     const snapshot = await buildBrainSnapshot(rootUri);
 
-    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:a/foo.mdx")).toBe(false);
-    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:b/foo.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.label === "references" && e.to === "doc:a/foo.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.label === "references" && e.to === "doc:b/foo.mdx")).toBe(false);
   });
 
   it("resolves wikilink when stem is unique", async () => {
@@ -329,11 +333,11 @@ describe("buildBrainSnapshot", () => {
 
     const snapshot = await buildBrainSnapshot(rootUri);
 
-    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:x/bar.mdx")).toBe(false);
-    expect(snapshot.edges.some((e) => e.kind === "link" && e.to === "doc:y/bar.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.label === "references" && e.to === "doc:x/bar.mdx")).toBe(false);
+    expect(snapshot.edges.some((e) => e.label === "references" && e.to === "doc:y/bar.mdx")).toBe(false);
   });
 
-  it("flags all docs as orphans in non-Starlight workspace", async () => {
+  it("builds synthetic folder hierarchy in non-Starlight workspace", async () => {
     const rootUri = { fsPath: "C:\\project" } as any;
     const page1 = "C:\\project\\pages\\page1.mdx";
     const page2 = "C:\\project\\pages\\page2.mdx";
@@ -344,11 +348,16 @@ describe("buildBrainSnapshot", () => {
 
     const snapshot = await buildBrainSnapshot(rootUri);
 
-    expect(snapshot.stats.orphanCount).toBe(2);
-    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
+    expect(snapshot.stats.orphanCount).toBe(0);
+    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(0);
+    expect(snapshot.nodes.find((node) => node.id === "folder:pages")).toEqual(
+      expect.objectContaining({ kind: "folder", label: "pages" }),
+    );
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:pages" && e.to === "doc:pages/page1.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:pages" && e.to === "doc:pages/page2.mdx")).toBe(true);
   });
 
-  it("resolves explicit relative refs even when docs are orphans", async () => {
+  it("resolves explicit relative refs while docs hang from synthetic folders", async () => {
     const rootUri = { fsPath: "C:\\project" } as any;
     const aPath = "C:\\project\\pages\\a.mdx";
     const bPath = "C:\\project\\pages\\b.mdx";
@@ -360,7 +369,8 @@ describe("buildBrainSnapshot", () => {
     const snapshot = await buildBrainSnapshot(rootUri);
 
     expect(snapshot.edges.some((e) => e.to === "doc:pages/a.mdx" && e.from === "doc:pages/b.mdx")).toBe(true);
-    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(2);
+    expect(snapshot.issues.filter((i) => i.kind === "orphan")).toHaveLength(0);
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:pages" && e.to === "doc:pages/a.mdx")).toBe(true);
   });
 
   it("formats broken-ref detail as '<relation>: <href>'", async () => {
@@ -533,6 +543,48 @@ describe("buildBrainSnapshot", () => {
 
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:index.mdx")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:index.mdx")).toBe(true);
+  });
+
+  it("creates synthetic folder nodes for directories without index docs", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const pagePath = "C:\\project\\docs\\guide\\page.mdx";
+    filesRef.current = [{ fsPath: pagePath }];
+    sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildBrainSnapshot(rootUri);
+
+    expect(snapshot.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "folder:docs", kind: "folder", label: "docs" }),
+        expect.objectContaining({ id: "folder:docs/guide", kind: "folder", label: "guide" }),
+      ]),
+    );
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:docs" && e.to === "folder:docs/guide")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "folder:docs" && e.to === "folder:docs/guide")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
+  });
+
+  it("uses index docs as folder nodes when directories have index docs", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const indexPath = "C:\\project\\docs\\index.mdx";
+    const pagePath = "C:\\project\\docs\\guide\\page.mdx";
+    filesRef.current = [{ fsPath: indexPath }, { fsPath: pagePath }];
+    sourcesRef.current.set(indexPath, ["---", "title: Docs", "---", "", "# Docs"].join("\n"));
+    sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildBrainSnapshot(rootUri);
+
+    expect(snapshot.nodes.some((node) => node.id === "folder:docs")).toBe(false);
+    expect(snapshot.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "folder:docs/guide", kind: "folder", label: "guide" }),
+      ]),
+    );
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "doc:docs/index.mdx" && e.to === "folder:docs/guide")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "doc:docs/index.mdx" && e.to === "folder:docs/guide")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
+    expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
   });
 
 

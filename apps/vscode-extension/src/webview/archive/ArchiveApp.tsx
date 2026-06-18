@@ -1,6 +1,23 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import type { ArchivedPlanSummary } from "../../service";
+import type {
+  ArchivedPlanSummary,
+  ArchiveStorageStats,
+  BackupSummary,
+} from "../../service";
+import { Button, Metric, Search } from "../components/atoms";
+import {
+  DataTable,
+  type DataTableColumn,
+  DrawerShell,
+  Footer,
+  Header,
+  MultiSelect,
+  SecondBar,
+} from "../components/molecules";
+import { Module } from "../components/organisms";
+
+type TagMode = "AND" | "OR";
 
 type SortKey =
   | "archivedAt-desc"
@@ -23,6 +40,8 @@ type ArchiveMessage = {
   type: "archive:list";
   plans: ArchivedPlanSummary[];
   archivePath?: string;
+  stats?: ArchiveStorageStats;
+  backups?: BackupSummary[];
 };
 
 declare global {
@@ -40,10 +59,13 @@ const vscode = window.acquireVsCodeApi();
 export function ArchiveApp() {
   const [plans, setPlans] = useState<ArchivedPlanSummary[]>([]);
   const [archivePath, setArchivePath] = useState<string | undefined>(undefined);
+  const [stats, setStats] = useState<ArchiveStorageStats | undefined>(
+    undefined,
+  );
+  const [backups, setBackups] = useState<BackupSummary[]>([]);
   const [search, setSearch] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [expandedCode, setExpandedCode] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>("archivedAt-desc");
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [tagMode, setTagMode] = useState<TagMode>("AND");
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -55,8 +77,18 @@ export function ArchiveApp() {
       }
       setPlans(message.plans);
       setArchivePath(message.archivePath);
-      setSelectedTags((current) => current.filter((tag) => message.plans.some((plan) => plan.tags.includes(tag))));
-      setExpandedCode((current) => (current && message.plans.some((plan) => plan.code === current) ? current : null));
+      setStats(message.stats);
+      setBackups(message.backups ?? []);
+      setSelectedTags((current) =>
+        current.filter((tag) =>
+          message.plans.some((plan) => plan.tags.includes(tag)),
+        ),
+      );
+      setSelectedCode((current) =>
+        current && message.plans.some((plan) => plan.code === current)
+          ? current
+          : null,
+      );
     }
 
     window.addEventListener("message", onMessage);
@@ -64,203 +96,386 @@ export function ArchiveApp() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const tags = useMemo(() => [...new Set(plans.flatMap((plan) => plan.tags))].sort((left, right) => left.localeCompare(right)), [plans]);
+  const tags = useMemo(
+    () =>
+      [...new Set(plans.flatMap((plan) => plan.tags))].sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    [plans],
+  );
 
-  const now = Date.now();
+  const now = useMemo(() => Date.now(), [plans]);
+
   const filteredPlans = useMemo(() => {
     const filtered = plans.filter((plan) => {
       if (selectedTags.length > 0) {
-        const matchesTag = tagMode === "AND"
-          ? selectedTags.every((tag) => plan.tags.includes(tag))
-          : selectedTags.some((tag) => plan.tags.includes(tag));
+        const matchesTag =
+          tagMode === "AND"
+            ? selectedTags.every((tag) => plan.tags.includes(tag))
+            : selectedTags.some((tag) => plan.tags.includes(tag));
         if (!matchesTag) return false;
       }
       if (!deferredSearch) return true;
-      return `${plan.code} ${plan.title}`.toLowerCase().includes(deferredSearch);
+      return `${plan.code} ${plan.title}`
+        .toLowerCase()
+        .includes(deferredSearch);
     });
 
-    const sorted = [...filtered].sort((left, right) => {
-      switch (sortKey) {
-        case "archivedAt-asc":
-          return (left.archivedAt ?? "").localeCompare(right.archivedAt ?? "") || left.code.localeCompare(right.code);
-        case "completedAt-desc":
-          return (right.completedAt ?? "").localeCompare(left.completedAt ?? "") || left.code.localeCompare(right.code);
-        case "taskCount-desc":
-          return (right.taskCount - left.taskCount) || left.code.localeCompare(right.code);
-        case "noteCount-desc":
-          return (right.noteCount - left.noteCount) || left.code.localeCompare(right.code);
-        case "archivedAt-desc":
-        default:
-          return (right.archivedAt ?? "").localeCompare(left.archivedAt ?? "") || left.code.localeCompare(right.code);
-      }
-    });
+    // Default order: newest archived first. DataTable column headers override.
+    return [...filtered].sort(
+      (left, right) =>
+        (right.archivedAt ?? "").localeCompare(left.archivedAt ?? "") ||
+        left.code.localeCompare(right.code),
+    );
+  }, [deferredSearch, plans, selectedTags, tagMode]);
 
-    return sorted;
-  }, [deferredSearch, plans, selectedTags, sortKey, tagMode]);
+  const selectedPlan = useMemo(
+    () =>
+      selectedCode
+        ? (filteredPlans.find((plan) => plan.code === selectedCode) ?? null)
+        : null,
+    [filteredPlans, selectedCode],
+  );
 
   function toggleTag(tag: string) {
-    setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag].sort()));
+    setSelectedTags((current) =>
+      current.includes(tag)
+        ? current.filter((item) => item !== tag)
+        : [...current, tag].sort(),
+    );
   }
 
-  return (
-    <div className="archive-app">
-      <header className="archive-header">
-        <div className="archive-header__meta">
-          <div className="archive-header__eyebrow">Read-only</div>
-          <h1 className="archive-header__title">Cortex Archive</h1>
-          {archivePath ? (
-            <div className="archive-header__path" title={archivePath}>
-              Folder: {archivePath}
-            </div>
-          ) : null}
-        </div>
-        <div className="archive-header__actions">
-          {archivePath ? (
-            <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:openFolder" })} type="button">
-              Open folder
-            </button>
-          ) : null}
-          <button className="archive-button" onClick={() => vscode.postMessage({ type: "archive:refresh" })} type="button">
-            Refresh
-          </button>
-        </div>
-      </header>
-
-      <section className="archive-toolbar">
-        <div className="archive-toolbar__row">
-          <input
-            className="archive-input"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search code or title..."
-            type="search"
-            value={search}
-          />
-          <select
-            className="archive-select"
-            onChange={(event) => setSortKey(event.target.value as SortKey)}
-            value={sortKey}
-            aria-label="Sort archived plans"
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <button
-            className={`archive-button archive-tag-mode${tagMode === "OR" ? " archive-tag-mode--or" : ""}`}
-            onClick={() => setTagMode((current) => (current === "AND" ? "OR" : "AND"))}
-            type="button"
-            title={`Toggle tag mode (current: ${tagMode})`}
-          >
-            Tags: {tagMode}
-          </button>
-        </div>
-        <div className="archive-tags" aria-label="Archive tag filters">
-          {tags.map((tag) => (
-            <button
-              className={`archive-chip${selectedTags.includes(tag) ? " archive-chip--selected" : ""}`}
-              key={tag}
-              onClick={() => toggleTag(tag)}
-              type="button"
+  const columns = useMemo<DataTableColumn<ArchivedPlanSummary>[]>(
+    () => [
+      {
+        key: "code",
+        label: "Código",
+        width: 150,
+        sortable: true,
+        sortValue: (p) => p.code.toLowerCase(),
+        render: (p) => <code className="archive-code">{p.code}</code>,
+      },
+      {
+        key: "title",
+        label: "Título",
+        width: 300,
+        sortable: true,
+        sortValue: (p) => p.title.toLowerCase(),
+        render: (p) => (
+          <span className="archive-title-cell">
+            <span>{p.title}</span>
+            <span
+              className={`archive-age-chip archive-age-chip--${bucketAge(p.archivedAt, now)}`}
             >
-              {tag}
-            </button>
-          ))}
-        </div>
-      </section>
+              {AGE_LABEL[bucketAge(p.archivedAt, now)]}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: "completed",
+        label: "Completado",
+        width: 150,
+        sortable: true,
+        sortValue: (p) => p.completedAt ?? "",
+        render: (p) => formatDate(p.completedAt),
+      },
+      {
+        key: "archived",
+        label: "Archivado",
+        width: 150,
+        sortable: true,
+        sortValue: (p) => p.archivedAt ?? "",
+        render: (p) => formatDate(p.archivedAt),
+      },
+      {
+        key: "tasks",
+        label: "Tareas",
+        width: 80,
+        align: "right",
+        sortable: true,
+        sortValue: (p) => p.taskCount,
+        render: (p) => p.taskCount,
+      },
+      {
+        key: "notes",
+        label: "Notas",
+        width: 80,
+        align: "right",
+        sortable: true,
+        sortValue: (p) => p.noteCount,
+        render: (p) => p.noteCount,
+      },
+    ],
+    [now],
+  );
 
-      <main className="archive-table">
-        <div className="archive-row archive-row--head">
-          <span>Code</span>
-          <span>Title</span>
-          <span>Completed</span>
-          <span>Archived</span>
-          <span>Tasks</span>
-          <span>Notes</span>
-          <span />
-        </div>
-        {filteredPlans.length === 0 ? (
-          <div className="archive-empty">
-            <h2>No archived plans match.</h2>
-            <p>Refresh the panel or adjust search and tag filters.</p>
+  const header = (
+    <Header
+      name="CORTEX ARCHIVE"
+      external={Boolean(archivePath)}
+      route={archivePath}
+      actions={
+        <>
+          {archivePath ? (
+            <Button
+              intent="action"
+              onClick={() => vscode.postMessage({ type: "archive:openFolder" })}
+              size="small"
+            >
+              Carpeta
+            </Button>
+          ) : null}
+          <Button
+            intent="action"
+            onClick={() => vscode.postMessage({ type: "backup:create" })}
+            size="small"
+          >
+            Backup
+          </Button>
+          <Button
+            intent="refresh"
+            onClick={() => vscode.postMessage({ type: "archive:refresh" })}
+            size="small"
+          >
+            Actualizar
+          </Button>
+        </>
+      }
+    />
+  );
+
+  const secondBar = (
+    <SecondBar
+      search={
+        <Search
+          className="archive-search"
+          onChange={setSearch}
+          placeholder="Search code or title..."
+          value={search}
+        />
+      }
+      filters={
+        <div className="archive-filters">
+          <div className="archive-group" aria-label="Tags">
+            <span className="archive-group__label">Tags</span>
+            <MultiSelect
+              label="Tags"
+              onNone={() => setSelectedTags([])}
+              onToggle={toggleTag}
+              options={tags.map((tag) => ({ value: tag, label: tag }))}
+              selected={selectedTags}
+            />
+            <Button
+              className={tagMode === "OR" ? "is-active" : undefined}
+              intent="change"
+              onClick={() =>
+                setTagMode((current) => (current === "AND" ? "OR" : "AND"))
+              }
+              size="small"
+              title={`Match mode for selected tags (current: ${tagMode})`}
+            >
+              {tagMode}
+            </Button>
           </div>
-        ) : (
-          filteredPlans.map((plan) => (
-            <section className="archive-plan" key={plan.code}>
-              <button className="archive-row archive-row--button" onClick={() => setExpandedCode(expandedCode === plan.code ? null : plan.code)} type="button">
-                <span className="archive-code">{plan.code}</span>
-                <span>
-                  {plan.title}
-                  <span className={`archive-age-chip archive-age-chip--${bucketAge(plan.archivedAt, now)}`}>
-                    {AGE_LABEL[bucketAge(plan.archivedAt, now)]}
-                  </span>
-                </span>
-                <span>{formatDate(plan.completedAt)}</span>
-                <span>{formatDate(plan.archivedAt)}</span>
-                <span>{plan.taskCount}</span>
-                <span>{plan.noteCount}</span>
-                <span className="archive-row__hint">{expandedCode === plan.code ? "Collapse" : "Inspect"}</span>
-              </button>
-              {expandedCode === plan.code ? <ArchiveDetails plan={plan} /> : null}
-            </section>
-          ))
-        )}
-      </main>
-    </div>
+        </div>
+      }
+    />
+  );
+
+  const footer = (
+    <Footer
+      left={
+        <div className="archive-stats">
+          <Metric label="Total">{plans.length}</Metric>
+          <Metric label="Visibles">{filteredPlans.length}</Metric>
+          <Metric label="Activos">
+            {stats ? stats.activeDocuments : "-"}
+          </Metric>
+          <Metric label="Mongo archive">
+            {stats ? stats.archivedDocuments : "-"}
+          </Metric>
+          <Metric label="JSON">{stats ? stats.jsonSnapshots : "-"}</Metric>
+          <Metric label="DB backups">{backups.length}</Metric>
+        </div>
+      }
+    />
+  );
+
+  const drawer = (
+    selectedPlan ? (
+      <ArchiveDetails
+        isOpen={Boolean(selectedPlan)}
+        onClose={() => setSelectedCode(null)}
+        plan={selectedPlan}
+      />
+    ) : null
+  );
+
+  return (
+    <Module
+      drawer={drawer}
+      footer={footer}
+      header={header}
+      secondBar={secondBar}
+    >
+      <div className="table-section">
+        <DataTable
+          className="archive-table"
+          columns={columns}
+          empty="No archived plans match."
+          getRowKey={(p) => p.code}
+          onRowClick={(p) => setSelectedCode(p.code)}
+          rowClassName={(p) =>
+            p.code === selectedCode ? "archive-row--selected" : undefined
+          }
+          rows={filteredPlans}
+        />
+        <BackupList backups={backups} />
+      </div>
+    </Module>
   );
 }
 
-function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
+function BackupList({ backups }: { backups: BackupSummary[] }) {
   return (
-    <>
-      <div className="archive-details">
-      <div className="archive-details__toolbar">
-        <div className="archive-tags">
-          {plan.tags.length > 0 ? plan.tags.map((tag) => <span className="archive-chip archive-chip--static" key={tag}>{tag}</span>) : <span className="archive-muted">No tags</span>}
-        </div>
-        <button
-          className="archive-button archive-button--restore"
-          onClick={() => vscode.postMessage({ type: "archive:restorePlan", planCode: plan.code })}
-          type="button"
-        >
-          Restore
-        </button>
-        <button className="archive-button archive-button--primary" onClick={() => vscode.postMessage({ type: "archive:openJson", jsonPath: plan.jsonPath })} type="button">
-          Open JSON
-        </button>
+    <section className="archive-detail-section">
+      <h2>DB Backups</h2>
+      <div className="archive-task-list">
+        {backups.length === 0 ? (
+          <div className="archive-muted">No database backups.</div>
+        ) : null}
+        {backups.slice(0, 12).map((backup) => (
+          <div className="archive-task" key={backup.id}>
+            <div className="archive-task__top">
+              <span className="archive-code">{backup.id}</span>
+              <Button
+                intent="change"
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "backup:restore",
+                    backupId: backup.id,
+                  })
+                }
+                size="small"
+              >
+                Restaurar DB
+              </Button>
+            </div>
+            <div>{formatDate(backup.createdAt)}</div>
+            <div className="archive-muted">
+              {backup.dataDocumentCount} data docs · {backup.documentCount} total
+              docs · {backup.collections.length} collections
+              {backup.reason ? ` · ${backup.reason}` : ""}
+            </div>
+          </div>
+        ))}
       </div>
+    </section>
+  );
+}
+
+function ArchiveDetails({
+  isOpen,
+  onClose,
+  plan,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  plan: ArchivedPlanSummary;
+}) {
+  const header = (
+    <>
+      <div className="drawer-header__code">{plan.code}</div>
+      <h2 className="drawer-header__title">{plan.title}</h2>
+      <div className="drawer-header__status">
+        {plan.tags.length > 0 ? (
+          plan.tags.map((tag) => (
+            <span className="drawer-badge" key={tag}>
+              {tag}
+            </span>
+          ))
+        ) : (
+          <span className="archive-muted">No tags</span>
+        )}
+      </div>
+    </>
+  );
+
+  const actions = (
+    <>
+      <Button
+        intent="change"
+        onClick={() =>
+          vscode.postMessage({
+            type: "archive:restorePlan",
+            planCode: plan.code,
+          })
+        }
+        size="small"
+      >
+        Restaurar
+      </Button>
+      <Button
+        intent="action"
+        onClick={() =>
+          vscode.postMessage({
+            type: "archive:openJson",
+            jsonPath: plan.jsonPath,
+          })
+        }
+        size="small"
+      >
+        Abrir JSON
+      </Button>
+    </>
+  );
+
+  return (
+    <DrawerShell
+      actions={actions}
+      className="archive-drawer"
+      header={header}
+      isOpen={isOpen}
+      onClose={onClose}
+    >
       {plan.description ? (
         <section className="archive-detail-section">
           <h2>Description</h2>
-          <p style={{ whiteSpace: "pre-wrap" }}>{plan.description}</p>
+          <p className="archive-pre">{plan.description}</p>
         </section>
       ) : null}
       {plan.goal ? (
         <section className="archive-detail-section">
           <h2>Goal</h2>
-          <p style={{ whiteSpace: "pre-wrap" }}>{plan.goal}</p>
+          <p className="archive-pre">{plan.goal}</p>
         </section>
       ) : null}
       {plan.context ? (
         <section className="archive-detail-section">
           <h2>Context</h2>
-          <p style={{ whiteSpace: "pre-wrap" }}>{plan.context}</p>
+          <p className="archive-pre">{plan.context}</p>
         </section>
       ) : null}
       <section className="archive-detail-section">
         <h2>Tasks</h2>
         <div className="archive-task-list">
-          {plan.tasks.length === 0 ? <div className="archive-muted">No archived tasks.</div> : null}
+          {plan.tasks.length === 0 ? (
+            <div className="archive-muted">No archived tasks.</div>
+          ) : null}
           {plan.tasks.map((task) => (
             <div className="archive-task" key={task.code}>
               <div className="archive-task__top">
                 <span className="archive-code">{task.code}</span>
-                {task.status ? <span className="archive-chip archive-chip--static">{task.status}</span> : null}
+                {task.status ? (
+                  <span className="drawer-badge">{task.status}</span>
+                ) : null}
               </div>
               <div>{task.shortTask}</div>
               <div className="archive-muted">
-                {task.completedAt ? `completed ${formatDate(task.completedAt)}` : "completion date unavailable"}
+                {task.completedAt
+                  ? `completed ${formatDate(task.completedAt)}`
+                  : "completion date unavailable"}
                 {task.commitHash ? ` · ${task.commitHash}` : ""}
               </div>
               {task.completionNote ? <p>{task.completionNote}</p> : null}
@@ -271,33 +486,50 @@ function ArchiveDetails({ plan }: { plan: ArchivedPlanSummary }) {
       <section className="archive-detail-section">
         <h2>Notes</h2>
         <div className="archive-note-list">
-          {plan.notes.length === 0 ? <div className="archive-muted">No archived notes.</div> : null}
+          {plan.notes.length === 0 ? (
+            <div className="archive-muted">No archived notes.</div>
+          ) : null}
           {plan.notes.map((note, index) => (
-            <article className="archive-note" key={`${note.title}:${note.createdAt ?? index}`}>
+            <article
+              className="archive-note"
+              key={`${note.title}:${note.createdAt ?? index}`}
+            >
               <div className="archive-task__top">
                 <strong>{note.title}</strong>
-                <span className="archive-muted">{formatDate(note.createdAt)}</span>
+                <span className="archive-muted">
+                  {formatDate(note.createdAt)}
+                </span>
               </div>
               {note.tags.length > 0 ? (
-                <div className="archive-tags">{note.tags.map((tag) => <span className="archive-chip archive-chip--static" key={tag}>{tag}</span>)}</div>
+                <div className="archive-tags">
+                  {note.tags.map((tag) => (
+                    <span className="drawer-badge" key={tag}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               ) : null}
               <p>{note.body || "No body."}</p>
             </article>
           ))}
         </div>
       </section>
-    </div>
-    <div className="archive-details__footer">
-      <button
-        className="archive-button archive-button--danger"
-        onClick={() => vscode.postMessage({ type: "archive:deletePlan", planCode: plan.code })}
-        type="button"
-      >
-        Delete archived plan
-      </button>
-    </div>
-  </>
-);
+      <div className="archive-details__footer">
+        <Button
+          intent="danger"
+          onClick={() =>
+            vscode.postMessage({
+              type: "archive:deletePlan",
+              planCode: plan.code,
+            })
+          }
+          size="small"
+        >
+          Delete archived plan
+        </Button>
+      </div>
+    </DrawerShell>
+  );
 }
 
 type AgeBucket = "today" | "week" | "month" | "older" | "unknown";
@@ -307,7 +539,7 @@ const AGE_LABEL: Record<AgeBucket, string> = {
   week: "7d",
   month: "30d",
   older: "Older",
-  unknown: "Unknown"
+  unknown: "Unknown",
 };
 
 function bucketAge(archivedAt: string | undefined, now: number): AgeBucket {

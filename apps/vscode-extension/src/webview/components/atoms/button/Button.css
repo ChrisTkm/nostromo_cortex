@@ -1,0 +1,63 @@
+.atom-button {
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 70%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, white 3%, transparent);
+  color: var(--cortex-text);
+  cursor: pointer;
+  font-family: var(--cortex-font);
+  font-size: var(--cortex-text-sm);
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.atom-button:hover:not(:disabled) {
+  border-color: var(--cortex-border-strong);
+  color: var(--cortex-accent);
+}
+
+.atom-button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.atom-button--action,
+.atom-button--new {
+  border-color: color-mix(in srgb, var(--cortex-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--cortex-accent) 12%, transparent);
+  color: var(--cortex-accent);
+}
+
+.atom-button--refresh,
+.atom-button--change {
+  padding-inline: 9px;
+}
+
+.atom-button--danger {
+  border-color: color-mix(in srgb, var(--cortex-level-error) 48%, transparent);
+  color: var(--cortex-level-error);
+}
+
+.atom-button--danger:hover:not(:disabled) {
+  border-color: var(--cortex-level-error);
+  background: color-mix(in srgb, var(--cortex-level-error) 14%, transparent);
+  color: var(--cortex-level-error);
+}
+
+/* Icon-only square buttons (row actions). */
+.atom-button--icon {
+  padding: 4px 6px;
+  line-height: 1;
+}
+
+.atom-button--small {
+  padding: 4px 8px;
+  font-size: var(--cortex-text-xs);
+}
+
+.atom-button.is-active {
+  border-color: var(--cortex-border-strong);
+  color: var(--cortex-accent);
+}

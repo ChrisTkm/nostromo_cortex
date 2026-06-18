@@ -39,6 +39,17 @@ export interface ScriptFlowNode {
   meta?: Record<string, unknown>;
 }
 
+export type ScriptFlowAutoObservationKind = "inline" | "diagnostic" | "flow-gap";
+export type ScriptFlowAutoObservationSeverity = "info" | "warning" | "error";
+
+export interface ScriptFlowAutoObservation {
+  kind: ScriptFlowAutoObservationKind;
+  message: string;
+  severity: ScriptFlowAutoObservationSeverity;
+  line?: number;
+  source?: string;
+}
+
 export interface ScriptFlowEdge {
   from: string;
   to: string;
