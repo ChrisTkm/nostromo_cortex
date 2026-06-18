@@ -176,7 +176,7 @@ export function LogsApp() {
             onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
             size="small"
           >
-            Change
+            Carpeta
           </Button>
           <Button
             className={live ? "is-active logs-live-button" : "logs-live-button"}
@@ -198,7 +198,7 @@ export function LogsApp() {
             onClick={() => vscode.postMessage({ type: "logs:refresh" })}
             size="small"
           >
-            Refresh
+            Actualizar
           </Button>
         </>
       }
@@ -290,7 +290,7 @@ export function LogsApp() {
             intent="action"
             onClick={() => vscode.postMessage({ type: "logs:selectFolder" })}
           >
-            Elegir carpeta…
+            Carpeta
           </Button>
           <p className="logs-empty__hint">
             Actual: <code>{folderLabel}</code>

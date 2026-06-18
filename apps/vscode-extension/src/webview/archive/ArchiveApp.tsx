@@ -1,6 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import type { ArchivedPlanSummary } from "../../service";
+import type {
+  ArchivedPlanSummary,
+  ArchiveStorageStats,
+  BackupSummary,
+} from "../../service";
 import { Button, Metric, Search } from "../components/atoms";
 import {
   DataTable,
@@ -19,6 +23,8 @@ type ArchiveMessage = {
   type: "archive:list";
   plans: ArchivedPlanSummary[];
   archivePath?: string;
+  stats?: ArchiveStorageStats;
+  backups?: BackupSummary[];
 };
 
 declare global {
@@ -36,6 +42,10 @@ const vscode = window.acquireVsCodeApi();
 export function ArchiveApp() {
   const [plans, setPlans] = useState<ArchivedPlanSummary[]>([]);
   const [archivePath, setArchivePath] = useState<string | undefined>(undefined);
+  const [stats, setStats] = useState<ArchiveStorageStats | undefined>(
+    undefined,
+  );
+  const [backups, setBackups] = useState<BackupSummary[]>([]);
   const [search, setSearch] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
@@ -50,6 +60,8 @@ export function ArchiveApp() {
       }
       setPlans(message.plans);
       setArchivePath(message.archivePath);
+      setStats(message.stats);
+      setBackups(message.backups ?? []);
       setSelectedTags((current) =>
         current.filter((tag) =>
           message.plans.some((plan) => plan.tags.includes(tag)),
@@ -194,15 +206,22 @@ export function ArchiveApp() {
               onClick={() => vscode.postMessage({ type: "archive:openFolder" })}
               size="small"
             >
-              Open folder
+              Carpeta
             </Button>
           ) : null}
+          <Button
+            intent="action"
+            onClick={() => vscode.postMessage({ type: "backup:create" })}
+            size="small"
+          >
+            Backup
+          </Button>
           <Button
             intent="refresh"
             onClick={() => vscode.postMessage({ type: "archive:refresh" })}
             size="small"
           >
-            Refresh
+            Actualizar
           </Button>
         </>
       }
@@ -253,6 +272,14 @@ export function ArchiveApp() {
         <div className="archive-stats">
           <Metric label="Total">{plans.length}</Metric>
           <Metric label="Visibles">{filteredPlans.length}</Metric>
+          <Metric label="Activos">
+            {stats ? stats.activeDocuments : "-"}
+          </Metric>
+          <Metric label="Mongo archive">
+            {stats ? stats.archivedDocuments : "-"}
+          </Metric>
+          <Metric label="JSON">{stats ? stats.jsonSnapshots : "-"}</Metric>
+          <Metric label="DB backups">{backups.length}</Metric>
         </div>
       }
     />
@@ -287,8 +314,47 @@ export function ArchiveApp() {
           }
           rows={filteredPlans}
         />
+        <BackupList backups={backups} />
       </div>
     </Module>
+  );
+}
+
+function BackupList({ backups }: { backups: BackupSummary[] }) {
+  return (
+    <section className="archive-detail-section">
+      <h2>DB Backups</h2>
+      <div className="archive-task-list">
+        {backups.length === 0 ? (
+          <div className="archive-muted">No database backups.</div>
+        ) : null}
+        {backups.slice(0, 12).map((backup) => (
+          <div className="archive-task" key={backup.id}>
+            <div className="archive-task__top">
+              <span className="archive-code">{backup.id}</span>
+              <Button
+                intent="change"
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "backup:restore",
+                    backupId: backup.id,
+                  })
+                }
+                size="small"
+              >
+                Restaurar DB
+              </Button>
+            </div>
+            <div>{formatDate(backup.createdAt)}</div>
+            <div className="archive-muted">
+              {backup.dataDocumentCount} data docs · {backup.documentCount} total
+              docs · {backup.collections.length} collections
+              {backup.reason ? ` · ${backup.reason}` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -331,7 +397,7 @@ function ArchiveDetails({
         }
         size="small"
       >
-        Restore
+        Restaurar
       </Button>
       <Button
         intent="action"
@@ -343,7 +409,7 @@ function ArchiveDetails({
         }
         size="small"
       >
-        Open JSON
+        Abrir JSON
       </Button>
     </>
   );

@@ -137,6 +137,28 @@ Añadir a `~/.claude/settings.json`:
 }
 ```
 
+## Registro del MCP en Cursor
+
+Añadir a `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "cortex": {
+      "command": "node",
+      "args": ["C:/dev/Cortex/apps/mcp-server/dist/index.js"],
+      "env": {
+        "MONGO_URL": "mongodb://127.0.0.1:27017",
+        "MONGO_DB_NAME": "nostromo_cortex",
+        "MONGO_TASKS_COLLECTION": "tasks",
+        "TELEMETRY_BACKEND": "jsonl",
+        "TELEMETRY_JSONL_PATH": "C:/dev/Cortex/data/telemetry/cortex-telemetry.jsonl"
+      }
+    }
+  }
+}
+```
+
 ## Registro del MCP en opencode
 
 El repo incluye `opencode.json` en la raíz con dos servers MCP locales: `cortex` (tools de dominio: `task_list`, `graph_snapshot`, `record_run`, `query_runs`, etc. — requiere build previo con `pnpm --filter @cortex/mcp-server build`) y `mongodb` (el oficial `mongodb-mcp-server` vía npx, CRUD genérico sobre `nostromo_cortex` que usan las skills `/tareas` y `/plan`). opencode los carga automáticamente al abrir `C:/dev/Cortex` — verificar con `/mcp` que aparezcan ambos.

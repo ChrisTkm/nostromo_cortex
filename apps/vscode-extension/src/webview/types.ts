@@ -22,6 +22,15 @@ export type FilterCatalog = {
   severities: TaskSeverity[];
 };
 
+export type ConnectionSettings = {
+  mongoUrl: string;
+  mongoDbName: string;
+  mongoTasksCollection: string;
+  mongoNotesCollection: string;
+  mongoLogsCollection: string;
+  mongoPlansCollection: string;
+};
+
 export type SnapshotMessage = {
   type: "snapshot";
   snapshot: GraphSnapshot;
@@ -42,4 +51,5 @@ export type SnapshotMessage = {
   criticalPath?: CriticalPathResult;
   catalog: FilterCatalog;
   agentIconBase?: string;
+  connection: ConnectionSettings;
 };

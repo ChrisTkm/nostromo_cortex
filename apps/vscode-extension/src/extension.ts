@@ -14,6 +14,8 @@ import {
   type TaskSeverity,
 } from "@cortex/core";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import * as vscode from "vscode";
 
 import { disposeReminderTimers, fireDue, scheduleAll } from "./reminders.js";
@@ -66,6 +68,7 @@ type OptionsQuickPickItem = vscode.QuickPickItem & { command: string };
 type PanelQuickPickItem = vscode.QuickPickItem & { command: string };
 type TaskCommandArg = { kind?: string; task?: { code?: string } };
 type PlanCommandArg = { planCode?: string; kind?: string; label?: string };
+type McpClientFormat = "claude" | "codex" | "cursor" | "vscode" | "opencode";
 type ScriptFlowScope = "file" | "selection";
 type ScriptFlowRequest = {
   scope: ScriptFlowScope;
@@ -136,6 +139,8 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   treeView.title = "Cortex Control";
   context.subscriptions.push(treeView);
+  let backupTimer: NodeJS.Timeout | undefined;
+  let backupRunning = false;
 
   async function lazyInit(): Promise<void> {
     if (initDone) return;
@@ -153,6 +158,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
       await fireDue(service, reminderStatusBar, "startup");
       await scheduleAll(service, reminderStatusBar);
+      scheduleBackups();
+      void runBackgroundBackup("startup");
 
       treeProvider.refresh();
 
@@ -160,6 +167,73 @@ export async function activate(context: vscode.ExtensionContext) {
     })();
     return initPromise;
   }
+
+  function scheduleBackups() {
+    if (backupTimer) {
+      clearInterval(backupTimer);
+      backupTimer = undefined;
+    }
+    const config = vscode.workspace.getConfiguration("cortex");
+    if (!config.get<boolean>("backup.enabled", true)) return;
+    const intervalMinutes = Math.max(
+      15,
+      Math.min(1440, config.get<number>("backup.intervalMinutes", 240)),
+    );
+    backupTimer = setInterval(() => {
+      void runBackgroundBackup("interval");
+    }, intervalMinutes * 60 * 1000);
+  }
+
+  async function runBackgroundBackup(reason: string) {
+    const config = vscode.workspace.getConfiguration("cortex");
+    if (!config.get<boolean>("backup.enabled", true) || backupRunning) return;
+    backupRunning = true;
+    try {
+      if (reason !== "manual" && !reason.startsWith("pre-restore:")) {
+        const dataDocumentCount = await service.countBackupDataDocuments();
+        if (dataDocumentCount === 0) {
+          service.logger.info("backup skipped: no data documents", {
+            reason,
+          });
+          return;
+        }
+      }
+      const result = await service.createBackup(reason);
+      service.logger.info("backup completed", {
+        reason,
+        backupId: result.id,
+        path: result.path,
+        documentCount: result.documentCount,
+        dataDocumentCount: result.dataDocumentCount,
+      });
+      if (archivePanelReady) {
+        await postArchiveList();
+      }
+      if (config.get<boolean>("backup.notify", true)) {
+        void vscode.window.showInformationMessage(
+          `Cortex backup ${result.id} listo (${result.dataDocumentCount} data docs).`,
+        );
+      }
+    } catch (error) {
+      service.logger.warn("backup failed", {
+        reason,
+        error: String(error),
+      });
+      void vscode.window.showWarningMessage(
+        `Cortex backup failed: ${String(error)}`,
+      );
+    } finally {
+      backupRunning = false;
+    }
+  }
+  context.subscriptions.push({
+    dispose: () => {
+      if (backupTimer) {
+        clearInterval(backupTimer);
+        backupTimer = undefined;
+      }
+    },
+  });
 
   let graphPanel: vscode.WebviewPanel | undefined;
   let logsPanel: vscode.WebviewPanel | undefined;
@@ -307,9 +381,7 @@ export async function activate(context: vscode.ExtensionContext) {
         pan: state.pan,
       },
       agentIconBase,
-      connection: (({ mongoUrl: _omit, ...safe }) => safe)(
-        service.getConnectionSettings(),
-      ),
+      connection: service.getConnectionSettings(),
       filters: snapshotFilter,
       criticalPath,
       catalog,
@@ -407,14 +479,20 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const plans = await service.listArchivedPlans();
+    const [plans, stats, backups] = await Promise.all([
+      service.listArchivedPlans(),
+      service.getArchiveStorageStats(),
+      service.listBackups(),
+    ]);
     if (archivePanel !== panel) {
       return;
     }
     await panel.webview.postMessage({
       type: "archive:list",
       plans,
-      archivePath: service.getArchivePath(),
+      archivePath: stats.plansPath,
+      stats,
+      backups,
     });
   }
 
@@ -773,7 +851,7 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
           canSelectFolders: true,
           canSelectFiles: false,
           canSelectMany: false,
-          openLabel: "Usar como carpeta de logs",
+          openLabel: "Carpeta",
         });
         if (picked && picked[0]) {
           await vscode.workspace
@@ -893,8 +971,41 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (message?.type === "archive:openFolder") {
         await vscode.commands.executeCommand(
           "revealFileInOS",
-          vscode.Uri.file(service.getArchivePath()),
+          vscode.Uri.file(path.join(service.getArchivePath(), "plans")),
         );
+        return;
+      }
+      if (message?.type === "backup:create") {
+        await runBackgroundBackup("manual");
+        await postArchiveList();
+        return;
+      }
+      if (
+        message?.type === "backup:restore" &&
+        typeof message.backupId === "string" &&
+        service.isBackupId(message.backupId)
+      ) {
+        const backupId = message.backupId.trim();
+        const confirmed = await vscode.window.showWarningMessage(
+          `Restore Cortex backup ${backupId}? This replaces the backed-up Cortex collections in Mongo with the JSON backup contents.`,
+          { modal: true },
+          "Restore backup",
+        );
+        if (confirmed !== "Restore backup") return;
+        try {
+          await service.createBackup(`pre-restore:${backupId}`);
+          const result = await service.restoreBackup(backupId);
+          treeProvider.refresh();
+          await postSnapshot();
+          await postArchiveList();
+          void vscode.window.showInformationMessage(
+            `Cortex backup ${result.id} restored (${result.restoredDocuments} docs in ${result.restoredCollections} collections).`,
+          );
+        } catch (error) {
+          void vscode.window.showErrorMessage(
+            `Could not restore backup ${backupId}: ${String(error)}`,
+          );
+        }
         return;
       }
       if (
@@ -2619,6 +2730,181 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         formatCollectionMessage("Sample tasks created", picked, inspection),
       );
     }),
+    vscode.commands.registerCommand("cortex.registerMCP", async () => {
+      const installMCP = await vscode.window.showInformationMessage(
+        "This will register the Cortex MCP server in your AI client settings (Claude Code, Codex, Cursor, etc.). Continue?",
+        { modal: true },
+        "Register MCP",
+      );
+      if (installMCP !== "Register MCP") return;
+
+      const clients = [
+        { label: "Claude Code", id: "claude", dir: ".claude", file: "settings.json", key: "mcpServers", format: "claude" as McpClientFormat },
+        { label: "Codex CLI", id: "codex", dir: ".codex", file: "config.toml", key: "mcp_servers", format: "codex" as McpClientFormat },
+        { label: "Cursor", id: "cursor", dir: ".cursor", file: "mcp.json", key: "mcpServers", format: "cursor" as McpClientFormat },
+        { label: "VS Code Copilot", id: "vscode", dir: ".vscode", file: "mcp.json", key: "servers", format: "vscode" as McpClientFormat },
+        { label: "OpenCode (project)", id: "opencode-project", dir: "", file: "opencode.json", key: "mcp", format: "opencode" as McpClientFormat },
+        { label: "OpenCode (global)", id: "opencode-global", dir: path.join(".config", "opencode"), file: "opencode.json", key: "mcp", format: "opencode" as McpClientFormat },
+      ];
+      const picked = await vscode.window.showQuickPick(clients, {
+        placeHolder: "Select your AI client",
+        title: "Register Cortex MCP server",
+      });
+      if (!picked) return;
+
+      const extPath = context.extensionUri.fsPath;
+      const mcpDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "index.js");
+      const mcpBundledPath = path.join(extPath, "dist", "mcp-server", "index.js");
+      const mcpPath = fs.existsSync(mcpDevPath) ? mcpDevPath : fs.existsSync(mcpBundledPath) ? mcpBundledPath : null;
+
+      if (!mcpPath) {
+        void vscode.window.showErrorMessage(
+          `MCP server dist not found. Expected at ${mcpDevPath} or ${mcpBundledPath}. Build the MCP server first (pnpm --filter @cortex/mcp-server build) and try again.`,
+        );
+        return;
+      }
+
+      if (picked.id === "opencode-project") {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders?.length) {
+          void vscode.window.showErrorMessage("OpenCode project config requires an open workspace.");
+          return;
+        }
+        picked.dir = workspaceFolders[0].uri.fsPath;
+      } else if (picked.id === "vscode") {
+        const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsFolder) {
+          void vscode.window.showErrorMessage("VS Code Copilot MCP config requires an open workspace.");
+          return;
+        }
+        picked.dir = path.join(wsFolder, ".vscode");
+      } else {
+        picked.dir = path.join(os.homedir(), picked.dir);
+      }
+
+      const settingsPath = path.join(picked.dir, picked.file);
+      const mongoUrl = vscode.workspace.getConfiguration("cortex")
+        .get<string>("mongoUrl", "mongodb://127.0.0.1:27017");
+
+      if (picked.format === "codex") {
+        const existingConfig = fs.existsSync(settingsPath)
+          ? fs.readFileSync(settingsPath, "utf-8")
+          : "";
+        const nextConfig = upsertCodexMcpServerConfig(existingConfig, {
+          command: "node",
+          args: [mcpPath.replace(/\\/g, "/")],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        });
+
+        fs.mkdirSync(picked.dir, { recursive: true });
+        fs.writeFileSync(settingsPath, nextConfig, "utf-8");
+
+        void vscode.window.showInformationMessage(
+          `Cortex MCP server registered in ${picked.label} (${settingsPath}). Restart ${picked.label} for changes to take effect.`,
+        );
+        return;
+      }
+
+      let settings: Record<string, unknown> = {};
+      if (fs.existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as Record<string, unknown>;
+        } catch { /* ignore malformed */ }
+      }
+
+      if (picked.format === "vscode") {
+        const servers = (settings.servers ?? {}) as Record<string, unknown>;
+        servers.cortex = {
+          type: "stdio",
+          command: "node",
+          args: [mcpPath],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.servers = servers;
+      } else if (picked.format === "opencode") {
+        const mcp = (settings.mcp ?? {}) as Record<string, unknown>;
+        mcp.cortex = {
+          type: "local",
+          command: ["node", mcpPath],
+          enabled: true,
+          environment: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.mcp = mcp;
+      } else {
+        const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
+        mcpServers.cortex = {
+          command: "node",
+          args: [mcpPath],
+          env: { MONGO_URL: mongoUrl, TELEMETRY_BACKEND: "jsonl" },
+        };
+        settings.mcpServers = mcpServers;
+      }
+
+      fs.mkdirSync(picked.dir, { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+
+      void vscode.window.showInformationMessage(
+        `Cortex MCP server registered in ${picked.label} (${settingsPath}). Restart ${picked.label} for changes to take effect.`,
+      );
+    }),
+    vscode.commands.registerCommand("cortex.installSkills", async () => {
+      const install = await vscode.window.showInformationMessage(
+        "This will install Cortex AI skills into your AI client's skill directory (Claude Code, Codex, Copilot, etc.). Continue?",
+        { modal: true },
+        "Install Skills",
+      );
+      if (install !== "Install Skills") return;
+
+      const clients = [
+        { label: "Claude Code", id: "claude", dir: ".claude/skills" },
+        { label: "Codex", id: "codex", dir: ".codex/skills" },
+        { label: "VS Code Copilot", id: "copilot", dir: ".copilot/skills" },
+        { label: "OpenCode (global)", id: "opencode-global", dir: path.join(".config", "opencode", "skills") },
+      ];
+      const picked = await vscode.window.showQuickPick(clients, {
+        placeHolder: "Select your AI client",
+        title: "Install Cortex Skills",
+      });
+      if (!picked) return;
+
+      const extPath = context.extensionUri.fsPath;
+      const skillsDevPath = path.resolve(extPath, "..", "..", "..", "ai-skills", "skills", "global");
+      const skillsBundledPath = path.join(extPath, "dist", "skills");
+      const skillsSource = fs.existsSync(skillsDevPath) ? skillsDevPath : fs.existsSync(skillsBundledPath) ? skillsBundledPath : null;
+
+      if (!skillsSource) {
+        void vscode.window.showErrorMessage(
+          `Skills not found. Expected at ${skillsBundledPath}. Rebuild the extension and try again.`,
+        );
+        return;
+      }
+
+      const targetDir = path.join(os.homedir(), picked.dir);
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      const entries = fs.readdirSync(skillsSource, { withFileTypes: true });
+      let copied = 0;
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const src = path.join(skillsSource, entry.name);
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) continue;
+        const dest = path.join(targetDir, entry.name);
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.cpSync(src, dest, { recursive: true, force: true });
+        copied++;
+      }
+
+      if (copied === 0) {
+        void vscode.window.showErrorMessage(
+          `No installable skills found in ${skillsSource}. Expected folders with SKILL.md.`,
+        );
+        return;
+      }
+
+      void vscode.window.showInformationMessage(
+        `${copied} skills installed to ${picked.label} (${targetDir}). Restart ${picked.label} for changes to take effect.`,
+      );
+    }),
     vscode.commands.registerCommand(
       "cortex.editTask",
       async (arg?: string | { kind?: string; task?: { code?: string } }) => {
@@ -2754,39 +3040,29 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
     }),
     vscode.commands.registerCommand(
       "cortex.setTheme",
-      async (theme?: "cortex" | "vscode") => {
-        const selectedTheme =
-          theme === "vscode" || theme === "cortex"
-            ? theme
-            : (
-                await vscode.window.showQuickPick(
-                  [
-                    {
-                      label: "Cortex",
-                      description: "Tema oscuro propio",
-                      value: "cortex" as const,
-                    },
-                    {
-                      label: "VS Code",
-                      description: "Usar variables del editor",
-                      value: "vscode" as const,
-                    },
-                  ],
-                  {
-                    title: "Cortex Theme",
-                    placeHolder: "Choose panel theme",
-                  },
-                )
-              )?.value;
-        if (!selectedTheme) {
-          return;
-        }
+      async (theme?: "cortex" | "light" | "vscode" | "space") => {
+        const valid = ["cortex", "light", "vscode", "space"] as const;
+        const selectedTheme = valid.includes(theme as typeof valid[number])
+          ? (theme as typeof valid[number])
+          : (
+              await vscode.window.showQuickPick(
+                [
+                  { label: "Retro Space", description: "Tema oscuro por defecto", value: "cortex" as const },
+                  { label: "Light", description: "Tema claro", value: "light" as const },
+                  { label: "VS Code", description: "Sigue el tema del editor", value: "vscode" as const },
+                  { label: "Space", description: "Azul profundo con acento cian neón", value: "space" as const },
+                ],
+                { title: "Cortex Theme", placeHolder: "Choose panel theme" },
+              )
+            )?.value;
+        if (!selectedTheme) return;
         await vscode.workspace
           .getConfiguration("cortex")
           .update("theme", selectedTheme, vscode.ConfigurationTarget.Workspace);
         treeProvider.refresh();
+        const label = { cortex: "Retro Space", light: "Light", vscode: "VS Code", space: "Space" }[selectedTheme];
         void vscode.window.showInformationMessage(
-          `Cortex theme set to ${selectedTheme === "vscode" ? "VS Code" : "Cortex"}. Reopen panels to apply it.`,
+          `Cortex theme set to ${label}. Reopen panels to apply it.`,
         );
       },
     ),
@@ -3400,7 +3676,7 @@ async function pickBrainRoot() {
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    openLabel: "Scan folder",
+    openLabel: "Carpeta",
     title: "Choose a Markdown / MDX knowledge folder",
   });
   return picked?.[0];
@@ -3783,6 +4059,38 @@ function formatCollectionMessage(
     return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} loaded ${inspection.validTaskCount} tasks and ignored ${inspection.skippedCount} non-task docs.`;
   }
   return `${prefix}: ${settings.mongoDbName}.${settings.mongoTasksCollection} loaded ${inspection.validTaskCount} tasks.`;
+}
+
+function upsertCodexMcpServerConfig(
+  existingConfig: string,
+  server: {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+  },
+) {
+  const block = [
+    "[mcp_servers.cortex]",
+    `command = ${tomlString(server.command)}`,
+    `args = [${server.args.map(tomlString).join(", ")}]`,
+    `env = { ${Object.entries(server.env)
+      .map(([key, value]) => `${key} = ${tomlString(value)}`)
+      .join(", ")} }`,
+  ].join("\n");
+
+  const normalized = existingConfig.replace(/\r\n/g, "\n").trimEnd();
+  const existingBlockPattern =
+    /(^|\n)\[mcp_servers\.cortex\]\n[\s\S]*?(?=\n\[|$)/m;
+
+  if (existingBlockPattern.test(normalized)) {
+    return `${normalized.replace(existingBlockPattern, `$1${block}`)}\n`;
+  }
+
+  return `${normalized}${normalized ? "\n\n" : ""}${block}\n`;
+}
+
+function tomlString(value: string) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 async function safeList(loader: () => Promise<string[]>) {

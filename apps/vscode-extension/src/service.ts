@@ -82,6 +82,17 @@ type ImportArchiveResult = {
   skipped: string[];
   failed: Array<{ name: string; error: string }>;
 };
+type CreateBackupResult = {
+  id: string;
+  path: string;
+  documentCount: number;
+  dataDocumentCount: number;
+};
+type RestoreBackupResult = {
+  id: string;
+  restoredCollections: number;
+  restoredDocuments: number;
+};
 export type ArchivedTaskSummary = {
   code: string;
   shortTask: string;
@@ -110,6 +121,28 @@ export type ArchivedPlanSummary = {
   jsonPath: string;
   tasks: ArchivedTaskSummary[];
   notes: ArchivedNoteSummary[];
+};
+export type ArchiveStorageStats = {
+  activeDocuments: number;
+  activePlans: number;
+  activeTasks: number;
+  activeNotes: number;
+  archivedDocuments: number;
+  archivedPlans: number;
+  archivedTasks: number;
+  archivedNotes: number;
+  jsonSnapshots: number;
+  archivePath: string;
+  plansPath: string;
+};
+export type BackupSummary = {
+  id: string;
+  createdAt: string;
+  path: string;
+  reason?: string;
+  documentCount: number;
+  dataDocumentCount: number;
+  collections: Array<{ name: string; count: number }>;
 };
 
 export class ExtensionTaskService {
@@ -205,13 +238,14 @@ export class ExtensionTaskService {
   }
 
   getConnectionSettings() {
+    const config = vscode.workspace.getConfiguration("cortex");
     return {
       mongoUrl: this.mongoUrl,
-      mongoDbName: this.config.get("mongoDbName", "cortex"),
-      mongoTasksCollection: this.config.get("mongoTasksCollection", "tasks"),
-      mongoNotesCollection: this.config.get("mongoNotesCollection", "notes"),
-      mongoLogsCollection: this.config.get("mongoLogsCollection", "logs"),
-      mongoPlansCollection: this.config.get(
+      mongoDbName: config.get("mongoDbName", "cortex"),
+      mongoTasksCollection: config.get("mongoTasksCollection", "tasks"),
+      mongoNotesCollection: config.get("mongoNotesCollection", "notes"),
+      mongoLogsCollection: config.get("mongoLogsCollection", "logs"),
+      mongoPlansCollection: config.get(
         "mongoPlansCollection",
         "action_plans",
       ),
@@ -659,7 +693,12 @@ export class ExtensionTaskService {
     const archivedTasks = db.collection("archived_tasks");
     const archivedNotes = db.collection("archived_notes");
 
-    const archivedPlan = await archivedPlans.findOne({ code });
+    const archivedPlanFromMongo = await archivedPlans.findOne({ code });
+    const diskSnapshot = archivedPlanFromMongo
+      ? null
+      : await this.readArchivedPlanSnapshot(code);
+    const archivedPlan = archivedPlanFromMongo ?? diskSnapshot?.plan ?? null;
+    const restoreFromMongo = Boolean(archivedPlanFromMongo);
     if (!archivedPlan) {
       throw new Error(`Archived plan ${code} not found.`);
     }
@@ -671,20 +710,24 @@ export class ExtensionTaskService {
       );
     }
 
-    const archivedTasksList = await archivedTasks
-      .find({ plan_code: code })
-      .toArray();
+    const archivedTasksList = restoreFromMongo
+      ? await archivedTasks.find({ plan_code: code }).toArray()
+      : (diskSnapshot?.tasks ?? []);
     const taskCodes = archivedTasksList
       .map((task) => (typeof task.code === "string" ? task.code : undefined))
       .filter((value): value is string => Boolean(value));
-    const archivedNotesList = await archivedNotes
-      .find({
-        $or: [
-          { plan_code: code },
-          ...(taskCodes.length > 0 ? [{ task_code: { $in: taskCodes } }] : []),
-        ],
-      })
-      .toArray();
+    const archivedNotesList = restoreFromMongo
+      ? await archivedNotes
+          .find({
+            $or: [
+              { plan_code: code },
+              ...(taskCodes.length > 0
+                ? [{ task_code: { $in: taskCodes } }]
+                : []),
+            ],
+          })
+          .toArray()
+      : (diskSnapshot?.notes ?? []);
 
     const {
       archived_at: _archivedAt,
@@ -709,26 +752,30 @@ export class ExtensionTaskService {
         await archiveDocuments(notesCollection, archivedNotesList, session);
       }
       const deletedNotes =
-        archivedNotesList.length > 0
+        restoreFromMongo && archivedNotesList.length > 0
           ? await archivedNotes.deleteMany(
               { _id: { $in: archivedNotesList.map((n) => n._id) } },
               session ? { session } : undefined,
             )
           : { deletedCount: 0 };
       const deletedTasks =
-        archivedTasksList.length > 0
+        restoreFromMongo && archivedTasksList.length > 0
           ? await archivedTasks.deleteMany(
               { _id: { $in: archivedTasksList.map((t) => t._id) } },
               session ? { session } : undefined,
             )
           : { deletedCount: 0 };
-      const deletedPlan = await archivedPlans.deleteOne(
-        { _id: archivedPlan._id },
-        session ? { session } : undefined,
-      );
+      const deletedPlan = restoreFromMongo
+        ? await archivedPlans.deleteOne(
+            { _id: archivedPlan._id },
+            session ? { session } : undefined,
+          )
+        : { deletedCount: 1 };
       if (
-        (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length ||
-        (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length ||
+        (restoreFromMongo &&
+          (deletedNotes.deletedCount ?? 0) !== archivedNotesList.length) ||
+        (restoreFromMongo &&
+          (deletedTasks.deletedCount ?? 0) !== archivedTasksList.length) ||
         deletedPlan.deletedCount !== 1
       ) {
         this.logger.warn("restorePlan delete count mismatch", {
@@ -1071,64 +1118,360 @@ export class ExtensionTaskService {
     ]);
     const archivePath = this.resolveArchivePath();
 
-    return plans
-      .map((plan) => {
-        const code = stringField(plan, "code");
-        const planTasks = tasks.filter(
-          (task) => stringField(task, "plan_code") === code,
-        );
-        const taskCodes = new Set(
-          planTasks.map((task) => stringField(task, "code")).filter(Boolean),
-        );
-        const planNotes = notes.filter(
-          (note) =>
-            stringField(note, "plan_code") === code ||
-            taskCodes.has(stringField(note, "task_code")),
-        );
-        const jsonPath =
-          stringField(plan, "json_path") ||
-          path.join(archivePath, "plans", `${code}.json`);
+    const summaries = new Map<string, ArchivedPlanSummary>();
+    for (const diskPlan of await this.listArchivedPlansFromDisk()) {
+      summaries.set(diskPlan.code, diskPlan);
+    }
+    for (const mongoPlan of plans
+      .map((plan) => this.toArchivedPlanSummary(plan, tasks, notes, archivePath))
+      .filter((plan) => plan.code)) {
+      summaries.set(mongoPlan.code, mongoPlan);
+    }
 
-        return {
-          code,
-          title: stringField(plan, "title"),
-          description: optionalStringField(plan, "description"),
-          goal: optionalStringField(plan, "goal"),
-          context: optionalStringField(plan, "context"),
-          completedAt: optionalStringField(plan, "completed_at"),
-          archivedAt: optionalStringField(plan, "archived_at"),
-          tags: stringArrayField(plan, "tags"),
-          taskCount: planTasks.length,
-          noteCount: planNotes.length,
-          jsonPath,
-          tasks: planTasks
-            .map((task) => ({
-              code: stringField(task, "code"),
-              shortTask: stringField(task, "short_task"),
-              status: optionalStringField(task, "status"),
-              completedAt: optionalStringField(task, "completed_at"),
-              completionNote: optionalStringField(task, "completion_note"),
-              commitHash: optionalStringField(task, "commit_hash"),
-            }))
-            .sort((left, right) => left.code.localeCompare(right.code)),
-          notes: planNotes
-            .map((note) => ({
-              title: stringField(note, "title"),
-              body: stringField(note, "body"),
-              createdAt: optionalStringField(note, "created_at"),
-              tags: stringArrayField(note, "tags"),
-            }))
-            .sort((left, right) =>
-              (right.createdAt ?? "").localeCompare(left.createdAt ?? ""),
-            ),
-        } satisfies ArchivedPlanSummary;
-      })
-      .filter((plan) => plan.code)
+    return [...summaries.values()]
       .sort((left, right) =>
         (right.archivedAt ?? right.completedAt ?? "").localeCompare(
           left.archivedAt ?? left.completedAt ?? "",
         ),
       );
+  }
+
+  async getArchiveStorageStats(): Promise<ArchiveStorageStats> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const [
+      activePlans,
+      activeTasks,
+      activeNotes,
+      archivedPlans,
+      archivedTasks,
+      archivedNotes,
+      diskPlans,
+    ] = await Promise.all([
+      db.collection(settings.mongoPlansCollection).countDocuments(),
+      db.collection(settings.mongoTasksCollection).countDocuments(),
+      db.collection(settings.mongoNotesCollection).countDocuments(),
+      db.collection("archived_plans").countDocuments(),
+      db.collection("archived_tasks").countDocuments(),
+      db.collection("archived_notes").countDocuments(),
+      this.listArchivedPlansFromDisk(),
+    ]);
+    const archivePath = this.resolveArchivePath();
+    const plansPath = path.join(archivePath, "plans");
+    return {
+      activeDocuments: activePlans + activeTasks + activeNotes,
+      activePlans,
+      activeTasks,
+      activeNotes,
+      archivedDocuments: archivedPlans + archivedTasks + archivedNotes,
+      archivedPlans,
+      archivedTasks,
+      archivedNotes,
+      jsonSnapshots: diskPlans.length,
+      archivePath,
+      plansPath,
+    };
+  }
+
+  getBackupPath(): string {
+    return this.resolveBackupPath();
+  }
+
+  isBackupId(value: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}$/.test(
+      value.trim(),
+    );
+  }
+
+  async countBackupDataDocuments(): Promise<number> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const counts = await Promise.all(
+      this.getBackupDataCollectionNames(settings).map((name) =>
+        db.collection(name).countDocuments(),
+      ),
+    );
+    return counts.reduce((sum, count) => sum + count, 0);
+  }
+
+  async createBackup(reason = "manual"): Promise<CreateBackupResult> {
+    const settings = this.getConnectionSettings();
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    const id = backupStamp();
+    const backupPath = path.join(this.resolveBackupPath(), id);
+    await fs.mkdir(backupPath, { recursive: true });
+
+    const collectionNames = this.getBackupCollectionNames(settings);
+    const collections: Array<{ name: string; count: number; file: string }> = [];
+    let documentCount = 0;
+    let dataDocumentCount = 0;
+    const dataCollections = new Set(this.getBackupDataCollectionNames(settings));
+
+    for (const name of collectionNames) {
+      const docs = await db.collection(name).find({}).toArray();
+      const file = `${name}.json`;
+      await fs.writeFile(
+        path.join(backupPath, file),
+        JSON.stringify(docs, null, 2),
+        "utf8",
+      );
+      collections.push({ name, count: docs.length, file });
+      documentCount += docs.length;
+      if (dataCollections.has(name)) {
+        dataDocumentCount += docs.length;
+      }
+    }
+
+    const manifest = {
+      version: 1,
+      id,
+      created_at: new Date().toISOString(),
+      reason,
+      database: settings.mongoDbName,
+      document_count: documentCount,
+      data_document_count: dataDocumentCount,
+      collections,
+    };
+    await fs.writeFile(
+      path.join(backupPath, "manifest.json"),
+      JSON.stringify(manifest, null, 2),
+      "utf8",
+    );
+    await this.pruneBackups();
+
+    return { id, path: backupPath, documentCount, dataDocumentCount };
+  }
+
+  async listBackups(): Promise<BackupSummary[]> {
+    const backupRoot = this.resolveBackupPath();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(backupRoot);
+    } catch {
+      return [];
+    }
+
+    const backups: BackupSummary[] = [];
+    for (const entry of entries) {
+      const manifestPath = path.join(backupRoot, entry, "manifest.json");
+      try {
+        const manifest = JSON.parse(
+          await fs.readFile(manifestPath, "utf8"),
+        ) as {
+          id?: unknown;
+          created_at?: unknown;
+          reason?: unknown;
+          document_count?: unknown;
+          data_document_count?: unknown;
+          collections?: Array<{ name?: unknown; count?: unknown }>;
+        };
+        const id = stringValue(manifest.id) || entry;
+        const createdAt = stringValue(manifest.created_at);
+        if (!this.isBackupId(id) || !createdAt) continue;
+        const collections = Array.isArray(manifest.collections)
+          ? manifest.collections
+              .map((collection) => ({
+                name: stringValue(collection.name),
+                count:
+                  typeof collection.count === "number" ? collection.count : 0,
+              }))
+              .filter((collection) => collection.name)
+          : [];
+        backups.push({
+          id,
+          createdAt,
+          path: path.dirname(manifestPath),
+          reason: stringValue(manifest.reason) || undefined,
+          documentCount:
+            typeof manifest.document_count === "number"
+              ? manifest.document_count
+              : 0,
+          dataDocumentCount:
+            typeof manifest.data_document_count === "number"
+              ? manifest.data_document_count
+              : collections
+                  .filter((collection) => collection.name !== "ai_agents")
+                  .reduce((sum, collection) => sum + collection.count, 0),
+          collections,
+        });
+      } catch (error) {
+        this.logger.warn("backup manifest skipped", {
+          manifestPath,
+          error: String(error),
+        });
+      }
+    }
+
+    return backups.sort((left, right) =>
+      right.createdAt.localeCompare(left.createdAt),
+    );
+  }
+
+  async restoreBackup(backupId: string): Promise<RestoreBackupResult> {
+    const id = backupId.trim();
+    if (!this.isBackupId(id)) {
+      throw new Error("Invalid backup id.");
+    }
+    const backupPath = path.join(this.resolveBackupPath(), id);
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(backupPath, "manifest.json"), "utf8"),
+    ) as {
+      collections?: Array<{ name?: unknown; file?: unknown; count?: unknown }>;
+    };
+    const settings = this.getConnectionSettings();
+    const allowedCollections = new Set(this.getBackupCollectionNames(settings));
+    const sharedClient = await this.requireSharedClient(settings);
+    const db = sharedClient.db(settings.mongoDbName);
+    let restoredCollections = 0;
+    let restoredDocuments = 0;
+
+    for (const collectionRef of manifest.collections ?? []) {
+      const name = stringValue(collectionRef.name);
+      const file = stringValue(collectionRef.file);
+      if (!name || !file || !allowedCollections.has(name)) continue;
+      const docs = JSON.parse(
+        await fs.readFile(path.join(backupPath, file), "utf8"),
+      ) as Document[];
+      const collection = db.collection(name);
+      await collection.deleteMany({});
+      if (docs.length > 0) {
+        await collection.insertMany(docs, { ordered: false });
+      }
+      restoredCollections += 1;
+      restoredDocuments += docs.length;
+    }
+
+    return { id, restoredCollections, restoredDocuments };
+  }
+
+  private toArchivedPlanSummary(
+    plan: Document,
+    tasks: Document[],
+    notes: Document[],
+    archivePath: string,
+  ): ArchivedPlanSummary {
+    const code = stringField(plan, "code");
+    const planTasks = tasks.filter(
+      (task) => stringField(task, "plan_code") === code,
+    );
+    const taskCodes = new Set(
+      planTasks.map((task) => stringField(task, "code")).filter(Boolean),
+    );
+    const planNotes = notes.filter(
+      (note) =>
+        stringField(note, "plan_code") === code ||
+        taskCodes.has(stringField(note, "task_code")),
+    );
+    const jsonPath =
+      stringField(plan, "json_path") || path.join(archivePath, "plans", `${code}.json`);
+
+    return {
+      code,
+      title: stringField(plan, "title"),
+      description: optionalStringField(plan, "description"),
+      goal: optionalStringField(plan, "goal"),
+      context: optionalStringField(plan, "context"),
+      completedAt: optionalStringField(plan, "completed_at"),
+      archivedAt: optionalStringField(plan, "archived_at"),
+      tags: stringArrayField(plan, "tags"),
+      taskCount: planTasks.length,
+      noteCount: planNotes.length,
+      jsonPath,
+      tasks: planTasks
+        .map((task) => ({
+          code: stringField(task, "code"),
+          shortTask: stringField(task, "short_task"),
+          status: optionalStringField(task, "status"),
+          completedAt: optionalStringField(task, "completed_at"),
+          completionNote: optionalStringField(task, "completion_note"),
+          commitHash: optionalStringField(task, "commit_hash"),
+        }))
+        .sort((left, right) => left.code.localeCompare(right.code)),
+      notes: planNotes
+        .map((note) => ({
+          title: stringField(note, "title"),
+          body: stringField(note, "body"),
+          createdAt: optionalStringField(note, "created_at"),
+          tags: stringArrayField(note, "tags"),
+        }))
+        .sort((left, right) =>
+          (right.createdAt ?? "").localeCompare(left.createdAt ?? ""),
+        ),
+    };
+  }
+
+  private async listArchivedPlansFromDisk(): Promise<ArchivedPlanSummary[]> {
+    const plansPath = path.join(this.resolveArchivePath(), "plans");
+    let entries: string[];
+    try {
+      entries = await fs.readdir(plansPath);
+    } catch {
+      return [];
+    }
+
+    const summaries: ArchivedPlanSummary[] = [];
+    for (const fileName of entries) {
+      if (!fileName.toLowerCase().endsWith(".json")) continue;
+      const jsonPath = path.join(plansPath, fileName);
+      try {
+        const snapshot = await this.readArchivedPlanSnapshotByPath(jsonPath);
+        if (!snapshot) continue;
+        const summary = this.toArchivedPlanSummary(
+          snapshot.plan,
+          snapshot.tasks,
+          snapshot.notes,
+          this.resolveArchivePath(),
+        );
+        if (summary.code) summaries.push(summary);
+      } catch (error) {
+        this.logger.warn("archive json snapshot skipped", {
+          jsonPath,
+          error: String(error),
+        });
+      }
+    }
+    return summaries;
+  }
+
+  private async readArchivedPlanSnapshot(planCode: string): Promise<{
+    plan: Document;
+    tasks: Document[];
+    notes: Document[];
+  } | null> {
+    const jsonPath = path.join(
+      this.resolveArchivePath(),
+      "plans",
+      `${planCode}.json`,
+    );
+    return this.readArchivedPlanSnapshotByPath(jsonPath);
+  }
+
+  private async readArchivedPlanSnapshotByPath(jsonPath: string): Promise<{
+    plan: Document;
+    tasks: Document[];
+    notes: Document[];
+  } | null> {
+    const parsed = JSON.parse(await fs.readFile(jsonPath, "utf8")) as {
+      archived_at?: unknown;
+      plan?: Document;
+      tasks?: Document[];
+      notes?: Document[];
+    };
+    if (!parsed.plan) return null;
+    return {
+      plan: {
+        ...parsed.plan,
+        archived_at:
+          stringValue(parsed.archived_at) ||
+          optionalStringField(parsed.plan, "archived_at"),
+        json_path: jsonPath,
+      },
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+    };
   }
 
   async listNotes(): Promise<NoteRecord[]> {
@@ -1549,9 +1892,9 @@ export class ExtensionTaskService {
   private async ensureDoneTaskRun(
     task: TaskRecord | null,
     previous?: TaskRecord | null,
-  ): Promise<void> {
+  ): Promise<string | null> {
     if (!task || task.status !== "DONE") {
-      return;
+      return null;
     }
 
     const settings = this.getConnectionSettings();
@@ -1583,24 +1926,26 @@ export class ExtensionTaskService {
 
     if (typeof existing?.id === "string" && existing.id.trim()) {
       await updateRun(db, existing.id, runPatch);
-      return;
+      return existing.id;
     }
     if (existing?._id) {
+      const id = `task-${task.code}-${randomUUID()}`;
       await collection.updateOne(
         { _id: existing._id },
         {
           $set: {
-            id: `task-${task.code}-${randomUUID()}`,
+            id,
             ...runPatch,
             updated_at: new Date().toISOString(),
           },
         },
       );
-      return;
+      return id;
     }
 
+    const id = `task-${task.code}-${randomUUID()}`;
     await insertRun(db, {
-      id: `task-${task.code}-${randomUUID()}`,
+      id,
       agent_slug: runPatch.agent_slug ?? "any",
       started_at: startedAt,
       ended_at: endedAt,
@@ -1611,6 +1956,7 @@ export class ExtensionTaskService {
       commits: [],
       status: "completed",
     });
+    return id;
   }
 
   async listAiAgents(): Promise<
@@ -1646,6 +1992,53 @@ export class ExtensionTaskService {
   private resolveArchivePath() {
     const configured = this.config.get<string>("archivePath", "").trim();
     return configured || path.join(os.homedir(), "cortex-archive");
+  }
+
+  private resolveBackupPath() {
+    const configured = this.config.get<string>("backup.path", "").trim();
+    return configured || path.join(os.homedir(), "cortex-backups");
+  }
+
+  private getBackupRetentionDays() {
+    const value = this.config.get<number>("backup.retentionDays", 30);
+    return Math.max(1, Math.min(365, Math.floor(value)));
+  }
+
+  private getBackupCollectionNames(settings: ConnectionSettings) {
+    return [
+      settings.mongoPlansCollection,
+      settings.mongoTasksCollection,
+      settings.mongoNotesCollection,
+      "agent_runs",
+      "ai_agents",
+      "archived_plans",
+      "archived_tasks",
+      "archived_notes",
+      "logs",
+    ].filter((name, index, all) => name && all.indexOf(name) === index);
+  }
+
+  private getBackupDataCollectionNames(settings: ConnectionSettings) {
+    return this.getBackupCollectionNames(settings).filter(
+      (name) => name !== "ai_agents",
+    );
+  }
+
+  private async pruneBackups() {
+    const retentionMs = this.getBackupRetentionDays() * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - retentionMs;
+    for (const backup of await this.listBackups()) {
+      const created = Date.parse(backup.createdAt);
+      if (Number.isNaN(created) || created >= cutoff) continue;
+      try {
+        await fs.rm(backup.path, { recursive: true, force: true });
+      } catch (error) {
+        this.logger.warn("backup prune failed", {
+          backupPath: backup.path,
+          error: String(error),
+        });
+      }
+    }
   }
 
   private async withTaskStore<T>(
@@ -1699,12 +2092,25 @@ function stringField(document: Document, key: string) {
   if (value instanceof Date) {
     return value.toISOString();
   }
-  return typeof value === "string" ? value : "";
+  return stringValue(value);
 }
 
 function optionalStringField(document: Document, key: string) {
   const value = stringField(document, key);
   return value || undefined;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function backupStamp() {
+  return new Date()
+    .toISOString()
+    .slice(0, 23)
+    .replace(/T/, "_")
+    .replace(/:/g, "-")
+    .replace(/\./g, "-");
 }
 
 function stringArrayField(document: Document, key: string) {

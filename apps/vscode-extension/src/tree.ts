@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 
 import type { ExtensionTaskService } from "./service.js";
 
-export type ControlSection = "modules" | "options" | "settings" | "theme" | "status";
+export type ControlSection = "modules" | "settings" | "theme" | "status";
 
 type ControlCommand = {
   command: string;
@@ -60,7 +60,6 @@ export class CortexTreeProvider implements vscode.TreeDataProvider<ControlTreeNo
     }
     return [
       section("modules", "Módulos", "Workspaces", "layout", moduleNodes()),
-      section("options", "Options", "Operación", "settings-gear", optionNodes()),
       section("settings", "Settings", "Configuración", "tools", settingNodes()),
       section("theme", "Theme", currentThemeLabel(), "color-mode", themeNodes()),
       section("status", "Status", statusSummary(this.service), "pulse", statusNodes(this.service)),
@@ -174,25 +173,16 @@ function moduleNodes(): ControlTreeNode[] {
   ];
 }
 
-function optionNodes(): ControlTreeNode[] {
-  return [
-    action("option:refresh", "Refresh", "Recargar estado de Cortex", "refresh", "cortex.refresh"),
-    action("option:search", "Search query", "Actualizar texto de búsqueda global", "search", "cortex.setSearchQuery"),
-    action("option:tags", "Tag filter", "Filtrar por tags", "tag", "cortex.setTagFilter"),
-    action("option:projects", "Project filter", "Filtrar por project", "project", "cortex.setProjectFilter"),
-    action("option:groups", "Group filter", "Filtrar por grupo/lane", "list-tree", "cortex.setGroupFilter"),
-    action("option:plan", "Action plan", "Seleccionar plan activo", "target", "cortex.selectPlan"),
-    action("option:clear", "Clear filters", "Resetear filtros y selección", "clear-all", "cortex.clearFilters"),
-    action("option:cycles", "Dependency cycles", "Abrir reporte de ciclos", "warning", "cortex.listCycles"),
-  ];
-}
-
 function settingNodes(): ControlTreeNode[] {
   return [
+    action("setting:refresh", "Actualizar", "Recargar estado de Cortex", "refresh", "cortex.refresh"),
+    action("setting:register-mcp", "Register MCP", "Registrar servidor MCP en el cliente IA", "server", "cortex.registerMCP"),
+    action("setting:install-skills", "Install Skills", "Instalar skills de Cortex en el agente IA", "book", "cortex.installSkills"),
     action("setting:database", "Mongo database", "Elegir conexión y colección", "database", "cortex.selectDatabase"),
     action("setting:mongo-url", "Mongo URL", "Guardar connection string", "plug", "cortex.setMongoUrl"),
     action("setting:sample-db", "Bootstrap sample DB", "Crear datos locales de ejemplo", "beaker", "cortex.bootstrapDatabase"),
     action("setting:agent-icon", "AI agent icons", "Asignar icono a un agente", "account", "cortex.setAiAgentIcon"),
+    action("setting:cycles", "Dependency cycles", "Abrir reporte de ciclos", "warning", "cortex.listCycles"),
     action(
       "setting:vscode",
       "VS Code settings",
@@ -206,15 +196,16 @@ function settingNodes(): ControlTreeNode[] {
 
 function themeNodes(): ControlTreeNode[] {
   return [
-    action("theme:cortex", "Cortex", "Tema oscuro propio", "color-mode", "cortex.setTheme", ["cortex"]),
-    action("theme:vscode", "VS Code", "Usar variables del editor", "color-mode", "cortex.setTheme", ["vscode"]),
+    action("theme:cortex", "Retro Space", "Tema oscuro por defecto", "color-mode", "cortex.setTheme", ["cortex"]),
+    action("theme:light", "Light", "Tema claro", "color-mode", "cortex.setTheme", ["light"]),
+    action("theme:vscode", "VS Code", "Sigue el tema del editor", "color-mode", "cortex.setTheme", ["vscode"]),
+    action("theme:space", "Space", "Azul profundo con acento cian neón", "color-mode", "cortex.setTheme", ["space"]),
   ];
 }
 
 function statusNodes(service: ExtensionTaskService): ControlTreeNode[] {
   const settings = service.getConnectionSettings();
   const filters = service.getFilterState();
-  const theme = currentThemeLabel();
   const filterCount =
     filters.selectedProjects.length +
     filters.selectedGroups.length +
@@ -238,13 +229,16 @@ function statusNodes(service: ExtensionTaskService): ControlTreeNode[] {
       filterCount > 0 ? `${filterCount} active` : "none",
       filterCount > 0 ? "filter-filled" : "filter",
     ),
-    status("status:theme", "Theme", theme, "color-mode"),
+
   ];
 }
 
 function currentThemeLabel() {
   const theme = vscode.workspace.getConfiguration("cortex").get<string>("theme", "cortex");
-  return theme === "vscode" ? "VS Code" : "Cortex";
+  if (theme === "vscode") return "VS Code";
+  if (theme === "light") return "Light";
+  if (theme === "space") return "Space";
+  return "Retro Space";
 }
 
 function statusSummary(service: ExtensionTaskService) {

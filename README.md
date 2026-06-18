@@ -25,17 +25,42 @@ Cortex nace como herramienta interna para no perder de vista el estado de planes
 
 El problema concreto que ataca: cuando un plan tiene veinte tareas con dependencias cruzadas o una documentación tiene decenas de páginas conectadas por tags y referencias, el listado plano no alcanza. Hace falta un grafo navegable, persistencia entre sesiones y superficies operativas a un atajo de distancia.
 
-## Capacidades principales
+## Módulos
 
-- Sidebar con árbol de tareas agrupadas por plan.
-- Webview con grafo PERT/DAG basado en React Flow, layout jerárquico vía Dagre.
-- Panel de notas con búsqueda en vivo, tags, vínculos opcionales a tarea o plan, pinned notes.
-- Panel de logs read-only con eventos agrupados por ejecución, filtro por tag y fallback para logs legacy.
-- Panel de archivo para revisar planes archivados y sus tareas congeladas.
-- Panel Cortex Brain para elegir una carpeta local y visualizar conexiones entre archivos `.md`/`.mdx`, tags, cuentas y referencias.
-- Panel switcher (`Ctrl+Alt+N`, `Ctrl+Alt+Shift+N`) para saltar entre superficies.
-- Filtros por plan, proyecto, grupo, tags, estados y severidad — todos persistidos.
-- Detección automática de ciclos en dependencias.
+Cortex expone **8 módulos** (webviews) más un sidebar:
+
+| Módulo | Comando | Descripción |
+|--------|---------|-------------|
+| **Graph** | `cortex.openGraph` | Grafo PERT/DAG de planes y tareas con layout Dagre, detección de ciclos, mini-mapa y filtros. |
+| **Plans** | `cortex.openPlans` | Datatable de todos los planes con filtros por estado/producto/release/autor, búsqueda, y drawer con detalle + acceso al editor. |
+| **Ledger** | `cortex.openLedger` | Telemetría de ejecuciones de agentes: modelo, duración, tokens, archivos tocados, planes y tareas asociadas. |
+| **Notes** | `cortex.openNotes` | Notas markdown con búsqueda en vivo, tags, pinned, recordatorios one-shot y vínculo opcional a tarea o plan. |
+| **Logs** | `cortex.openLogs` | Logs de ejecución agrupados por `execution_id`, filtro por tag, eventos anidados y fallback para logs legacy. |
+| **Archive** | `cortex.openArchive` | Planes archivados con sus tareas congeladas, búsqueda y exportación. |
+| **Brain** | `cortex.openBrain` | Escaneo local de `.md`/`.mdx` y grafo de relaciones por links, tags, referencias y cuentas contables. Sin dependencia de Mongo. |
+| **Script Flow** | `cortex.openScriptFlow` | Análisis estático de scripts TS/Python/SQL: panel lateral con AST, métricas y drawer analítico. |
+
+Además: sidebar **Task Navigator** (`cortex.openTasks`) con árbol de tareas agrupadas por plan, y **Plan Editor** (se abre desde Graph o Plans) para edición completa de metadata y tareas.
+
+Panel switcher: `Ctrl+Alt+Shift+N` / `Ctrl+Alt+N`. Filtros persistidos por plan, proyecto, tags, estados y severidad.
+
+## Capturas
+
+<img src="assets/marketplace/graph-plan.png" width="700" alt="Graph — grafo PERT/DAG con panel de plan activo">
+
+*Graph — grafo PERT/DAG con layout Dagre, detección de ciclos y superposición del plan activo con progreso, tareas y metadatos.*
+
+---
+
+<img src="assets/marketplace/plans.png" width="700" alt="Plans — datatable de planes">
+
+*Plans — datatable de todos los planes con filtros por estado/producto/release/autor, búsqueda, progreso y drawer con detalle.*
+
+---
+
+<img src="assets/marketplace/archive.png" width="700" alt="Archive — planes archivados">
+
+*Archive — exploración de planes archivados con tareas congeladas, búsqueda y exportación. Cortex no solo visualiza, también preserva.*
 
 ## Vista de arquitectura
 
@@ -52,13 +77,15 @@ VS Code Extension Host (Node)
    |-- ExtensionTaskService
    |     '-- buildGraphSnapshot (puro, en memoria)
    |
-   '-- Webviews (esbuild, IIFE, minificado en prod)
-         |-- PERT Graph    (React + React Flow + Dagre)
-         |-- Notes Panel   (React + Markdown editor)
-         |-- Logs Panel    (React + listado paginado)
-         |-- Archive Panel (React + planes archivados)
-         |-- Cortex Brain  (React Flow + scan local .md/.mdx)
-         '-- Script Flow   (TS / Python / SQL)
+    '-- Webviews (esbuild, IIFE, minificado en prod)
+          |-- Graph         (React + React Flow + Dagre)
+          |-- Plans         (React + DataTable + drawer)
+          |-- Ledger        (React + DataTable + telemetría)
+          |-- Notes         (React + Markdown editor)
+          |-- Logs          (React + listado paginado)
+          |-- Archive       (React + planes archivados)
+          |-- Brain         (React Flow + scan local .md/.mdx)
+          '-- Script Flow   (TS / Python / SQL)
 ```
 
 El webview nunca habla directo con MongoDB. La extensión resuelve los datos en el host y envía snapshots JSON serializados.
@@ -91,20 +118,20 @@ El webview nunca habla directo con MongoDB. La extensión resuelve los datos en 
 
 ## Panels & keyboard shortcuts
 
-La extensión VS Code expone siete superficies. Tasks/Graph/Notes/Logs/Archive viven sobre el mismo `SharedMongoClient` (sin handshakes por operación); Cortex Brain opera sobre carpetas locales sin Mongo.
-
 | Superficie | Comando | Keybinding |
 |------------|---------|------------|
 | Task Navigator (sidebar) | `cortex.openTasks` |  |
-| PERT Graph | `cortex.openGraph` |  |
+| Graph | `cortex.openGraph` |  |
+| Plans | `cortex.openPlans` |  |
+| Ledger | `cortex.openLedger` |  |
 | Notes | `cortex.openNotes` / `cortex.newNote` | `Ctrl+Alt+Shift+N` / `Ctrl+Alt+N` |
 | Logs | `cortex.openLogs` |  |
 | Archive | `cortex.openArchive` / `cortex.archivePlan` |  |
-| Cortex Brain | `cortex.openBrain` (`cortex.openMdxGraph` alias) |  |
+| Brain | `cortex.openBrain` |  |
 | Script Flow | `cortex.openScriptFlow` / `cortex.openScriptFlowForSelection` |  |
 | Panel switcher | `cortex.switchPanel` |  |
 
-Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a Tasks/Graph/Notes/Logs/Archive/Cortex Brain y al resto de filtros.
+Desde cualquier panel, `cortex.showOptions` abre un QuickPick con acceso a los 8 módulos y filtros. Graph/Plans/Ledger/Notes/Logs/Archive comparten el mismo `SharedMongoClient`; Brain opera sobre carpetas locales sin Mongo.
 
 ## v0.1.6
 

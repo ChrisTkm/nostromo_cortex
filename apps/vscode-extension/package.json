@@ -2,7 +2,7 @@
   "name": "cortex-local",
   "displayName": "Cortex Local",
   "publisher": "AlbornozStudio",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -33,7 +33,9 @@
     "onCommand:cortex.setTheme",
     "onCommand:cortex.openLedger",
     "onCommand:cortex.openPlans",
-    "onCommand:cortex.openPlanEditor"
+    "onCommand:cortex.openPlanEditor",
+    "onCommand:cortex.registerMCP",
+    "onCommand:cortex.installSkills"
   ],
   "contributes": {
     "commands": [
@@ -206,6 +208,14 @@
       {
         "command": "cortex.openPlanEditor",
         "title": "Cortex: Open Plan Editor"
+      },
+      {
+        "command": "cortex.registerMCP",
+        "title": "Cortex: Register MCP server"
+      },
+      {
+        "command": "cortex.installSkills",
+        "title": "Cortex: Install AI skills"
       }
     ],
     "viewsContainers": {
@@ -359,6 +369,35 @@
           "default": "",
           "description": "Archive output directory. If empty, Cortex uses ~/cortex-archive."
         },
+        "cortex.backup.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run lightweight Cortex JSON backups in the background."
+        },
+        "cortex.backup.path": {
+          "type": "string",
+          "default": "",
+          "description": "Backup output directory. If empty, Cortex uses ~/cortex-backups."
+        },
+        "cortex.backup.intervalMinutes": {
+          "type": "number",
+          "default": 240,
+          "minimum": 15,
+          "maximum": 1440,
+          "description": "Background backup interval in minutes."
+        },
+        "cortex.backup.retentionDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Number of days to keep automatic backup folders."
+        },
+        "cortex.backup.notify": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a VS Code notification after successful automatic backups."
+        },
         "cortex.brainMaxFiles": {
           "type": "number",
           "default": 800,
@@ -404,9 +443,11 @@
           "default": "cortex",
           "enum": [
             "cortex",
-            "vscode"
+            "light",
+            "vscode",
+            "space"
           ],
-          "description": "Visual theme for Cortex panels. 'cortex' (default) applies the Cortex dark design (dorado brand, JetBrains Mono). 'vscode' follows the VS Code editor theme."
+          "description": "Visual theme for Cortex panels. 'cortex' (default) dark retro-space design. 'light' tema claro. 'vscode' sigue el tema del editor VS Code. 'space' azul profundo con acento cian neón."
         }
       }
     }

@@ -306,6 +306,135 @@
   --cortex-glow-accent: 0 14px 28px rgba(0, 0, 0, 0.28);
 }
 
+/* ============================================================
+   THEME: Space
+   Fondo azul-negro profundo + acento cian neón (sci-fi HUD)
+   Basado en la estética original de v0.1.5 pero con colores fijos
+   ============================================================ */
+:root[data-cortex-theme="space"] {
+  --cortex-accent: #22d3ee;
+  --cortex-accent-soft: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
+  --cortex-bg: #0a0e17;
+  --cortex-surface: #111827;
+  --cortex-surface-strong: #1a2235;
+  --cortex-border: #1e293b;
+  --cortex-border-accent: rgba(34, 211, 238, 0.15);
+  --cortex-border-strong: color-mix(
+    in srgb,
+    var(--cortex-accent) 48%,
+    var(--cortex-border)
+  );
+  --cortex-text-strong: #e2e8f0;
+  --cortex-text: color-mix(in srgb, #e2e8f0 86%, transparent);
+  --cortex-text-muted: #94a3b8;
+  --cortex-text-faint: color-mix(in srgb, #94a3b8 66%, transparent);
+  --cortex-hover-bg: color-mix(
+    in srgb,
+    rgba(255, 255, 255, 0.06) 72%,
+    transparent
+  );
+  --cortex-selected-bg: color-mix(
+    in srgb,
+    var(--cortex-accent) 12%,
+    transparent
+  );
+  --cortex-selected-border: color-mix(
+    in srgb,
+    var(--cortex-accent) 48%,
+    transparent
+  );
+  --cortex-surface-raised: #1e293b;
+  --cortex-surface-darker: #060a12;
+  --cortex-glow-accent: 0 0 24px rgba(34, 211, 238, 0.18);
+  --cortex-glass-bg: color-mix(
+    in srgb,
+    var(--cortex-surface-strong) 90%,
+    transparent
+  );
+  --cortex-canvas-bg: #060a12;
+  --cortex-minimap-mask: color-mix(
+    in srgb,
+    var(--cortex-bg) 68%,
+    transparent
+  );
+  --cortex-bg-overlay: color-mix(
+    in srgb,
+    var(--cortex-bg) 92%,
+    transparent
+  );
+  --cortex-bg-base: #060a14;
+  --cortex-bg-mid: #0f1a2e;
+  --cortex-bg-dark: #02060d;
+  --cortex-overlay: color-mix(
+    in srgb,
+    var(--cortex-bg-base) 82%,
+    transparent
+  );
+  --cortex-surface-input: color-mix(
+    in srgb,
+    var(--cortex-bg-mid) 82%,
+    transparent
+  );
+  --cortex-node-brain-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--cortex-bg-mid) 96%, transparent),
+    color-mix(in srgb, var(--cortex-bg-dark) 96%, transparent)
+  );
+  --cortex-node-brain-selected-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.6), 0 18px 34px rgba(0, 0, 0, 0.28);
+  --cortex-brand: #22d3ee;
+  color-scheme: dark;
+}
+
+/* ============================================================
+   THEME: Light
+   Fondo claro + acento azul + texto oscuro
+   ============================================================ */
+:root[data-cortex-theme="light"] {
+  --cortex-accent: #6366f1;
+  --cortex-accent-soft: color-mix(in srgb, var(--cortex-accent) 10%, transparent);
+  --cortex-bg: #f5f5f4;
+  --cortex-surface: #ffffff;
+  --cortex-surface-strong: #ffffff;
+  --cortex-border: #e5e5e4;
+  --cortex-border-accent: color-mix(in srgb, var(--cortex-accent) 18%, transparent);
+  --cortex-border-strong: color-mix(in srgb, var(--cortex-accent) 52%, var(--cortex-border));
+  --cortex-text-strong: #1c1917;
+  --cortex-text: color-mix(in srgb, #1c1917 86%, transparent);
+  --cortex-text-muted: #a8a29e;
+  --cortex-text-faint: color-mix(in srgb, #a8a29e 66%, transparent);
+  --cortex-hover-bg: color-mix(in srgb, rgba(0, 0, 0, 0.04) 72%, transparent);
+  --cortex-selected-bg: color-mix(in srgb, var(--cortex-accent) 10%, transparent);
+  --cortex-selected-border: color-mix(in srgb, var(--cortex-accent) 40%, transparent);
+  --cortex-surface-raised: #ffffff;
+  --cortex-surface-darker: #e7e5e4;
+  --cortex-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  --cortex-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --cortex-glow-accent: none;
+  --cortex-glass-bg: color-mix(in srgb, var(--cortex-surface) 94%, transparent);
+  --cortex-canvas-bg: #f0efed;
+  --cortex-minimap-mask: color-mix(in srgb, var(--cortex-bg) 68%, transparent);
+  --cortex-bg-overlay: color-mix(in srgb, var(--cortex-bg) 92%, transparent);
+  --cortex-bg-base: #f0efed;
+  --cortex-bg-mid: #e7e5e4;
+  --cortex-bg-dark: #d6d3d1;
+  --cortex-overlay: color-mix(in srgb, var(--cortex-bg) 82%, transparent);
+  --cortex-surface-input: color-mix(in srgb, var(--cortex-bg) 82%, transparent);
+  --cortex-node-brain-bg: linear-gradient(180deg, #ffffff, #f0efed);
+  --cortex-node-brain-selected-shadow: 0 0 0 1px rgba(99, 102, 241, 0.6), 0 18px 34px rgba(0, 0, 0, 0.06);
+  --cortex-brand: var(--cortex-accent);
+  color-scheme: light;
+}
+
+:root[data-cortex-theme="light"] .page-header__prefix {
+  color: var(--cortex-accent);
+  font-weight: 700;
+}
+
 /* ===========================================================
    GLOBAL STYLES
    =========================================================== */
@@ -314,10 +443,7 @@
 html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; }
 body {
   overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(80, 126, 255, 0.12) 0%, transparent 28%),
-    radial-gradient(circle at top right, rgba(10, 170, 145, 0.12) 0%, transparent 24%),
-    linear-gradient(180deg, color-mix(in srgb, var(--cortex-bg) 94%, #06080d 6%), var(--cortex-bg));
+  background: var(--cortex-bg);
   color: var(--cortex-text);
   font-family: var(--cortex-font);
 }
@@ -327,7 +453,7 @@ body {
      .app-shell          → .graph-module (graph/styles.css)
      .app-graph          → .graph-canvas (graph/styles.css)
      .app-toolbar*       → .graph-secondbar (graph/styles.css) + átomos
-     .onboarding-state*  → .graph-onboarding (graph/styles.css)
+      .onboarding-state*  → usado por GraphApp (onboarding)
      .graph-warning-banner (duplicado; el vivo está en graph/styles.css)
      .hud-corner*        → componente HudCorner huérfano
      .plan-filter*       → componente PlanFilter huérfano
@@ -1497,6 +1623,7 @@ body {
   color: var(--cortex-text-strong);
   font-size: var(--cortex-text-sm);
   font-weight: 700;
+  text-shadow: none;
 }
 
 .notes-list__actions,
@@ -1547,6 +1674,7 @@ body {
   font-size: var(--cortex-text-xs);
   font-weight: 700;
   text-transform: uppercase;
+  text-shadow: none;
 }
 
 .notes-list__search-row,
@@ -1777,6 +1905,7 @@ body {
   color: var(--cortex-text-strong);
   font-size: 18px;
   line-height: 1.25;
+  text-shadow: none;
 }
 
 .notes-editor-panel {
@@ -1906,6 +2035,7 @@ body {
   color: var(--cortex-text-strong);
   font-size: var(--cortex-text-sm);
   font-weight: 700;
+  text-shadow: none;
 }
 
 .note-editor__field {

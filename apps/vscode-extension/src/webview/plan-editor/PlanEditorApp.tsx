@@ -276,7 +276,7 @@ export function PlanEditorApp() {
           onClick={() => setActiveTab("metadata")}
           size="small"
         >
-          Metadata
+          Plan
         </Button>
         <Button
           className={activeTab === "tasks" ? "is-active" : undefined}
@@ -284,7 +284,7 @@ export function PlanEditorApp() {
           onClick={() => setActiveTab("tasks")}
           size="small"
         >
-          Tasks ({tasks.length})
+          Tareas ({tasks.length})
         </Button>
       </div>
       <div className="pe__top-buttons">
@@ -294,7 +294,7 @@ export function PlanEditorApp() {
           onClick={handleSave}
           size="small"
         >
-          Save metadata
+          Guardar
         </Button>
       </div>
     </div>
@@ -471,7 +471,7 @@ export function PlanEditorApp() {
         {activeTab === "tasks" && (
           <div className="drawer-panel">
             <section className="drawer-section drawer-section--spacious">
-              <div className="drawer-section__label">Tasks</div>
+              <div className="drawer-section__label">Tareas</div>
               <div className="editor-fields">
                 {selectedCodes.size > 0 && (
                   <div className="pe__bulk-bar">
@@ -580,7 +580,7 @@ export function PlanEditorApp() {
                         <tr>
                           <th style={{ width: 32 }}></th>
                           <th>Code</th>
-                          <th>Task</th>
+                          <th>Tarea</th>
                           <th>Status</th>
                           <th>Agent</th>
                           <th>Severity</th>

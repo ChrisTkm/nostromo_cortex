@@ -22,6 +22,7 @@
   color: var(--cortex-brand);
   white-space: nowrap;
   min-width: 0;
+  text-shadow: none;
 }
 
 .page-header__prefix {

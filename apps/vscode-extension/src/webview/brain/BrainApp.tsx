@@ -402,7 +402,7 @@ export function BrainApp() {
             onClick={() => vscode.postMessage({ type: "brain:refresh" })}
             size="small"
           >
-            Refresh
+            Actualizar
           </Button>
           <Button
             intent="change"
@@ -647,7 +647,7 @@ export function BrainApp() {
               intent="action"
               onClick={() => vscode.postMessage({ type: "brain:pickFolder" })}
             >
-              Elegir carpeta
+              Carpeta
             </Button>
           </section>
         )}

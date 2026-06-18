@@ -9,7 +9,7 @@ export function NotesEmptyState(props: {
         The list keeps selection visible, search highlights matches, and unsaved changes stay marked while you edit.
       </p>
       <button className="notes-button notes-button--primary" onClick={props.onCreate} type="button">
-        + New note
+        Crear nota
       </button>
     </div>
   );

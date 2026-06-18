@@ -488,7 +488,7 @@ export function LedgerApp() {
       name="CORTEX LEDGER"
       actions={
         <Button intent="refresh" onClick={handleRefresh} size="small">
-          Refresh
+          Actualizar
         </Button>
       }
     />
@@ -645,16 +645,6 @@ function RunDetailDrawer({
         size="small"
       >
         Guardar
-      </Button>
-      <Button
-        intent="change"
-        onClick={() => {
-          setDraft(draftFromRun(run));
-          setIsEditing(false);
-        }}
-        size="small"
-      >
-        Cancelar
       </Button>
     </>
   ) : (

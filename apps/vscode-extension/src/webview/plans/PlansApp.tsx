@@ -473,10 +473,10 @@ export function PlansApp() {
       actions={
         <>
           <Button intent="new" onClick={() => setWizardOpen(true)} size="small">
-            + Nuevo
+            Crear plan
           </Button>
           <Button intent="refresh" onClick={handleRefresh} size="small">
-            Refresh
+            Actualizar
           </Button>
         </>
       }
@@ -553,7 +553,7 @@ export function PlansApp() {
         selectedPlan ? (
           <>
             <Button intent="change" onClick={() => handleViewGraph(selectedPlan.code)} size="small">
-              View graph
+              Ver graph
             </Button>
             <Button intent="change" onClick={() => handleOpenEditor(selectedPlan.code)} size="small">
               Editar

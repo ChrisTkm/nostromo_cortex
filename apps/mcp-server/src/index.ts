@@ -165,6 +165,8 @@ async function main() {
     const now = new Date();
     const existing = input.id
       ? await db.collection("agent_runs").findOne({ id: input.id })
+      : input.taskCodes?.length
+      ? await db.collection("agent_runs").findOne({ task_codes: { $in: input.taskCodes } })
       : null;
     const taskCodes = dedupe([
       ...((existing?.task_codes as string[] | undefined) ?? []),
@@ -212,9 +214,10 @@ async function main() {
       ...(input.notes ? { notes: input.notes } : existing?.notes ? { notes: existing.notes as string } : {})
     };
 
-    if (input.id && existing) {
-      const { id, ...update } = patch;
-      await updateRun(db, id, update);
+    if (existing) {
+      const existingId = (existing.id as string) ?? patch.id;
+      const { id: _patchId, ...update } = patch;
+      await updateRun(db, existingId, update);
     } else {
       await insertRun(db, patch);
     }

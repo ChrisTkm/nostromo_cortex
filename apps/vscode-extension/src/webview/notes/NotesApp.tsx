@@ -35,7 +35,7 @@ export function NotesApp() {
       title="CORTEX NOTES"
       actions={
         <Button intent="action" onClick={createNote} size="small">
-          New note
+          Crear nota
         </Button>
       }
     />

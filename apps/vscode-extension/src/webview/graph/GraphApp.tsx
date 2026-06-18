@@ -14,6 +14,7 @@ import {
 import { Module } from "../components/organisms";
 import type {
   ActionPlanRecord,
+  ConnectionSettings,
   CriticalPathResult,
   FilterCatalog,
   GraphDirection,
@@ -77,6 +78,7 @@ export function GraphApp() {
     string | undefined
   >();
   const [totalTaskCount, setTotalTaskCount] = useState(0);
+  const [connection, setConnection] = useState<ConnectionSettings | null>(null);
   const [viewport, setViewport] = useState<{
     zoom?: number;
     pan?: { x: number; y: number };
@@ -128,6 +130,7 @@ export function GraphApp() {
       setPlans(msg.plans);
       setPlanTasks(msg.planTasks);
       setTotalTaskCount(msg.totals.totalTaskCount);
+      setConnection(msg.connection);
       setOrientation(msg.state.orientation);
       setShowMiniMap(msg.state.showMiniMap);
       setGroupByLane(msg.state.groupByLane ?? false);
@@ -256,7 +259,7 @@ export function GraphApp() {
             onClick={() => vscode.postMessage({ type: "newTask" })}
             size="small"
           >
-            New
+            Crear tarea
           </Button>
           <Button
             disabled={isRefreshing}
@@ -267,7 +270,7 @@ export function GraphApp() {
             }}
             size="small"
           >
-            Refresh
+            Actualizar
           </Button>
         </>
       }
@@ -579,16 +582,25 @@ export function GraphApp() {
     >
       <Panel className="graph-canvas" variant="canvas">
         {showOnboarding ? (
-          <section className="graph-onboarding" aria-label="Cortex setup">
-            <div className="graph-onboarding__eyebrow">Cortex setup</div>
-            <h1 className="graph-onboarding__title">
-              Start with a Mongo database.
+          <section className="onboarding-state" aria-label="Configuración de Cortex">
+            <div className="onboarding-state__eyebrow">Configuración</div>
+            <h1 className="onboarding-state__title">
+              {connection?.mongoDbName
+                ? "Base de datos vacía"
+                : "Conecta tu base de datos"}
             </h1>
-            <p className="graph-onboarding__text">
-              Connect an existing database or seed a local sample to see tasks,
-              plans, notes, and logs in Cortex.
+            <p className="onboarding-state__text">
+              {connection?.mongoDbName
+                ? `La base de datos "${connection.mongoDbName}" está vacía. Crea tu primera tarea para empezar.`
+                : "Selecciona o crea una base de datos Mongo para usar Cortex."}
             </p>
-            <div className="graph-onboarding__actions">
+            <div className="onboarding-state__actions">
+              <Button
+                intent="new"
+                onClick={() => vscode.postMessage({ type: "newTask" })}
+              >
+                Crear tarea
+              </Button>
               <Button
                 intent="action"
                 onClick={() =>
@@ -601,13 +613,7 @@ export function GraphApp() {
                 intent="change"
                 onClick={() => vscode.postMessage({ type: "selectDatabase" })}
               >
-                Select database
-              </Button>
-              <Button
-                intent="new"
-                onClick={() => vscode.postMessage({ type: "newTask" })}
-              >
-                New task
+                Seleccionar base de datos
               </Button>
               <Button
                 intent="refresh"
@@ -616,11 +622,11 @@ export function GraphApp() {
                   vscode.postMessage({ type: "refresh" });
                 }}
               >
-                Refresh
+                Actualizar
               </Button>
             </div>
-            <p className="graph-onboarding__hint">
-              Default connection: mongodb://127.0.0.1:27017
+            <p className="onboarding-state__hint">
+              Conexión: {connection?.mongoUrl ?? "mongodb://127.0.0.1:27017"}
             </p>
           </section>
         ) : (

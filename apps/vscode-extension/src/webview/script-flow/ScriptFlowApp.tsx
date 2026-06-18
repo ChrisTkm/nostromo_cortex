@@ -283,7 +283,7 @@ export function ScriptFlowApp() {
             onClick={() => sendRefresh(vscode)}
             size="small"
           >
-            Refresh
+            Actualizar
           </Button>
           <Button
             intent="change"
@@ -457,7 +457,7 @@ export function ScriptFlowApp() {
               intent="action"
               onClick={() => sendSelectScript(vscode)}
             >
-              Select script…
+               Seleccionar script…
             </Button>
           </section>
         )}

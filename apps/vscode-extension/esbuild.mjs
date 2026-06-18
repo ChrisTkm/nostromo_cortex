@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, cp, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -122,6 +122,22 @@ async function copyStaticAssets() {
     throw new Error(
       `esbuild copyStaticAssets: missing after copy: ${list}. Build aborted — .vsix would ship broken Python analyzer.`,
     );
+  }
+
+  // Copy MCP server dist so it travels in the VSIX
+  const mcpSrc = path.resolve("..", "mcp-server", "dist");
+  const mcpDest = path.resolve("dist", "mcp-server");
+  if (existsSync(mcpSrc)) {
+    await mkdir(mcpDest, { recursive: true });
+    await cp(mcpSrc, mcpDest, { recursive: true, force: true });
+  }
+
+  // Copy skills from ai-skills hub so they travel in the VSIX
+  const skillsSrc = path.resolve("..", "..", "..", "ai-skills", "skills", "global");
+  const skillsDest = path.resolve("dist", "skills");
+  if (existsSync(skillsSrc)) {
+    await mkdir(skillsDest, { recursive: true });
+    await cp(skillsSrc, skillsDest, { recursive: true, force: true });
   }
 }
 
