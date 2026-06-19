@@ -95,6 +95,28 @@ describe("analyzeSqlDocument", () => {
     expect(allObs).toMatch(/(SyntaxError|Expected|parse)/i);
   });
 
+  it("flags unused CTEs as flow gaps", () => {
+    const snap = run(loadFixture("sql-unused-cte.sql"));
+    const allObs = snap.analysis.observations.join(" ");
+    expect(allObs).toMatch(/cte .* is never referenced/i);
+    const cteNodes = snap.nodes.filter((n) => n.kind === "cte");
+    expect(cteNodes.length).toBeGreaterThan(0);
+    expect(cteNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            autoObservations: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "flow-gap",
+                message: expect.stringMatching(/cte .* is never referenced/i),
+              }),
+            ]),
+          }),
+        }),
+      ]),
+    );
+  });
+
   describe("fixture-based", () => {
     it("analyzes multi-statement CREATE + INSERT + CTE SELECT from fixture", () => {
       const snap = run(loadFixture("multi-statement.sql"));

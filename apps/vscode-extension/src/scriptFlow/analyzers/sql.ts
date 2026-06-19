@@ -252,6 +252,8 @@ class SqlFlowAnalyzer {
       }
       this.processSelectBody(cteId, cte.stmt as unknown as Select, `CTE ${cteName}`);
     }
+
+    this.flagUnusedCtes(ctes);
   }
 
   private processSelectBody(ownerId: string, select: Select, ownerLabel: string) {
@@ -363,6 +365,25 @@ class SqlFlowAnalyzer {
     this.connectReferencedCtes(subqueryId, select);
 
     return subqueryId;
+  }
+
+  private flagUnusedCtes(ctes: readonly { name: unknown; stmt: unknown }[]) {
+    for (const cte of ctes) {
+      const cteName = this.readIdentifier(cte.name);
+      const cteId = this.cteNodeIds.get(cteName.toLowerCase());
+      if (!cteId) {
+        continue;
+      }
+      if (this.hasOutgoingEdge(cteId)) {
+        continue;
+      }
+      if (this.selectReferencesTable(cte.stmt as Select, cteName)) {
+        continue;
+      }
+      const message = `CTE ${cteName} is never referenced.`;
+      this.observations.add(message);
+      this.addFlowGap(cteId, message);
+    }
   }
 
   private normalizeFrom(select: Select): SqlFromItem[] {
@@ -518,6 +539,15 @@ class SqlFlowAnalyzer {
       kind,
       ...(label ? { label } : {})
     });
+  }
+
+  private hasOutgoingEdge(id: string) {
+    return this.edges.some((edge) => edge.from === id);
+  }
+
+  private selectReferencesTable(select: Select, tableName: string) {
+    const normalized = tableName.toLowerCase();
+    return this.normalizeFrom(select).some((item) => (item.table ?? "").toLowerCase() === normalized);
   }
 
   private shorten(value: string, maxLength: number) {

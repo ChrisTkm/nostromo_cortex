@@ -88,6 +88,28 @@ describe("analyzeTypeScriptDocument", () => {
     expect(fn?.meta?.async).toBe(true);
   });
 
+  it("flags empty loop bodies as flow gaps", () => {
+    const snap = run(loadFixture("typescript-empty-loop.ts"));
+    const allObs = snap.analysis.observations.join(" ");
+    expect(allObs).toMatch(/loop body is empty/i);
+    const loopNodes = snap.nodes.filter((n) => n.kind === "loop");
+    expect(loopNodes.length).toBeGreaterThan(0);
+    expect(loopNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            autoObservations: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "flow-gap",
+                message: expect.stringMatching(/loop body is empty/i),
+              }),
+            ]),
+          }),
+        }),
+      ]),
+    );
+  });
+
   describe("fixture-based", () => {
     it("produces switch → branch nodes from switch-case.ts", () => {
       const snap = run(loadFixture("switch-case.ts"));

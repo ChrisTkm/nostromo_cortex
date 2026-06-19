@@ -372,6 +372,9 @@ class PythonFlowAnalyzer {
     if (bodySegment.entries.length > 0) {
       this.connect([{ id: loopId }], bodySegment.entries);
       this.connect(bodySegment.exits, [loopId], "loop");
+    } else if (body && body.namedChildren.length === 1 && body.namedChildren[0]?.type === "pass_statement") {
+      this.observations.add(`Loop body is pass-only near line ${body.startPosition.row + 1}.`);
+      this.addFlowGap(loopId, "Loop body is pass-only.");
     }
 
     return {
@@ -408,6 +411,13 @@ class PythonFlowAnalyzer {
       const clauseSegment = clauseBlock ? this.parseStatementList(clauseBlock.namedChildren) : EMPTY_SEGMENT;
       if (clauseSegment.entries.length > 0) {
         this.connect([{ id: exceptId }], clauseSegment.entries);
+      }
+      if (!exceptionType || /(^|[^a-z])(Exception|BaseException)([^a-z]|$)/i.test(exceptionType)) {
+        const broadMessage = exceptionType
+          ? `Broad except handler (${exceptionType}) may hide failures.`
+          : "Bare except handler may hide failures.";
+        this.observations.add(broadMessage);
+        this.addFlowGap(exceptId, broadMessage);
       }
       exceptInfos.push({ id: exceptId, exits: clauseSegment.exits.length > 0 ? [...clauseSegment.exits] : [{ id: exceptId }] });
     }

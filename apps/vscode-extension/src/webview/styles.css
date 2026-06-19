@@ -356,24 +356,12 @@
     transparent
   );
   --cortex-canvas-bg: #060a12;
-  --cortex-minimap-mask: color-mix(
-    in srgb,
-    var(--cortex-bg) 68%,
-    transparent
-  );
-  --cortex-bg-overlay: color-mix(
-    in srgb,
-    var(--cortex-bg) 92%,
-    transparent
-  );
+  --cortex-minimap-mask: color-mix(in srgb, var(--cortex-bg) 68%, transparent);
+  --cortex-bg-overlay: color-mix(in srgb, var(--cortex-bg) 92%, transparent);
   --cortex-bg-base: #060a14;
   --cortex-bg-mid: #0f1a2e;
   --cortex-bg-dark: #02060d;
-  --cortex-overlay: color-mix(
-    in srgb,
-    var(--cortex-bg-base) 82%,
-    transparent
-  );
+  --cortex-overlay: color-mix(in srgb, var(--cortex-bg-base) 82%, transparent);
   --cortex-surface-input: color-mix(
     in srgb,
     var(--cortex-bg-mid) 82%,
@@ -396,20 +384,40 @@
    ============================================================ */
 :root[data-cortex-theme="light"] {
   --cortex-accent: #6366f1;
-  --cortex-accent-soft: color-mix(in srgb, var(--cortex-accent) 10%, transparent);
+  --cortex-accent-soft: color-mix(
+    in srgb,
+    var(--cortex-accent) 10%,
+    transparent
+  );
   --cortex-bg: #f5f5f4;
   --cortex-surface: #ffffff;
   --cortex-surface-strong: #ffffff;
   --cortex-border: #e5e5e4;
-  --cortex-border-accent: color-mix(in srgb, var(--cortex-accent) 18%, transparent);
-  --cortex-border-strong: color-mix(in srgb, var(--cortex-accent) 52%, var(--cortex-border));
+  --cortex-border-accent: color-mix(
+    in srgb,
+    var(--cortex-accent) 18%,
+    transparent
+  );
+  --cortex-border-strong: color-mix(
+    in srgb,
+    var(--cortex-accent) 52%,
+    var(--cortex-border)
+  );
   --cortex-text-strong: #1c1917;
   --cortex-text: color-mix(in srgb, #1c1917 86%, transparent);
   --cortex-text-muted: #a8a29e;
   --cortex-text-faint: color-mix(in srgb, #a8a29e 66%, transparent);
   --cortex-hover-bg: color-mix(in srgb, rgba(0, 0, 0, 0.04) 72%, transparent);
-  --cortex-selected-bg: color-mix(in srgb, var(--cortex-accent) 10%, transparent);
-  --cortex-selected-border: color-mix(in srgb, var(--cortex-accent) 40%, transparent);
+  --cortex-selected-bg: color-mix(
+    in srgb,
+    var(--cortex-accent) 10%,
+    transparent
+  );
+  --cortex-selected-border: color-mix(
+    in srgb,
+    var(--cortex-accent) 40%,
+    transparent
+  );
   --cortex-surface-raised: #ffffff;
   --cortex-surface-darker: #e7e5e4;
   --cortex-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
@@ -425,7 +433,8 @@
   --cortex-overlay: color-mix(in srgb, var(--cortex-bg) 82%, transparent);
   --cortex-surface-input: color-mix(in srgb, var(--cortex-bg) 82%, transparent);
   --cortex-node-brain-bg: linear-gradient(180deg, #ffffff, #f0efed);
-  --cortex-node-brain-selected-shadow: 0 0 0 1px rgba(99, 102, 241, 0.6), 0 18px 34px rgba(0, 0, 0, 0.06);
+  --cortex-node-brain-selected-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.6), 0 18px 34px rgba(0, 0, 0, 0.06);
   --cortex-brand: var(--cortex-accent);
   color-scheme: light;
 }
@@ -439,8 +448,17 @@
    GLOBAL STYLES
    =========================================================== */
 
-* { box-sizing: border-box; }
-html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; }
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
 body {
   overflow: hidden;
   background: var(--cortex-bg);
@@ -775,7 +793,11 @@ body {
 }
 
 .react-flow__controls-button {
-  background: color-mix(in srgb, var(--cortex-surface) 94%, transparent) !important;
+  background: color-mix(
+    in srgb,
+    var(--cortex-surface) 94%,
+    transparent
+  ) !important;
   border-bottom: 1px solid var(--cortex-border) !important;
   color: var(--cortex-text) !important;
   fill: var(--cortex-text) !important;
@@ -3257,6 +3279,14 @@ body {
   width: min(420px, 42vw);
 }
 
+.script-flow-second-bar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
 .script-flow-surface {
   position: relative;
   min-height: 0;
@@ -3287,6 +3317,14 @@ body {
   background: var(--cortex-canvas-bg);
 }
 
+.script-flow-state-card--empty {
+  border-color: color-mix(in srgb, var(--accent-cyan) 42%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-cyan) 18%, transparent),
+    0 16px 32px color-mix(in srgb, var(--accent-cyan) 8%, transparent),
+    var(--cortex-shadow-soft);
+}
+
 .script-flow-state-card,
 .script-flow-boundary {
   display: grid;
@@ -3302,11 +3340,39 @@ body {
 
 .script-flow-state-card--error,
 .script-flow-boundary {
-  border-color: color-mix(in srgb, var(--status-failed) 48%, transparent);
+  border-color: color-mix(in srgb, var(--status-in-progress) 48%, transparent);
 }
 
 .script-flow-state-card--unsupported {
-  border-color: color-mix(in srgb, var(--cortex-accent-amber) 42%, transparent);
+  border-color: color-mix(in srgb, var(--cortex-node-function) 42%, transparent);
+}
+
+.script-flow-state-card--error {
+  background:
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--status-in-progress) 14%, transparent),
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--cortex-surface-strong) 94%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--status-in-progress) 16%, transparent),
+    0 18px 34px color-mix(in srgb, var(--status-in-progress) 10%, transparent),
+    var(--cortex-shadow-soft);
+}
+
+.script-flow-state-card--unsupported {
+  background:
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--cortex-node-function) 14%, transparent),
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--cortex-surface-strong) 94%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cortex-node-function) 16%, transparent),
+    0 18px 34px color-mix(in srgb, var(--cortex-node-function) 10%, transparent),
+    var(--cortex-shadow-soft);
 }
 
 .script-flow-state-card__label,
@@ -3315,6 +3381,18 @@ body {
   font-size: var(--cortex-text-xs);
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.script-flow-state-card--empty .script-flow-state-card__label {
+  color: var(--accent-cyan);
+}
+
+.script-flow-state-card--error .script-flow-state-card__label {
+  color: var(--status-in-progress);
+}
+
+.script-flow-state-card--unsupported .script-flow-state-card__label {
+  color: var(--cortex-node-function);
 }
 
 .script-flow-state-card__title,
@@ -3375,7 +3453,11 @@ body {
 }
 
 .sf-lang--typescript {
-  border-color: color-mix(in srgb, var(--cortex-node-function) 42%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--cortex-node-function) 42%,
+    transparent
+  );
   color: var(--cortex-node-function);
 }
 
@@ -3420,6 +3502,46 @@ body {
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--cortex-level-warn) 42%, transparent),
     var(--cortex-shadow);
+}
+
+/* Sección sin cerrar (flow-gap): los faltantes clásicos usan sandía/cereza;
+   otros warnings heredan el color del tipo de nodo que los originó. */
+.sf-atom-node--flow-gap {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #ff3b6b 72%, transparent),
+    0 10px 26px color-mix(in srgb, #ff3b6b 20%, transparent),
+    var(--cortex-shadow);
+}
+
+/* Nota de texto a la que apunta la flecha coloreada del flow-gap. */
+.sf-gap-note {
+  --sf-gap-color: #ff3b6b;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 208px;
+  padding: 7px 10px;
+  border: 1.5px solid var(--sf-gap-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sf-gap-color) 12%, var(--cortex-surface));
+  color: var(--cortex-text-strong);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sf-gap-color) 30%, transparent),
+    0 8px 20px color-mix(in srgb, var(--sf-gap-color) 16%, transparent);
+}
+
+.sf-gap-note__icon {
+  color: var(--sf-gap-color);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.sf-gap-note__handle {
+  opacity: 0;
 }
 
 .sf-node__kind {
@@ -3473,6 +3595,159 @@ body {
 .sf-node__signal--gap {
   border-color: color-mix(in srgb, var(--cortex-level-warn) 38%, transparent);
   color: var(--cortex-level-warn);
+}
+
+.sf-message-panel .drawer-section {
+  gap: 8px;
+}
+
+.sf-message-link {
+  display: grid;
+  gap: 4px;
+  border-left: 2px solid var(--status-in-progress);
+  background: color-mix(in srgb, var(--status-in-progress) 8%, transparent);
+  white-space: normal;
+}
+
+.sf-message-link:hover,
+.sf-message-link.is-active {
+  background: color-mix(in srgb, var(--status-in-progress) 14%, transparent);
+}
+
+.sf-message-link--error {
+  border-left-color: var(--status-failed);
+  background: color-mix(in srgb, var(--status-failed) 8%, transparent);
+}
+
+.sf-message-link--warning {
+  border-left-color: var(--cortex-level-warn);
+  background: color-mix(in srgb, var(--cortex-level-warn) 8%, transparent);
+}
+
+.sf-message-link--info {
+  border-left-color: var(--cortex-level-info);
+  background: color-mix(in srgb, var(--cortex-level-info) 8%, transparent);
+}
+
+.sf-message-link__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cortex-text-faint);
+  font-size: var(--cortex-text-xs);
+  text-transform: uppercase;
+}
+
+.sf-message-link__kind {
+  color: var(--status-in-progress);
+  font-weight: 700;
+}
+
+.sf-message-link__message {
+  color: var(--cortex-text-strong);
+  font-size: var(--cortex-text-sm);
+  line-height: var(--cortex-line-height);
+}
+
+.sf-message-link__node {
+  overflow: hidden;
+  color: var(--cortex-text-muted);
+  font-family: var(--cortex-font-mono);
+  font-size: var(--cortex-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--active:not(.script-flow-edge--loop) {
+  color: var(--accent-cyan);
+  --script-flow-edge-color: var(--accent-cyan);
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--loop {
+  color: var(--cortex-node-loop);
+  --script-flow-edge-color: var(--cortex-node-loop);
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--gap {
+  color: var(--script-flow-edge-color, #ff3b6b);
+  --script-flow-edge-color: #ff3b6b;
+}
+
+.script-flow-canvas .react-flow__edge-textbg {
+  fill: transparent;
+  fill-opacity: 0;
+  stroke: transparent;
+}
+
+.script-flow-canvas .react-flow__edge-text {
+  fill: var(--script-flow-edge-color, var(--status-in-progress));
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--cortex-canvas-bg) 68%, transparent);
+  stroke-width: 2px;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--active:not(.script-flow-edge--loop) .react-flow__edge-path {
+  stroke-dasharray: 6 6;
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--accent-cyan) 76%, transparent)
+  );
+  animation:
+    script-flow-edge-flow 3.5s linear infinite,
+    script-flow-edge-pulse 2s ease-in-out infinite;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--active:not(.script-flow-edge--loop) .react-flow__edge-interaction {
+  stroke-width: 14;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--loop .react-flow__edge-path {
+  stroke-dasharray: 7 5;
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--cortex-node-loop) 72%, transparent)
+  );
+  animation:
+    script-flow-edge-flow 3s linear infinite,
+    script-flow-edge-pulse 2.2s ease-in-out infinite;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--loop .react-flow__edge-interaction {
+  stroke-width: 14;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--gap .react-flow__edge-path {
+  stroke-dasharray: 5 4;
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--script-flow-edge-color) 70%, transparent)
+  );
+  animation:
+    script-flow-edge-flow 2.6s linear infinite,
+    script-flow-edge-pulse 1.9s ease-in-out infinite;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--gap .react-flow__edge-interaction {
+  stroke-width: 16;
+}
+
+@keyframes script-flow-edge-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes script-flow-edge-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    filter: drop-shadow(
+      0 0 3px color-mix(in srgb, var(--script-flow-edge-color) 72%, transparent)
+    );
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(
+      0 0 6px color-mix(in srgb, var(--script-flow-edge-color) 88%, transparent)
+    );
+  }
 }
 
 .drawer-link__signals {

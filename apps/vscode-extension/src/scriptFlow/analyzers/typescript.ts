@@ -372,6 +372,9 @@ class TypeScriptFlowAnalyzer {
     if (bodySegment.entries.length > 0) {
       this.connect([{ id: loopId }], bodySegment.entries);
       this.connect(bodySegment.exits, [loopId], "loop");
+    } else if (ts.isBlock(statement.statement) && statement.statement.statements.length === 0) {
+      this.observations.add(`Loop body is empty near line ${this.toRange(statement.statement).startLine}.`);
+      this.addFlowGap(loopId, "Loop body is empty.");
     }
 
     return {

@@ -69,6 +69,51 @@ describe("analyzePythonDocument", () => {
     expect(snap.analysis.observations.length).toBeGreaterThan(0);
   });
 
+  it("flags broad except handlers", async (ctx) => {
+    skipIfNotReady(ctx);
+    const snap = await run(loadFixture("python-broad-except.py"));
+    const allObs = snap.analysis.observations.join(" ");
+    expect(allObs).toMatch(/broad except handler/i);
+    const tryNodes = snap.nodes.filter((n) => n.kind === "tryCatch");
+    expect(tryNodes.length).toBeGreaterThan(0);
+    expect(tryNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            autoObservations: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "flow-gap",
+                message: expect.stringMatching(/broad except handler/i),
+              }),
+            ]),
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("flags pass-only loops", async (ctx) => {
+    skipIfNotReady(ctx);
+    const snap = await run(loadFixture("python-empty-loop.py"));
+    const allObs = snap.analysis.observations.join(" ");
+    expect(allObs).toMatch(/loop body is pass-only/i);
+    const loopNodes = snap.nodes.filter((n) => n.kind === "loop");
+    expect(loopNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            autoObservations: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "flow-gap",
+                message: expect.stringMatching(/loop body is pass-only/i),
+              }),
+            ]),
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("reports observation naming the function without explicit return", async (ctx) => {
     skipIfNotReady(ctx);
     const snap = await run(loadFixture("python-with-observations.py"));

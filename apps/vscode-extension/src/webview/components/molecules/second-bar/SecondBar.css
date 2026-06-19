@@ -3,14 +3,23 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  width: 100%;
 }
 
 .molecule-second-bar__search,
-.molecule-second-bar__filters,
-.molecule-second-bar__status {
+.molecule-second-bar__filters {
   min-width: 0;
 }
 
 .molecule-second-bar__filters {
   flex: 1 1 auto;
+}
+
+.molecule-second-bar__status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
 }

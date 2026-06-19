@@ -72,6 +72,9 @@ export function FlowNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
     data.autoObservations?.some((item) => item.severity === "warning")
       ? "sf-atom-node--has-warning"
       : "",
+    data.autoObservations?.some((item) => item.kind === "flow-gap")
+      ? "sf-atom-node--flow-gap"
+      : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -114,16 +117,29 @@ function NodeFooter(props: {
   sourceFile?: string;
 }) {
   const { counts, sourceFile } = props;
-  const hasSignals = counts.inline > 0 || counts.diagnostic > 0 || counts["flow-gap"] > 0;
+  const hasSignals =
+    counts.inline > 0 || counts.diagnostic > 0 || counts["flow-gap"] > 0;
   if (!sourceFile && !hasSignals) {
     return null;
   }
   return (
     <span className="sf-node__footer">
-      {sourceFile ? <span className="sf-node__source">From {sourceFile}</span> : null}
-      {counts.inline > 0 ? <span className="sf-node__signal">Inline {counts.inline}</span> : null}
-      {counts.diagnostic > 0 ? <span className="sf-node__signal sf-node__signal--diagnostic">Diag {counts.diagnostic}</span> : null}
-      {counts["flow-gap"] > 0 ? <span className="sf-node__signal sf-node__signal--gap">Flow {counts["flow-gap"]}</span> : null}
+      {sourceFile ? (
+        <span className="sf-node__source">From {sourceFile}</span>
+      ) : null}
+      {counts.inline > 0 ? (
+        <span className="sf-node__signal">Inline {counts.inline}</span>
+      ) : null}
+      {counts.diagnostic > 0 ? (
+        <span className="sf-node__signal sf-node__signal--diagnostic">
+          Diag {counts.diagnostic}
+        </span>
+      ) : null}
+      {counts["flow-gap"] > 0 ? (
+        <span className="sf-node__signal sf-node__signal--gap">
+          Flow {counts["flow-gap"]}
+        </span>
+      ) : null}
     </span>
   );
 }

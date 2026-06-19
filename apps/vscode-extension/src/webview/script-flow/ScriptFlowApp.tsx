@@ -13,6 +13,7 @@ import {
 } from "@xyflow/react";
 import { toPng } from "html-to-image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 import {
   isScriptFlowHostMessage,
@@ -26,6 +27,7 @@ import {
 import {
   isScriptFlowSnapshot,
   SCRIPT_FLOW_NODE_KINDS,
+  type ScriptFlowAutoObservation,
   type ScriptFlowNode,
   type ScriptFlowNodeKind,
   type ScriptFlowSnapshot,
@@ -34,15 +36,31 @@ import { Button, Metric, Search, Toggle } from "../components/atoms";
 import { Footer, Header, SecondBar } from "../components/molecules";
 import { Module } from "../components/organisms";
 import { AnalysisDrawer } from "./components/AnalysisDrawer";
-import { FlowNode, KIND_LABELS, type FlowNodeData } from "./components/FlowNode";
+import {
+  FlowNode,
+  KIND_LABELS,
+  NODE_ACCENT_VAR,
+  type FlowNodeData,
+} from "./components/FlowNode";
+import { GapNode, type GapNodeData } from "./components/GapNode";
 import { vscode } from "./vscodeApi";
-const nodeTypes = { scriptFlow: FlowNode } as NodeTypes;
-const EMPTY_FLOW: { nodes: Array<Node<FlowNodeData>>; edges: Edge[] } = {
+const nodeTypes = { scriptFlow: FlowNode, scriptFlowGap: GapNode } as NodeTypes;
+// Real analysis nodes plus the phantom gap-notes that hang off flow-gaps.
+type AnyFlowNode = Node<FlowNodeData> | Node<GapNodeData>;
+const EMPTY_FLOW: { nodes: AnyFlowNode[]; edges: Edge[] } = {
   nodes: [],
   edges: [],
 };
 const NODE_WIDTH = 226;
 const NODE_HEIGHT = 100;
+const GAP_NODE_WIDTH = 208;
+const GAP_NODE_HEIGHT = 56;
+// Missing-gap notes use the cherry/watermelon warning tone.
+const GAP_COLOR = "#ff3b6b";
+const ACTIVE_FLOW_COLOR = "var(--accent-cyan)";
+const EDGE_LABEL_COLOR = "var(--status-in-progress)";
+const LOOP_FLOW_COLOR = "var(--cortex-node-loop)";
+const INACTIVE_FLOW_COLOR = "#526279";
 
 type ScriptFlowViewState =
   | {
@@ -103,13 +121,15 @@ export function ScriptFlowApp() {
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<
-    Node<FlowNodeData>,
+    AnyFlowNode,
     Edge
   > | null>(null);
   const [isNarrowLayout, setIsNarrowLayout] = useState(
     () => window.innerWidth < 800,
   );
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"messages" | "nodes" | null>(
+    null,
+  );
   const [showMiniMap, setShowMiniMap] = useState(true);
 
   const kindCounts = useMemo(() => {
@@ -152,6 +172,12 @@ export function ScriptFlowApp() {
     setSearchQuery("");
     setActiveMatchIndex(0);
   }, [state]);
+
+  useEffect(() => {
+    if (state.status !== "snapshot") {
+      setDrawerMode(null);
+    }
+  }, [state.status]);
 
   const flow = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -230,7 +256,10 @@ export function ScriptFlowApp() {
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
       }
-      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+      if (
+        e.key === "Escape" &&
+        document.activeElement === searchInputRef.current
+      ) {
         setSearchQuery("");
         setActiveMatchIndex(0);
       }
@@ -270,6 +299,7 @@ export function ScriptFlowApp() {
   }, [activeMatchIndex, searchMatches.length]);
 
   const snapshot = state.status === "snapshot" ? state.snapshot : null;
+  const messageCount = snapshot ? countNodeMessages(snapshot.nodes) : 0;
 
   const header = (
     <Header
@@ -312,6 +342,39 @@ export function ScriptFlowApp() {
           value={searchQuery}
         />
       }
+      status={
+        <div className="script-flow-second-bar__actions">
+          <Button
+            className={drawerMode === "messages" ? "is-active" : undefined}
+            disabled={messageCount === 0}
+            intent="change"
+            onClick={() =>
+              setDrawerMode((current) =>
+                current === "messages" ? null : "messages",
+              )
+            }
+            size="small"
+            title={
+              messageCount > 0
+                ? "Lista de mensajes detectados"
+                : "Sin mensajes detectados"
+            }
+          >
+            Mensajes {messageCount > 0 ? messageCount : ""}
+          </Button>
+          <Button
+            className={drawerMode === "nodes" ? "is-active" : undefined}
+            intent="change"
+            onClick={() =>
+              setDrawerMode((current) => (current === "nodes" ? null : "nodes"))
+            }
+            size="small"
+            title="Lista de nodos"
+          >
+            Nodos
+          </Button>
+        </div>
+      }
     />
   ) : undefined;
 
@@ -336,15 +399,6 @@ export function ScriptFlowApp() {
       }
       right={
         <div className="sf-footer__right">
-          <Button
-            className={isDrawerOpen ? "is-active" : undefined}
-            intent="change"
-            onClick={() => setIsDrawerOpen((current) => !current)}
-            size="small"
-            title="Lista de nodos"
-          >
-            Nodos
-          </Button>
           <Button
             className={showMiniMap ? "is-active" : undefined}
             intent="change"
@@ -381,21 +435,27 @@ export function ScriptFlowApp() {
   const drawer = snapshot ? (
     <AnalysisDrawer
       activeNodeId={selectedNodeId}
-      isOpen={isDrawerOpen}
+      isOpen={drawerMode !== null}
+      mode={drawerMode ?? "nodes"}
       nodes={snapshot.nodes}
-      onClose={() => setIsDrawerOpen(false)}
+      onClose={() => setDrawerMode(null)}
       onSelectNode={(nodeId) => {
         setSelectedNodeId(nodeId);
         sendSelectNode(vscode, nodeId);
         if (isNarrowLayout) {
-          setIsDrawerOpen(false);
+          setDrawerMode(null);
         }
       }}
     />
   ) : undefined;
 
   return (
-    <Module drawer={drawer} footer={footer} header={header} secondBar={secondBar}>
+    <Module
+      drawer={drawer}
+      footer={footer}
+      header={header}
+      secondBar={secondBar}
+    >
       <div
         className={`script-flow-surface${state.status !== "snapshot" ? " script-flow-surface--state" : ""}`}
       >
@@ -410,8 +470,12 @@ export function ScriptFlowApp() {
                 nodesDraggable
                 onInit={setFlowInstance}
                 onNodeClick={(_, node) => {
-                  setSelectedNodeId(node.id);
-                  sendSelectNode(vscode, node.id);
+                  const nodeId = resolveSelectableNodeId(node);
+                  if (!nodeId) {
+                    return;
+                  }
+                  setSelectedNodeId(nodeId);
+                  sendSelectNode(vscode, nodeId);
                 }}
                 proOptions={{ hideAttribution: true }}
               >
@@ -453,11 +517,8 @@ export function ScriptFlowApp() {
                 ))}
               </div>
             ) : null}
-            <Button
-              intent="action"
-              onClick={() => sendSelectScript(vscode)}
-            >
-               Seleccionar script…
+            <Button intent="action" onClick={() => sendSelectScript(vscode)}>
+              Seleccionar script…
             </Button>
           </section>
         )}
@@ -538,6 +599,25 @@ function getPreferredNodeId(snapshot: ScriptFlowSnapshot) {
   return snapshot.analysis.entryPoints[0] ?? snapshot.nodes[0]?.id ?? null;
 }
 
+function countNodeMessages(nodes: ScriptFlowNode[]) {
+  return nodes.reduce((count, node) => {
+    const observations = Array.isArray(node.meta?.autoObservations)
+      ? (node.meta.autoObservations as ScriptFlowAutoObservation[])
+      : [];
+    return count + observations.length;
+  }, 0);
+}
+
+function resolveSelectableNodeId(node: AnyFlowNode) {
+  if (node.type === "scriptFlow") {
+    return node.id;
+  }
+  if (node.type === "scriptFlowGap" && node.id.startsWith("gap:")) {
+    return node.id.slice("gap:".length);
+  }
+  return null;
+}
+
 function buildFlowModel(
   snapshot: ScriptFlowSnapshot,
   selectedNodeId: string | null,
@@ -576,36 +656,211 @@ function buildFlowModel(
     },
   }));
 
-  const edges: Edge[] = snapshot.edges.map((edge, index) => ({
-    id: `${edge.kind}:${edge.from}:${edge.to}:${index}`,
-    source: edge.from,
-    target: edge.to,
-    label: edge.label,
-    animated: edge.label === "loop",
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: edge.label === "loop" ? "#a855f7" : "#526279",
-    },
-    style: {
-      stroke: edge.label === "loop" ? "#a855f7" : "#526279",
-      strokeWidth: 2.1,
-    },
-    ...(edge.label
-      ? {
-          labelStyle: {
-            fill: "var(--vscode-editor-foreground)",
-            fontSize: 11,
-            fontWeight: 600,
-          },
-        }
-      : {}),
-  }));
+  const entryIds = new Set(
+    snapshot.nodes
+      .filter((node) => node.kind === "entry")
+      .map((node) => node.id),
+  );
+  const selectedNode = selectedNodeId
+    ? snapshot.nodes.find((node) => node.id === selectedNodeId)
+    : undefined;
+  // Only scope-highlight when a function (or the entry/main process) is selected:
+  // those nodes own a body subgraph. Selecting a lone if/loop dims nothing.
+  const scopeEdges =
+    selectedNode &&
+    (selectedNode.kind === "function" || selectedNode.kind === "entry")
+      ? collectScopeEdges(snapshot, selectedNode.id)
+      : null;
 
-  return computeLayout(nodes, edges, orientation);
+  const edges: Edge[] = snapshot.edges.map((edge, index) => {
+    const isLoop = edge.label === "loop";
+    const isEntry = entryIds.has(edge.from);
+    const isHot = scopeEdges
+      ? scopeEdges.has(`${edge.from}->${edge.to}`)
+      : true;
+    const isActiveEdge = isEntry || isHot;
+    const color = isLoop
+      ? LOOP_FLOW_COLOR
+      : isActiveEdge
+        ? ACTIVE_FLOW_COLOR
+        : INACTIVE_FLOW_COLOR;
+    return {
+      id: `${edge.kind}:${edge.from}:${edge.to}:${index}`,
+      source: edge.from,
+      target: edge.to,
+      label: edge.label,
+      animated: isActiveEdge,
+      className: [
+        "script-flow-edge",
+        isActiveEdge ? "script-flow-edge--active" : "",
+        isLoop ? "script-flow-edge--loop" : "",
+        isEntry ? "script-flow-edge--entry" : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color,
+      },
+      style: {
+        stroke: color,
+        strokeWidth: isActiveEdge ? (isEntry ? 2.8 : 2.6) : 2.1,
+        opacity: scopeEdges ? (isActiveEdge ? 1 : 0.18) : 1,
+      },
+      ...(edge.label
+        ? {
+            labelStyle: {
+              fill: EDGE_LABEL_COLOR,
+              fontSize: 11,
+              fontWeight: 600,
+              ...(scopeEdges && !isActiveEdge ? { opacity: 0.18 } : {}),
+            },
+            labelBgPadding: [0, 0],
+            labelBgStyle: {
+              fill: "transparent",
+              fillOpacity: 0,
+            },
+          }
+        : {}),
+    };
+  });
+
+  // Materialize every flow-gap as a phantom note + a typed dashed arrow
+  // pointing at the open path. Warnings stay full-opacity even while a function
+  // scope dims the rest — an unclosed section should never fade into the back.
+  const gapNodes: Array<Node<GapNodeData>> = [];
+  for (const node of snapshot.nodes) {
+    const gaps = Array.isArray(node.meta?.autoObservations)
+      ? (node.meta.autoObservations as ScriptFlowAutoObservation[]).filter(
+          (obs) => obs.kind === "flow-gap",
+        )
+      : [];
+    if (gaps.length === 0) {
+      continue;
+    }
+
+    const gapId = `gap:${node.id}`;
+    const gapColor = colorForGaps(node.kind, gaps);
+    gapNodes.push({
+      id: gapId,
+      type: "scriptFlowGap",
+      selectable: false,
+      draggable: false,
+      position: { x: 0, y: 0 },
+      initialWidth: GAP_NODE_WIDTH,
+      initialHeight: GAP_NODE_HEIGHT,
+      data: {
+        accentColor: gapColor,
+        message: gaps.map((gap) => describeGap(gap.message)).join(" · "),
+      },
+    });
+    edges.push({
+      id: `gap-edge:${node.id}`,
+      source: node.id,
+      target: gapId,
+      selectable: false,
+      animated: true,
+      className: "script-flow-edge script-flow-edge--gap",
+      markerEnd: { type: MarkerType.ArrowClosed, color: gapColor },
+      style: {
+        ...edgeAccentStyle(gapColor),
+        stroke: gapColor,
+        strokeWidth: 2.4,
+        strokeDasharray: "5 4",
+      },
+    });
+  }
+
+  return computeLayout([...nodes, ...gapNodes], edges, orientation);
+}
+
+function edgeAccentStyle(color: string) {
+  return { "--script-flow-edge-color": color } as CSSProperties;
+}
+
+function colorForGaps(
+  kind: ScriptFlowNodeKind,
+  gaps: ScriptFlowAutoObservation[],
+) {
+  return gaps.some((gap) => isClassicMissingPathMessage(gap.message))
+    ? GAP_COLOR
+    : NODE_ACCENT_VAR[kind];
+}
+
+function isClassicMissingPathMessage(message: string) {
+  return /no explicit return|no explicit else|no default path|unreachable|catch block is empty/i.test(
+    message,
+  );
+}
+
+// Turns the analyzer's English gap message into a short, descriptive Spanish
+// note for the phantom gap-node. Falls back to the raw message for any new gap.
+function describeGap(message: string): string {
+  if (/no explicit return/i.test(message)) {
+    return "Falta return explícito — la función no cierra su flujo";
+  }
+  if (/no explicit else/i.test(message)) {
+    return "Falta rama else — la decisión no cubre el caso contrario";
+  }
+  if (/no default path/i.test(message)) {
+    return "Switch sin default — falta el caso por defecto";
+  }
+  if (/unreachable/i.test(message)) {
+    return "Código inalcanzable tras un flujo terminal";
+  }
+  if (/catch block is empty/i.test(message)) {
+    return "Catch vacío — el error se traga sin manejarlo";
+  }
+  return message;
+}
+
+// Edges that belong to the selected function/entry body: walk forward over flow
+// edges from the selected node, stopping at any other function/entry node so the
+// scope never bleeds into the sibling chained at the top level (analyze()).
+function collectScopeEdges(
+  snapshot: ScriptFlowSnapshot,
+  selectedId: string,
+): Set<string> {
+  const byId = new Map(snapshot.nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, ScriptFlowSnapshot["edges"]>();
+  for (const edge of snapshot.edges) {
+    const list = outgoing.get(edge.from);
+    if (list) {
+      list.push(edge);
+    } else {
+      outgoing.set(edge.from, [edge]);
+    }
+  }
+
+  const boundary = new Set<ScriptFlowNodeKind>(["function", "entry"]);
+  const inScope = new Set<string>([selectedId]);
+  const queue: string[] = [selectedId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) {
+      break;
+    }
+    for (const edge of outgoing.get(current) ?? []) {
+      const target = byId.get(edge.to);
+      if (target && boundary.has(target.kind)) {
+        continue;
+      }
+      if (!inScope.has(edge.to)) {
+        inScope.add(edge.to);
+        queue.push(edge.to);
+      }
+    }
+  }
+
+  return new Set(
+    snapshot.edges
+      .filter((edge) => inScope.has(edge.from) && inScope.has(edge.to))
+      .map((edge) => `${edge.from}->${edge.to}`),
+  );
 }
 
 function computeLayout(
-  nodes: Array<Node<FlowNodeData>>,
+  nodes: AnyFlowNode[],
   edges: Edge[],
   orientation: "LR" | "TB",
 ) {
@@ -616,8 +871,13 @@ function computeLayout(
     ranksep: 72,
   });
 
+  const dimsFor = (node: AnyFlowNode) =>
+    node.type === "scriptFlowGap"
+      ? { width: GAP_NODE_WIDTH, height: GAP_NODE_HEIGHT }
+      : { width: NODE_WIDTH, height: NODE_HEIGHT };
+
   for (const node of nodes) {
-    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    graph.setNode(node.id, dimsFor(node));
   }
   for (const edge of edges) {
     graph.setEdge(edge.source, edge.target);
@@ -628,11 +888,12 @@ function computeLayout(
   return {
     nodes: nodes.map((node) => {
       const position = graph.node(node.id);
+      const { width, height } = dimsFor(node);
       return {
         ...node,
         position: {
-          x: position.x - NODE_WIDTH / 2,
-          y: position.y - NODE_HEIGHT / 2,
+          x: position.x - width / 2,
+          y: position.y - height / 2,
         },
       };
     }),
