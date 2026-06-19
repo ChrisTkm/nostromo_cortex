@@ -44,6 +44,7 @@ import {
   type FlowNodeData,
 } from "./components/FlowNode";
 import { GapNode, type GapNodeData } from "./components/GapNode";
+import { getScriptFlowFixHint } from "./messageHints";
 import { vscode } from "./vscodeApi";
 const nodeTypes = { scriptFlow: FlowNode, scriptFlowGap: GapNode } as NodeTypes;
 // Real analysis nodes plus the phantom gap-notes that hang off flow-gaps.
@@ -497,6 +498,19 @@ export function ScriptFlowApp() {
             title="Export PNG (2x)"
           >
             PNG
+          </Button>
+          <Button
+            disabled={messageCount === 0}
+            intent="change"
+            onClick={() => downloadMarkdownReport(snapshot)}
+            size="small"
+            title={
+              messageCount > 0
+                ? "Exportar reporte Markdown"
+                : "Sin mensajes para exportar"
+            }
+          >
+            Markdown
           </Button>
         </div>
       }
@@ -1052,6 +1066,94 @@ async function downloadFlowAsPng(sourcePath: string) {
   } catch (err) {
     console.error("Script Flow PNG export failed", err);
   }
+}
+
+function downloadMarkdownReport(snapshot: ScriptFlowSnapshot) {
+  const markdown = buildMarkdownReport(snapshot);
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const base = shortFilename(snapshot.metadata.path).replace(/\.[^.]+$/, "");
+  link.download = `${base || "script-flow"}-report.md`;
+  link.href = url;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildMarkdownReport(snapshot: ScriptFlowSnapshot) {
+  const summary = summarizeNodeMessages(snapshot.nodes);
+  const lines = [
+    "# Script Flow report",
+    "",
+    `- File: \`${escapeMarkdownInline(snapshot.metadata.path)}\``,
+    `- Language: \`${snapshot.metadata.language}\``,
+    `- Parsed at: \`${snapshot.metadata.parsedAt}\``,
+    `- Nodes: ${snapshot.nodes.length}`,
+    `- Edges: ${snapshot.edges.length}`,
+    `- Messages: ${summary.total}`,
+    "",
+    "## Summary",
+    "",
+    "| Type | Count |",
+    "| --- | ---: |",
+    `| Errors | ${summary.error} |`,
+    `| Warnings | ${summary.warning} |`,
+    `| Info | ${summary.info} |`,
+    `| Flow gaps | ${summary["flow-gap"]} |`,
+    "",
+    "## Messages",
+    "",
+  ];
+
+  const messageItems = snapshot.nodes.flatMap((node) =>
+    readNodeObservations(node).map((observation) => ({ node, observation })),
+  );
+
+  if (messageItems.length === 0) {
+    lines.push("No messages detected.", "");
+    return `${lines.join("\n")}\n`;
+  }
+
+  messageItems.forEach(({ node, observation }, index) => {
+    const hint = getScriptFlowFixHint(observation);
+    lines.push(
+      `### ${index + 1}. ${observation.severity.toUpperCase()} · ${messageKindLabel(observation.kind)}`,
+      "",
+      `- Message: ${escapeMarkdownText(observation.message)}`,
+      `- Node: \`${escapeMarkdownInline(node.label)}\` (${KIND_LABELS[node.kind]})`,
+    );
+    if (typeof observation.line === "number") {
+      lines.push(`- Line: ${observation.line}`);
+    }
+    if (observation.source) {
+      lines.push(`- Source: \`${escapeMarkdownInline(observation.source)}\``);
+    }
+    if (node.range) {
+      lines.push(`- Range: ${formatRangeLabel(node)}`);
+    }
+    lines.push(`- Hint: ${escapeMarkdownText(hint)}`, "");
+  });
+
+  return `${lines.join("\n")}\n`;
+}
+
+function messageKindLabel(kind: ScriptFlowAutoObservation["kind"]) {
+  switch (kind) {
+    case "flow-gap":
+      return "Flow gap";
+    case "diagnostic":
+      return "Diagnostic";
+    case "inline":
+      return "Inline note";
+  }
+}
+
+function escapeMarkdownInline(value: string) {
+  return value.replace(/`/g, "\\`");
+}
+
+function escapeMarkdownText(value: string) {
+  return value.replace(/\r?\n/g, " ").trim();
 }
 
 function formatRangeLabel(node: ScriptFlowNode) {

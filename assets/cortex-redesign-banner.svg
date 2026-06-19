@@ -1,0 +1,125 @@
+<svg width="1200" height="380" viewBox="0 0 1200 380" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Cortex redesign banner</title>
+  <desc id="desc">Dark retro-futuristic command interface banner for Cortex, with an orbital knowledge graph motif.</desc>
+  <defs>
+    <radialGradient id="orbitalGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#28E7D5" stop-opacity="0.22"/>
+      <stop offset="42%" stop-color="#28E7D5" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#02050A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#05070D"/>
+      <stop offset="0.48" stop-color="#081019"/>
+      <stop offset="1" stop-color="#03050A"/>
+    </linearGradient>
+    <linearGradient id="cyanStroke" x1="300" y1="0" x2="1040" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#28E7D5" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#28E7D5" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#B78C42" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="goldStroke" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B78C42" stop-opacity="0"/>
+      <stop offset="0.16" stop-color="#B78C42" stop-opacity="0.55"/>
+      <stop offset="0.84" stop-color="#B78C42" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#B78C42" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" stroke="#FFFFFF" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="380" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="378" rx="21" stroke="#28E7D5" stroke-opacity="0.13"/>
+  <rect width="1200" height="380" rx="22" fill="url(#grid)" opacity="0.9"/>
+  <path d="M0 46H1200" stroke="url(#goldStroke)" stroke-width="1"/>
+  <path d="M0 334H1200" stroke="url(#goldStroke)" stroke-width="1"/>
+
+  <g transform="translate(58 58)">
+    <text x="0" y="0" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="4" fill="#28E7D5">LOCAL-FIRST COMMAND DECK</text>
+    <text x="0" y="72" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="70" font-weight="800" letter-spacing="8" fill="#EAFDFB">CORTEX</text>
+    <path d="M4 92H390" stroke="#2D3B42" stroke-width="1"/>
+    <text x="0" y="126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="16" fill="#9BAEB2">knowledge graph · execution plans · notes · logs · telemetry</text>
+    <text x="0" y="153" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="16" fill="#6F8388">a cockpit for technical memory inside VS Code</text>
+
+    <g transform="translate(0 198)" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+      <rect x="0" y="0" width="108" height="30" rx="15" fill="#08131A" stroke="#28E7D5" stroke-opacity="0.28"/>
+      <text x="19" y="20" fill="#28E7D5">v0.1.6</text>
+      <rect x="122" y="0" width="116" height="30" rx="15" fill="#0E1012" stroke="#B78C42" stroke-opacity="0.32"/>
+      <text x="145" y="20" fill="#C2A05E">BRAIN</text>
+      <rect x="252" y="0" width="150" height="30" rx="15" fill="#08131A" stroke="#28E7D5" stroke-opacity="0.16"/>
+      <text x="273" y="20" fill="#8CA0A5">STarlight MDX</text>
+    </g>
+  </g>
+
+  <g transform="translate(655 190)">
+    <circle r="160" fill="url(#orbitalGlow)"/>
+    <circle r="126" stroke="url(#cyanStroke)" stroke-width="1.2" stroke-dasharray="2 10" opacity="0.8"/>
+    <circle r="96" stroke="#28E7D5" stroke-opacity="0.22" stroke-width="1"/>
+    <circle r="62" stroke="#B78C42" stroke-opacity="0.32" stroke-width="1"/>
+    <path d="M-126 0C-72 -43 72 -43 126 0C72 43 -72 43 -126 0Z" stroke="#28E7D5" stroke-opacity="0.34"/>
+    <path d="M0 -126C43 -72 43 72 0 126C-43 72 -43 -72 0 -126Z" stroke="#28E7D5" stroke-opacity="0.18"/>
+    <polygon points="0,-35 31,-17 31,17 0,35 -31,17 -31,-17" fill="#071018" stroke="#28E7D5" stroke-opacity="0.58"/>
+    <circle r="7" fill="#28E7D5" filter="url(#softGlow)"/>
+    <circle r="2" fill="#EAFDFB"/>
+
+    <g filter="url(#softGlow)">
+      <circle cx="0" cy="-126" r="5" fill="#28E7D5"/>
+      <circle cx="89" cy="-89" r="4" fill="#B78C42"/>
+      <circle cx="126" cy="0" r="5" fill="#28E7D5"/>
+      <circle cx="89" cy="89" r="4" fill="#28E7D5"/>
+      <circle cx="0" cy="126" r="5" fill="#B78C42"/>
+      <circle cx="-89" cy="89" r="4" fill="#28E7D5"/>
+      <circle cx="-126" cy="0" r="5" fill="#28E7D5"/>
+      <circle cx="-89" cy="-89" r="4" fill="#B78C42"/>
+    </g>
+
+    <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#9BAEB2" text-anchor="middle">
+      <text x="0" y="-143">GRAPH</text>
+      <text x="118" y="-94">PLANS</text>
+      <text x="151" y="4">LEDGER</text>
+      <text x="113" y="107">NOTES</text>
+      <text x="0" y="150">LOGS</text>
+      <text x="-118" y="107">ARCHIVE</text>
+      <text x="-155" y="4">BRAIN</text>
+      <text x="-124" y="-94">SCRIPT</text>
+    </g>
+  </g>
+
+  <g transform="translate(895 82)" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace">
+    <rect x="0" y="0" width="245" height="216" rx="12" fill="#070B11" stroke="#26353A"/>
+    <text x="18" y="34" font-size="12" letter-spacing="2" fill="#28E7D5">SYSTEM STATUS</text>
+    <path d="M18 50H227" stroke="#243238"/>
+
+    <g font-size="11">
+      <text x="18" y="82" fill="#70878C">INDEX</text>
+      <text x="179" y="82" fill="#EAFDFB">READY</text>
+      <circle cx="218" cy="78" r="4" fill="#28E7D5"/>
+
+      <text x="18" y="114" fill="#70878C">MD/MDX</text>
+      <text x="170" y="114" fill="#EAFDFB">LINKED</text>
+      <circle cx="218" cy="110" r="4" fill="#28E7D5"/>
+
+      <text x="18" y="146" fill="#70878C">AGENTS</text>
+      <text x="167" y="146" fill="#EAFDFB">TRACED</text>
+      <circle cx="218" cy="142" r="4" fill="#B78C42"/>
+
+      <text x="18" y="178" fill="#70878C">WORKSPACE</text>
+      <text x="158" y="178" fill="#EAFDFB">LOCAL</text>
+      <circle cx="218" cy="174" r="4" fill="#28E7D5"/>
+    </g>
+  </g>
+
+  <g opacity="0.32" stroke="#28E7D5" stroke-width="1">
+    <path d="M458 85L518 85L548 115"/>
+    <path d="M790 295L845 295L878 262"/>
+    <path d="M1012 52V28H1112"/>
+    <path d="M72 333H190L214 309"/>
+  </g>
+</svg>

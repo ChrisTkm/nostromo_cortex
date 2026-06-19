@@ -1,5 +1,3 @@
-![Cortex Banner](assets/banner.svg)
-
 # Cortex
 
 Cortex es un **knowledge cockpit local-first para ingeniería**: combina grafo de ejecución, navegación de documentación, notas, logs y telemetría dentro de VS Code.
@@ -46,19 +44,19 @@ Panel switcher: `Ctrl+Alt+Shift+N` / `Ctrl+Alt+N`. Filtros persistidos por plan,
 
 ## Capturas
 
-<img src="assets/marketplace/graph-plan.png" width="700" alt="Graph — grafo PERT/DAG con panel de plan activo">
+<img src="media/marketplace/graph-plan.png" width="700" alt="Graph — grafo PERT/DAG con panel de plan activo">
 
 *Graph — grafo PERT/DAG con layout Dagre, detección de ciclos y superposición del plan activo con progreso, tareas y metadatos.*
 
 ---
 
-<img src="assets/marketplace/plans.png" width="700" alt="Plans — datatable de planes">
+<img src="media/marketplace/plans.png" width="700" alt="Plans — datatable de planes">
 
 *Plans — datatable de todos los planes con filtros por estado/producto/release/autor, búsqueda, progreso y drawer con detalle.*
 
 ---
 
-<img src="assets/marketplace/archive.png" width="700" alt="Archive — planes archivados">
+<img src="media/marketplace/archive.png" width="700" alt="Archive — planes archivados">
 
 *Archive — exploración de planes archivados con tareas congeladas, búsqueda y exportación. Cortex no solo visualiza, también preserva.*
 

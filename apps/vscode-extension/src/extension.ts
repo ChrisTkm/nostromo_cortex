@@ -358,7 +358,10 @@ export async function activate(context: vscode.ExtensionContext) {
       edgeCount: snapshot.edges.length,
     });
 
-    const criticalPath = criticalPathEstimate(bundle.tasks);
+    const criticalPathTasks = selectedPlanCode
+      ? bundle.tasks.filter((task) => task.planCode === selectedPlanCode)
+      : bundle.tasks;
+    const criticalPath = criticalPathEstimate(criticalPathTasks);
     service.logger.debug("criticalPath", {
       available: criticalPath.available,
       totalDuration: criticalPath.totalDuration,

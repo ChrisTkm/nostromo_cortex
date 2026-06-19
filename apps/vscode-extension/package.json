@@ -1,8 +1,8 @@
 {
-  "name": "cortex-local",
-  "displayName": "Cortex Local",
+  "name": "nostromo-cortex",
+  "displayName": "Nostromo Cortex",
   "publisher": "AlbornozStudio",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -10,8 +10,31 @@
   "files": [
     "dist/**",
     "media/**",
+    "README.md",
     "package.json",
     "LICENSE.txt"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChrisTkm/nostromo_cortex.git"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization",
+    "Other"
+  ],
+  "tags": [
+    "knowledge-graph",
+    "project-management",
+    "documentation",
+    "plans",
+    "tasks",
+    "brain",
+    "notes",
+    "logs",
+    "telemetry",
+    "script-analysis"
   ],
   "engines": {
     "vscode": "^1.100.0"
