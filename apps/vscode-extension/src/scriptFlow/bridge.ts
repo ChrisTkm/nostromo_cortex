@@ -1,7 +1,23 @@
+import type { ScriptFlowTraceParseResult } from "./runtimeTraceParser.js";
 import { isScriptFlowSnapshot, type ScriptFlowSnapshot } from "./types.js";
 
+export interface ScriptFlowRuntimeLiveState {
+  mode: "file-watch";
+  status: "disabled" | "missing" | "watching" | "updated" | "error";
+  throttleMs: number;
+  tracePath?: string;
+  candidateCount?: number;
+  updatedAt?: string;
+  message?: string;
+}
+
 export type ScriptFlowHostMessage =
-  | { type: "scriptFlow:snapshot"; snapshot: ScriptFlowSnapshot }
+  | {
+      type: "scriptFlow:snapshot";
+      snapshot: ScriptFlowSnapshot;
+      runtimeOverlay?: ScriptFlowTraceParseResult;
+      runtimeLive?: ScriptFlowRuntimeLiveState;
+    }
   | { type: "scriptFlow:error"; error: string }
   | { type: "scriptFlow:unsupported"; language?: string };
 
@@ -20,10 +36,14 @@ type MessageTarget = {
 export function sendSnapshot(
   target: MessageTarget,
   snapshot: ScriptFlowSnapshot,
+  runtimeOverlay?: ScriptFlowTraceParseResult,
+  runtimeLive?: ScriptFlowRuntimeLiveState,
 ) {
   return target.postMessage({
     type: "scriptFlow:snapshot",
     snapshot,
+    ...(runtimeOverlay ? { runtimeOverlay } : {}),
+    ...(runtimeLive ? { runtimeLive } : {}),
   } satisfies ScriptFlowHostMessage);
 }
 

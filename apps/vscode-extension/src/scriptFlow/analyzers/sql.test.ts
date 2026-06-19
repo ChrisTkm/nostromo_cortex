@@ -77,8 +77,24 @@ describe("analyzeSqlDocument", () => {
     expect(snap.nodes).toHaveLength(1);
     expect(snap.nodes[0]?.kind).toBe("entry");
     expect(snap.metadata.language).toBe("sql");
-    expect(snap.analysis.entryPoints).toEqual(["unsupported"]);
+    expect(snap.analysis.entryPoints[0]).toMatch(/^sf1:entry:unsupported-sql-syntax:l1c1$/);
     expect(snap.analysis.summary).toMatch(/no soporta/i);
+  });
+
+  it("generates deterministic runtime node IDs for the same source", () => {
+    const source = "WITH stable AS (SELECT id FROM users) SELECT id FROM stable;";
+    const first = run(source);
+    const second = run(source);
+    expect(second.nodes.map((node) => node.id)).toEqual(first.nodes.map((node) => node.id));
+    expect(first.nodes.find((node) => node.kind === "cte")?.id).toMatch(/^sf1:cte:stable:l1c6$/);
+  });
+
+  it("keeps an existing CTE node ID when unrelated SQL is appended", () => {
+    const first = run("WITH stable AS (SELECT id FROM users) SELECT id FROM stable;");
+    const second = run("WITH stable AS (SELECT id FROM users) SELECT id FROM stable;\nSELECT now();");
+    const firstId = first.nodes.find((node) => node.kind === "cte" && /stable/.test(node.label))?.id;
+    const secondId = second.nodes.find((node) => node.kind === "cte" && /stable/.test(node.label))?.id;
+    expect(secondId).toBe(firstId);
   });
 
   it("renders fallback for array type declaration", () => {

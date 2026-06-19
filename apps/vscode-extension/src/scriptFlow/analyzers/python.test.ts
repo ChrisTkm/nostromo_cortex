@@ -47,6 +47,24 @@ describe("analyzePythonDocument", () => {
     expect(fn?.meta?.async).toBeUndefined();
   });
 
+  it("generates deterministic runtime node IDs for the same source", async (ctx) => {
+    skipIfNotReady(ctx);
+    const source = "def stable():\n    return 1\n";
+    const first = await run(source);
+    const second = await run(source);
+    expect(second.nodes.map((node) => node.id)).toEqual(first.nodes.map((node) => node.id));
+    expect(first.nodes.find((node) => node.kind === "function")?.id).toMatch(/^sf1:fn:stable:l1c1$/);
+  });
+
+  it("keeps an existing function node ID when unrelated code is appended", async (ctx) => {
+    skipIfNotReady(ctx);
+    const first = await run("def stable():\n    return 1\n");
+    const second = await run("def stable():\n    return 1\n\ndef appended():\n    return 2\n");
+    const firstId = first.nodes.find((node) => node.kind === "function" && /stable/.test(node.label))?.id;
+    const secondId = second.nodes.find((node) => node.kind === "function" && /stable/.test(node.label))?.id;
+    expect(secondId).toBe(firstId);
+  });
+
   it("splits try/except/else/finally with exception types", async (ctx) => {
     skipIfNotReady(ctx);
     const snap = await run(loadFixture("python-try-except.py"));

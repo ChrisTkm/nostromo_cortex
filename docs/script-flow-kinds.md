@@ -13,6 +13,16 @@ El panel consume un `ScriptFlowSnapshot` con:
 
 El análisis ocurre en el extension host (no en el webview). El snapshot se postea al panel React + React Flow + dagre.
 
+## IDs de nodos
+
+Los nodos usan IDs deterministas con versión de algoritmo para poder cruzarse con evidencia runtime futura:
+
+```text
+sf1:<kind-prefix>:<symbol-or-label-slug>:l<startLine>c<startCol>[:n<localOrdinal>]
+```
+
+El ordinal local (`:n2`, `:n3`, etc.) solo aparece cuando dos nodos tienen el mismo kind, seed y rango. El `metadata.hash` del snapshot y el `script_hash` del trace se comparan aparte; no forman parte del `node_id` para evitar churn masivo ante ediciones pequeñas.
+
 ## Lenguajes soportados
 
 | Lenguaje | Extensiones | Parser |
@@ -174,4 +184,5 @@ Cada analyzer agrega notas al campo `observations` cuando detecta patrones notab
 ## Ver también
 
 - `docs/modules/script-flow.md` — análisis técnico del módulo (debilidades, decisiones).
+- `docs/modules/script-flow-runtime-trace.md` — contrato JSONL para evidencia runtime futura de Script Flow Live.
 - `README.md` — instrucciones de uso e instalación.

@@ -22,8 +22,15 @@ import {
   sendRefresh,
   sendSelectNode,
   sendSelectScript,
+  type ScriptFlowRuntimeLiveState,
   type ScriptFlowHostMessage,
 } from "../../scriptFlow/bridge.js";
+import type {
+  ScriptFlowRuntimeNodeAggregate,
+  ScriptFlowRuntimeReplayEvent,
+  ScriptFlowRuntimeRunAggregate,
+  ScriptFlowTraceParseResult,
+} from "../../scriptFlow/runtimeTraceParser.js";
 import {
   isScriptFlowSnapshot,
   SCRIPT_FLOW_NODE_KINDS,
@@ -42,6 +49,7 @@ import {
   KIND_LABELS,
   NODE_ACCENT_VAR,
   type FlowNodeData,
+  type FlowNodeRuntimeData,
 } from "./components/FlowNode";
 import { GapNode, type GapNodeData } from "./components/GapNode";
 import { getScriptFlowFixHint } from "./messageHints";
@@ -93,6 +101,8 @@ type ScriptFlowViewState =
       title: string;
       description: string;
       snapshot: ScriptFlowSnapshot;
+      runtimeOverlay?: ScriptFlowTraceParseResult;
+      runtimeLive?: ScriptFlowRuntimeLiveState;
     };
 
 const defaultState: ScriptFlowViewState = {
@@ -149,6 +159,13 @@ export function ScriptFlowApp() {
       (persisted as { problemOnly?: unknown }).problemOnly === true
     );
   });
+  const [selectedRuntimeRunId, setSelectedRuntimeRunId] = useState<
+    string | undefined
+  >(() =>
+    state.status === "snapshot" ? state.runtimeOverlay?.selectedRunId : undefined,
+  );
+  const [isReplayPlaying, setIsReplayPlaying] = useState(false);
+  const [replayIndex, setReplayIndex] = useState(0);
 
   const kindCounts = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -198,6 +215,17 @@ export function ScriptFlowApp() {
     }
   }, [state.status]);
 
+  const runtimeOverlay =
+    state.status === "snapshot" ? state.runtimeOverlay : undefined;
+  const runtimeLive = state.status === "snapshot" ? state.runtimeLive : undefined;
+  const runtimeRuns = runtimeOverlay?.runs ?? [];
+  const runtimeRun =
+    selectedRuntimeRunId && runtimeOverlay?.runsById[selectedRuntimeRunId]
+      ? runtimeOverlay.runsById[selectedRuntimeRunId]
+      : runtimeOverlay?.selectedRun;
+  const replayEvents = runtimeRun?.events ?? [];
+  const replayEvent = replayEvents[replayIndex];
+
   const flow = useMemo(() => {
     if (state.status !== "snapshot") {
       return EMPTY_FLOW;
@@ -205,12 +233,22 @@ export function ScriptFlowApp() {
 
     return buildFlowModel(
       state.snapshot,
+      runtimeRun,
+      replayEvent,
       selectedNodeId,
       orientation,
       searchMatches,
       problemOnly,
     );
-  }, [selectedNodeId, state, orientation, searchMatches, problemOnly]);
+  }, [
+    selectedNodeId,
+    state,
+    runtimeRun,
+    replayEvent,
+    orientation,
+    searchMatches,
+    problemOnly,
+  ]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 800px)");
@@ -263,6 +301,49 @@ export function ScriptFlowApp() {
       state.snapshot.nodes.find((node) => hasNodeMessages(node))?.id ?? null,
     );
   }, [problemOnly, selectedNodeId, state]);
+
+  useEffect(() => {
+    if (state.status !== "snapshot") {
+      setSelectedRuntimeRunId(undefined);
+      setReplayIndex(0);
+      setIsReplayPlaying(false);
+      return;
+    }
+
+    const overlay = state.runtimeOverlay;
+    const preferredRunId =
+      overlay?.selectedRunId ?? overlay?.latestRunId ?? overlay?.runs[0]?.runId;
+    setSelectedRuntimeRunId((current) =>
+      current && overlay?.runsById[current] ? current : preferredRunId,
+    );
+    setReplayIndex(0);
+    setIsReplayPlaying(false);
+  }, [state]);
+
+  useEffect(() => {
+    if (replayIndex < replayEvents.length) {
+      return;
+    }
+    setReplayIndex(Math.max(0, replayEvents.length - 1));
+  }, [replayEvents.length, replayIndex]);
+
+  useEffect(() => {
+    if (!isReplayPlaying || replayEvents.length === 0) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setReplayIndex((current) => {
+        if (current >= replayEvents.length - 1) {
+          setIsReplayPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 700);
+
+    return () => window.clearInterval(interval);
+  }, [isReplayPlaying, replayEvents.length, runtimeRun?.runId]);
 
   useEffect(() => {
     if (state.status !== "snapshot" || !flowInstance || !selectedNodeId) {
@@ -401,6 +482,36 @@ export function ScriptFlowApp() {
       }
       status={
         <div className="script-flow-second-bar__actions">
+          {runtimeLive ? <RuntimeLiveStatus state={runtimeLive} /> : null}
+          {runtimeRun ? (
+            <RuntimeRunControls
+              currentEvent={replayEvent}
+              isPlaying={isReplayPlaying}
+              onPlayToggle={() =>
+                setIsReplayPlaying((current) =>
+                  replayEvents.length > 0 ? !current : false,
+                )
+              }
+              onReset={() => {
+                setReplayIndex(0);
+                setIsReplayPlaying(false);
+              }}
+              onRunChange={(runId) => {
+                setSelectedRuntimeRunId(runId);
+                setReplayIndex(0);
+                setIsReplayPlaying(false);
+              }}
+              onScrub={(index) => {
+                setReplayIndex(index);
+                setIsReplayPlaying(false);
+              }}
+              replayIndex={replayIndex}
+              runs={runtimeRuns}
+              selectedRun={runtimeRun}
+              totalEvents={replayEvents.length}
+            />
+          ) : null}
+          {runtimeRun ? <RuntimeSummary run={runtimeRun} /> : null}
           <MessageSummaryPills summary={messageSummary} />
           <Button
             className={problemOnly ? "is-active" : undefined}
@@ -467,6 +578,9 @@ export function ScriptFlowApp() {
             </Metric>
           ))}
           <Metric>{snapshot.edges.length} edges</Metric>
+          {runtimeRun ? (
+            <Metric>runtime {runtimeRun.nodeCount} nodes</Metric>
+          ) : null}
         </div>
       }
       right={
@@ -581,6 +695,12 @@ export function ScriptFlowApp() {
                   size={1}
                   variant={BackgroundVariant.Dots}
                 />
+                {runtimeRun ? (
+                  <RuntimeLegend
+                    runId={runtimeRun.runId}
+                    warnings={runtimeOverlay?.warnings.length ?? 0}
+                  />
+                ) : null}
               </ReactFlow>
             </div>
           </section>
@@ -620,6 +740,10 @@ function mapMessageToState(message: ScriptFlowHostMessage) {
       description:
         "The host parsed the active file and streamed the resulting Script Flow snapshot into the panel.",
       snapshot: message.snapshot,
+      ...(message.runtimeOverlay
+        ? { runtimeOverlay: message.runtimeOverlay }
+        : {}),
+      ...(message.runtimeLive ? { runtimeLive: message.runtimeLive } : {}),
     } satisfies ScriptFlowViewState;
   }
 
@@ -704,6 +828,177 @@ function MessageSummaryPills(props: { summary: MessageSummary }) {
   );
 }
 
+function RuntimeLiveStatus(props: { state: ScriptFlowRuntimeLiveState }) {
+  const { state } = props;
+  return (
+    <div
+      className={`sf-runtime-live sf-runtime-live--${state.status}`}
+      title={[
+        state.message,
+        state.tracePath ? `Trace: ${state.tracePath}` : undefined,
+        `Throttle: ${state.throttleMs}ms`,
+      ]
+        .filter(Boolean)
+        .join("\n")}
+    >
+      <span className="sf-runtime-live__dot" />
+      <span className="sf-runtime-live__label">Live</span>
+      <span className="sf-runtime-live__status">
+        {formatLiveStatus(state.status)}
+      </span>
+      {state.updatedAt ? (
+        <span className="sf-runtime-live__time">
+          {formatDateTime(state.updatedAt)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function RuntimeSummary(props: {
+  run: NonNullable<ScriptFlowTraceParseResult["selectedRun"]>;
+}) {
+  const { run } = props;
+  const activeCount = run.activeSpans.length;
+  const errorCount = Object.values(run.nodes).reduce(
+    (count, node) => count + node.errorCount,
+    0,
+  );
+  return (
+    <div className="sf-runtime-summary" title={`Runtime evidence: ${run.runId}`}>
+      <span className="sf-runtime-summary__label">Runtime</span>
+      {run.status ? (
+        <span className={`sf-runtime-summary__pill sf-runtime-summary__pill--${run.status}`}>
+          {run.status}
+        </span>
+      ) : null}
+      <span className="sf-runtime-summary__pill">{run.nodeCount} nodes</span>
+      {activeCount > 0 ? (
+        <span className="sf-runtime-summary__pill sf-runtime-summary__pill--active">
+          active {activeCount}
+        </span>
+      ) : null}
+      {errorCount > 0 ? (
+        <span className="sf-runtime-summary__pill sf-runtime-summary__pill--error">
+          errors {errorCount}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function RuntimeRunControls(props: {
+  runs: ScriptFlowRuntimeRunAggregate[];
+  selectedRun: ScriptFlowRuntimeRunAggregate;
+  replayIndex: number;
+  totalEvents: number;
+  currentEvent?: ScriptFlowRuntimeReplayEvent;
+  isPlaying: boolean;
+  onRunChange: (runId: string) => void;
+  onPlayToggle: () => void;
+  onReset: () => void;
+  onScrub: (index: number) => void;
+}) {
+  const {
+    currentEvent,
+    isPlaying,
+    onPlayToggle,
+    onReset,
+    onRunChange,
+    onScrub,
+    replayIndex,
+    runs,
+    selectedRun,
+    totalEvents,
+  } = props;
+  const canReplay = totalEvents > 0;
+  return (
+    <div className="sf-runtime-controls" title={selectedRun.runId}>
+      <label className="sf-runtime-controls__selector">
+        <span>Run</span>
+        <select
+          className="sf-runtime-select"
+          onChange={(event) => onRunChange(event.currentTarget.value)}
+          value={selectedRun.runId}
+        >
+          {runs.map((run) => (
+            <option key={run.runId} value={run.runId}>
+              {formatRunOption(run)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="sf-runtime-controls__meta">
+        {selectedRun.status ?? "running"}
+      </span>
+      <span className="sf-runtime-controls__meta">
+        {formatMs(selectedRun.durationMs ?? 0)}
+      </span>
+      <span className="sf-runtime-controls__meta">
+        {selectedRun.machineIds[0] ?? "machine ?"}
+      </span>
+      <span className="sf-runtime-controls__meta">
+        {formatDateTime(selectedRun.startedAt)}
+      </span>
+      <div className="sf-runtime-replay">
+        <Button
+          disabled={!canReplay}
+          intent="change"
+          onClick={onPlayToggle}
+          size="small"
+          title={canReplay ? "Play/pause runtime replay" : "Sin eventos para replay"}
+        >
+          {isPlaying ? "Pause" : "Play"}
+        </Button>
+        <Button
+          disabled={!canReplay}
+          intent="change"
+          onClick={onReset}
+          size="small"
+          title="Volver al inicio del replay"
+        >
+          Reset
+        </Button>
+        <input
+          aria-label="Runtime replay scrubber"
+          className="sf-runtime-scrub"
+          disabled={!canReplay}
+          max={Math.max(0, totalEvents - 1)}
+          min={0}
+          onChange={(event) => onScrub(Number(event.currentTarget.value))}
+          type="range"
+          value={Math.min(replayIndex, Math.max(0, totalEvents - 1))}
+        />
+        <span className="sf-runtime-replay__count">
+          {canReplay ? `${replayIndex + 1}/${totalEvents}` : "0/0"}
+        </span>
+        {currentEvent ? (
+          <span
+            className={`sf-runtime-replay__event sf-runtime-replay__event--${currentEvent.event}`}
+          >
+            {formatReplayEvent(currentEvent)}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function formatLiveStatus(status: ScriptFlowRuntimeLiveState["status"]) {
+  switch (status) {
+    case "disabled":
+      return "off";
+    case "missing":
+      return "waiting";
+    case "watching":
+      return "watching";
+    case "updated":
+      return "updated";
+    case "error":
+      return "error";
+  }
+}
+
 function createEmptyMessageSummary(): MessageSummary {
   return {
     total: 0,
@@ -749,46 +1044,63 @@ function resolveSelectableNodeId(node: AnyFlowNode) {
 
 function buildFlowModel(
   snapshot: ScriptFlowSnapshot,
+  runtimeRun: ScriptFlowRuntimeRunAggregate | undefined,
+  replayEvent: ScriptFlowRuntimeReplayEvent | undefined,
   selectedNodeId: string | null,
   orientation: "LR" | "TB",
   searchMatches: Array<{ nodeId: string }>,
   problemOnly: boolean,
 ) {
+  const runtimeNodes = runtimeRun?.nodes ?? {};
   const sourceNodes = problemOnly
     ? snapshot.nodes.filter((node) => hasNodeMessages(node))
     : snapshot.nodes;
   const visibleNodeIds = new Set(sourceNodes.map((node) => node.id));
   const searchHitIds = new Set(searchMatches.map((m) => m.nodeId));
-  const nodes: Array<Node<FlowNodeData>> = sourceNodes.map((node) => ({
-    id: node.id,
-    type: "scriptFlow",
-    selected: node.id === selectedNodeId,
-    position: { x: 0, y: 0 },
-    // Seed dimensions so the MiniMap can draw node rects: nodes are rebuilt
-    // each render (no useNodesState/onNodesChange), so measured sizes never
-    // persist back into this array. initialWidth/Height hint the store
-    // without constraining the real (auto-measured) node DOM.
-    initialWidth: NODE_WIDTH,
-    initialHeight: NODE_HEIGHT,
-    data: {
-      kind: node.kind,
-      kindLabel: KIND_LABELS[node.kind],
-      label: node.label,
-      ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
-      ...(node.meta?.async === true ? { async: true } : {}),
-      ...(typeof node.meta?.subKind === "string"
-        ? { subKind: node.meta.subKind }
-        : {}),
-      ...(node.meta?.crossFile === true ? { crossFile: true } : {}),
-      ...(typeof node.meta?.sourceFile === "string"
-        ? { sourceFile: node.meta.sourceFile }
-        : {}),
-      ...(Array.isArray(node.meta?.autoObservations)
-        ? { autoObservations: node.meta.autoObservations }
-        : {}),
-      searchHit: searchHitIds.has(node.id),
-    },
-  }));
+  const nodes: Array<Node<FlowNodeData>> = sourceNodes.map((node) => {
+    const runtimeNode = runtimeNodes[node.id];
+    const nodeReplay =
+      replayEvent?.nodeId === node.id
+        ? {
+            label: replayLabel(replayEvent),
+            error: replayEvent.event === "span_error",
+          }
+        : undefined;
+    return {
+      id: node.id,
+      type: "scriptFlow",
+      selected: node.id === selectedNodeId,
+      position: { x: 0, y: 0 },
+      // Seed dimensions so the MiniMap can draw node rects: nodes are rebuilt
+      // each render (no useNodesState/onNodesChange), so measured sizes never
+      // persist back into this array. initialWidth/Height hint the store
+      // without constraining the real (auto-measured) node DOM.
+      initialWidth: NODE_WIDTH,
+      initialHeight: NODE_HEIGHT,
+      data: {
+        kind: node.kind,
+        kindLabel: KIND_LABELS[node.kind],
+        label: node.label,
+        ...(node.range ? { rangeLabel: formatRangeLabel(node) } : {}),
+        ...(node.meta?.async === true ? { async: true } : {}),
+        ...(typeof node.meta?.subKind === "string"
+          ? { subKind: node.meta.subKind }
+          : {}),
+        ...(node.meta?.crossFile === true ? { crossFile: true } : {}),
+        ...(typeof node.meta?.sourceFile === "string"
+          ? { sourceFile: node.meta.sourceFile }
+          : {}),
+        ...(Array.isArray(node.meta?.autoObservations)
+          ? { autoObservations: node.meta.autoObservations }
+          : {}),
+        ...(runtimeNode || nodeReplay
+          ? { runtime: toFlowNodeRuntime(runtimeNode, nodeReplay) }
+          : {}),
+        ...(nodeReplay ? { replay: nodeReplay } : {}),
+        searchHit: searchHitIds.has(node.id),
+      },
+    };
+  });
 
   const entryIds = new Set(
     sourceNodes
@@ -812,11 +1124,22 @@ function buildFlowModel(
   const edges: Edge[] = visibleEdges.map((edge, index) => {
     const isLoop = edge.label === "loop";
     const isEntry = entryIds.has(edge.from);
+    const runtimeEdge = pickRuntimeEdge(runtimeNodes[edge.from], runtimeNodes[edge.to]);
+    const replayEdgeLevel =
+      replayEvent && (edge.from === replayEvent.nodeId || edge.to === replayEvent.nodeId)
+        ? replayEvent.event === "span_error"
+          ? "error"
+          : "medium"
+        : undefined;
     const isHot = scopeEdges
       ? scopeEdges.has(`${edge.from}->${edge.to}`)
       : true;
     const isActiveEdge = isEntry || isHot;
-    const color = isLoop
+    const color = replayEdgeLevel
+      ? runtimeColor(replayEdgeLevel)
+      : runtimeEdge
+      ? runtimeColor(runtimeEdge.level)
+      : isLoop
       ? LOOP_FLOW_COLOR
       : isActiveEdge
         ? ACTIVE_FLOW_COLOR
@@ -826,12 +1149,19 @@ function buildFlowModel(
       source: edge.from,
       target: edge.to,
       label: edge.label,
-      animated: isActiveEdge,
+      animated: isActiveEdge || Boolean(replayEdgeLevel),
       className: [
         "script-flow-edge",
         isActiveEdge ? "script-flow-edge--active" : "",
         isLoop ? "script-flow-edge--loop" : "",
         isEntry ? "script-flow-edge--entry" : "",
+        runtimeEdge || replayEdgeLevel ? "script-flow-edge--runtime" : "",
+        replayEdgeLevel ? "script-flow-edge--replay" : "",
+        replayEdgeLevel
+          ? `script-flow-edge--runtime-${replayEdgeLevel}`
+          : runtimeEdge
+            ? `script-flow-edge--runtime-${runtimeEdge.level}`
+            : "",
       ]
         .filter(Boolean)
         .join(" "),
@@ -841,7 +1171,15 @@ function buildFlowModel(
       },
       style: {
         stroke: color,
-        strokeWidth: isActiveEdge ? (isEntry ? 2.8 : 2.6) : 2.1,
+        strokeWidth: replayEdgeLevel
+          ? 3.3
+          : runtimeEdge
+            ? 3
+            : isActiveEdge
+              ? isEntry
+                ? 2.8
+                : 2.6
+              : 2.1,
         opacity: scopeEdges ? (isActiveEdge ? 1 : 0.18) : 1,
       },
       ...(edge.label
@@ -907,6 +1245,142 @@ function buildFlowModel(
   }
 
   return computeLayout([...nodes, ...gapNodes], edges, orientation);
+}
+
+function toFlowNodeRuntime(
+  node: ScriptFlowRuntimeNodeAggregate | undefined,
+  replay?: { error: boolean },
+): FlowNodeRuntimeData {
+  const active = Boolean(replay) || Boolean(node?.activeSpans.length);
+  const calls = node ? Math.max(node.count, node.externalCalls.count) : 0;
+  const avgMs = node ? Math.max(node.avgMs, node.externalCalls.avgMs) : 0;
+  const maxMs = node
+    ? Math.max(node.maxMs, node.externalCalls.maxMs, node.loop.maxMs)
+    : 0;
+  const errors = (node?.errorCount ?? 0) + (replay?.error && !node?.errorCount ? 1 : 0);
+  const iterations = node?.loop.iterations ?? 0;
+  return {
+    active,
+    calls,
+    avgMs,
+    maxMs,
+    errors,
+    iterations,
+    level: replay?.error
+      ? "error"
+      : classifyRuntimeLevel({ active, avgMs, maxMs, errors, iterations }),
+  };
+}
+
+function pickRuntimeEdge(
+  from: ScriptFlowRuntimeNodeAggregate | undefined,
+  to: ScriptFlowRuntimeNodeAggregate | undefined,
+) {
+  const source = from?.eventCount ? from : to?.eventCount ? to : undefined;
+  return source ? toFlowNodeRuntime(source) : undefined;
+}
+
+function classifyRuntimeLevel(input: {
+  active: boolean;
+  avgMs: number;
+  maxMs: number;
+  errors: number;
+  iterations: number;
+}): FlowNodeRuntimeData["level"] {
+  if (input.errors > 0) {
+    return "error";
+  }
+  if (input.maxMs >= 1000 || input.avgMs >= 500 || input.iterations >= 100000) {
+    return "high";
+  }
+  if (input.maxMs >= 250 || input.avgMs >= 100 || input.iterations >= 1000) {
+    return "medium";
+  }
+  return input.active ? "medium" : "low";
+}
+
+function runtimeColor(level: FlowNodeRuntimeData["level"]) {
+  switch (level) {
+    case "error":
+      return "var(--status-failed)";
+    case "high":
+      return "var(--cortex-level-warn)";
+    case "medium":
+      return "var(--status-in-progress)";
+    case "low":
+      return "var(--accent-cyan)";
+  }
+}
+
+function RuntimeLegend(props: { runId: string; warnings: number }) {
+  return (
+    <div className="sf-runtime-legend">
+      <span className="sf-runtime-legend__eyebrow">Runtime evidence</span>
+      <span>Run {shortRunId(props.runId)}</span>
+      <span className="sf-runtime-legend__dot sf-runtime-legend__dot--low" />
+      <span>low</span>
+      <span className="sf-runtime-legend__dot sf-runtime-legend__dot--medium" />
+      <span>medium</span>
+      <span className="sf-runtime-legend__dot sf-runtime-legend__dot--high" />
+      <span>hot/error</span>
+      {props.warnings > 0 ? <span>warnings {props.warnings}</span> : null}
+    </div>
+  );
+}
+
+function shortRunId(runId: string) {
+  return runId.length > 10 ? `${runId.slice(0, 10)}…` : runId;
+}
+
+function formatRunOption(run: ScriptFlowRuntimeRunAggregate) {
+  const status = run.status ?? "running";
+  const started = formatDateTime(run.startedAt);
+  return `${shortRunId(run.runId)} · ${status} · ${started}`;
+}
+
+function formatReplayEvent(event: ScriptFlowRuntimeReplayEvent) {
+  if (event.event === "span_error") {
+    return `error ${shortRunId(event.nodeId)}`;
+  }
+  if (event.event === "span_end") {
+    return `end ${shortRunId(event.nodeId)}`;
+  }
+  return `start ${shortRunId(event.nodeId)}`;
+}
+
+function replayLabel(event: ScriptFlowRuntimeReplayEvent) {
+  if (event.event === "span_error") {
+    return "replay error";
+  }
+  if (event.event === "span_end") {
+    return "replay end";
+  }
+  return "replay active";
+}
+
+function formatDateTime(value: string | undefined) {
+  if (!value) {
+    return "start ?";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatMs(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0ms";
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}s`;
+  }
+  return `${Math.round(value)}ms`;
 }
 
 function edgeAccentStyle(color: string) {

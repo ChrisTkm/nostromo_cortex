@@ -58,6 +58,22 @@ describe("analyzeTypeScriptDocument", () => {
     expect(fn?.meta?.async).toBeUndefined();
   });
 
+  it("generates deterministic runtime node IDs for the same source", () => {
+    const source = "function stable() { return 1; }";
+    const first = run(source);
+    const second = run(source);
+    expect(second.nodes.map((node) => node.id)).toEqual(first.nodes.map((node) => node.id));
+    expect(first.nodes.find((node) => node.kind === "function")?.id).toMatch(/^sf1:fn:stable:l1c1$/);
+  });
+
+  it("keeps an existing function node ID when unrelated code is appended", () => {
+    const first = run("function stable() { return 1; }");
+    const second = run("function stable() { return 1; }\nfunction appended() { return 2; }");
+    const firstId = first.nodes.find((node) => node.kind === "function" && /stable/.test(node.label))?.id;
+    const secondId = second.nodes.find((node) => node.kind === "function" && /stable/.test(node.label))?.id;
+    expect(secondId).toBe(firstId);
+  });
+
   it("anchors inline tags and flow gaps to nodes", async () => {
     const snap = await runPipeline(`
       function inspect(value: number) {

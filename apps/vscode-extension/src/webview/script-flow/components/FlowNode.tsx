@@ -6,6 +6,21 @@ import type {
 } from "../../../scriptFlow/types.js";
 import { Node as AtomNode } from "../../components/atoms";
 
+export type FlowNodeRuntimeData = {
+  active: boolean;
+  calls: number;
+  avgMs: number;
+  maxMs: number;
+  errors: number;
+  iterations: number;
+  level: "low" | "medium" | "high" | "error";
+};
+
+export type FlowNodeReplayData = {
+  label: string;
+  error: boolean;
+};
+
 export type FlowNodeData = {
   kind: ScriptFlowNodeKind;
   kindLabel: string;
@@ -17,6 +32,8 @@ export type FlowNodeData = {
   crossFile?: boolean;
   sourceFile?: string;
   autoObservations?: ScriptFlowAutoObservation[];
+  runtime?: FlowNodeRuntimeData;
+  replay?: FlowNodeReplayData;
 };
 
 /** Etiqueta legible por tipo de nodo. Compartida con footer y drawer. */
@@ -75,6 +92,11 @@ export function FlowNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
     data.autoObservations?.some((item) => item.kind === "flow-gap")
       ? "sf-atom-node--flow-gap"
       : "",
+    data.runtime ? "sf-atom-node--runtime" : "",
+    data.runtime?.active ? "sf-atom-node--runtime-active" : "",
+    data.runtime ? `sf-atom-node--runtime-${data.runtime.level}` : "",
+    data.replay ? "sf-atom-node--replay-active" : "",
+    data.replay?.error ? "sf-atom-node--replay-error" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -98,6 +120,9 @@ export function FlowNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
       selected={selected}
       subtitle={data.rangeLabel}
     >
+      {data.runtime || data.replay ? (
+        <RuntimeBadges replay={data.replay} runtime={data.runtime} />
+      ) : null}
       <Handle
         className="sf-node__handle"
         position={Position.Left}
@@ -109,6 +134,55 @@ export function FlowNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
         type="source"
       />
     </AtomNode>
+  );
+}
+
+function RuntimeBadges(props: {
+  replay?: FlowNodeReplayData;
+  runtime?: FlowNodeRuntimeData;
+}) {
+  const { replay, runtime } = props;
+  return (
+    <span
+      className="sf-node__runtime"
+      title="Runtime evidence from .scriptflow.trace.jsonl"
+    >
+      {replay ? (
+        <span
+          className={`sf-node__runtime-badge sf-node__runtime-badge--replay${replay.error ? " sf-node__runtime-badge--error" : ""}`}
+        >
+          {replay.label}
+        </span>
+      ) : null}
+      {runtime?.active ? (
+        <span className="sf-node__runtime-badge sf-node__runtime-badge--active">
+          active
+        </span>
+      ) : null}
+      {runtime && runtime.calls > 0 ? (
+        <span className="sf-node__runtime-badge">calls {runtime.calls}</span>
+      ) : null}
+      {runtime && runtime.avgMs > 0 ? (
+        <span className="sf-node__runtime-badge">
+          avg {formatMs(runtime.avgMs)}
+        </span>
+      ) : null}
+      {runtime && runtime.maxMs > 0 ? (
+        <span className="sf-node__runtime-badge">
+          max {formatMs(runtime.maxMs)}
+        </span>
+      ) : null}
+      {runtime && runtime.iterations > 0 ? (
+        <span className="sf-node__runtime-badge">
+          iter {formatCount(runtime.iterations)}
+        </span>
+      ) : null}
+      {runtime && runtime.errors > 0 ? (
+        <span className="sf-node__runtime-badge sf-node__runtime-badge--error">
+          err {runtime.errors}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -152,4 +226,21 @@ function countAutoObservations(items: ScriptFlowAutoObservation[]) {
     },
     { inline: 0, diagnostic: 0, "flow-gap": 0 },
   );
+}
+
+function formatMs(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}s`;
+  }
+  return `${Math.round(value)}ms`;
+}
+
+function formatCount(value: number) {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}m`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}k`;
+  }
+  return String(value);
 }

@@ -63,6 +63,19 @@ A diferencia de [[graph]] (planes/tareas) o [[brain]] (documentación), Script F
 | `loops`        | `{nodeId, label, kind}[]`     | Loops con su tipo (`for`/`while`/...). |
 | `observations` | string[]                      | Notas detectadas durante el análisis.  |
 
+## Runtime traces
+
+Script Flow Live no debe ejecutar scripts desde la extensión. La capa runtime se diseña como evidencia externa en `.scriptflow.trace.jsonl`: procesos locales, wrappers, runners, proxies DB o agentes remotos escriben eventos JSONL versionados, y la extensión solo los lee y los cruza contra `node_id`.
+
+Hay helpers opt-in para prototipos TypeScript y Python:
+
+- `apps/vscode-extension/src/scriptFlow/instrumentation/typescriptTrace.ts`
+- `apps/vscode-extension/fixtures/script-flow/instrumentation/scriptflow_trace.py`
+
+Ver especificación completa: [`docs/modules/script-flow-runtime-trace.md`](./script-flow-runtime-trace.md).
+
+Ver guía QA/manual: [`docs/modules/script-flow-live-qa.md`](./script-flow-live-qa.md).
+
 ## Flujo de uso
 
 ```mermaid

@@ -19,6 +19,37 @@ describe("isScriptFlowHostMessage", () => {
     expect(isScriptFlowHostMessage(msg)).toBe(true);
   });
 
+  it("returns true for snapshot message with runtime overlay", () => {
+    const msg: ScriptFlowHostMessage = {
+      type: "scriptFlow:snapshot",
+      snapshot: minimalSnapshot,
+      runtimeOverlay: {
+        runs: [],
+        runsById: {},
+        warnings: [],
+        acceptedLines: 0,
+        skippedLines: 0
+      }
+    };
+    expect(isScriptFlowHostMessage(msg)).toBe(true);
+  });
+
+  it("returns true for snapshot message with runtime live state", () => {
+    const msg: ScriptFlowHostMessage = {
+      type: "scriptFlow:snapshot",
+      snapshot: minimalSnapshot,
+      runtimeLive: {
+        mode: "file-watch",
+        status: "watching",
+        throttleMs: 750,
+        candidateCount: 3,
+        tracePath: "sample.ts.scriptflow.trace.jsonl",
+        updatedAt: "2026-06-19T21:45:00.000Z",
+      }
+    };
+    expect(isScriptFlowHostMessage(msg)).toBe(true);
+  });
+
   it("returns true for valid error message", () => {
     const msg: ScriptFlowHostMessage = { type: "scriptFlow:error", error: "something broke" };
     expect(isScriptFlowHostMessage(msg)).toBe(true);

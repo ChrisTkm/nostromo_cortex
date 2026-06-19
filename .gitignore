@@ -16,6 +16,12 @@ docs/*
 *.db-shm
 *.db-wal
 *.jsonl
+__pycache__/
+*.pyc
+!apps/vscode-extension/src/scriptFlow/runtimeTrace/
+!apps/vscode-extension/src/scriptFlow/runtimeTrace/__fixtures__/
+!apps/vscode-extension/src/scriptFlow/runtimeTrace/__fixtures__/*.jsonl
+!apps/vscode-extension/fixtures/script-flow/*.scriptflow.trace.jsonl
 apps/vscode-extension/*.vsix
 apps/vscode-extension/playground-*.mongodb.js
 

@@ -6,6 +6,7 @@ import path from "node:path";
 import type { Language as TreeSitterLanguage, Node, Parser as TreeSitterParser } from "web-tree-sitter";
 
 import { appendNodeObservation } from "../observations.js";
+import { createScriptFlowNodeIdStrategy } from "../stableNodeId.js";
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
 type ScriptFlowAnalyzerInput = {
@@ -136,7 +137,7 @@ class PythonFlowAnalyzer {
   private readonly entryPoints: string[] = [];
   private readonly observations = new Set<string>();
   private readonly edgeKeys = new Set<string>();
-  private readonly idCounters = new Map<string, number>();
+  private readonly nodeIds = createScriptFlowNodeIdStrategy();
 
   constructor(documentPath: string, source: string, parser: TreeSitterParser) {
     this.documentPath = documentPath;
@@ -618,12 +619,13 @@ class PythonFlowAnalyzer {
   }
 
   private createNode(kind: ScriptFlowNodeKind, label: string, anchor: Node, seed: string) {
-    const id = this.createId(kind, seed);
+    const range = this.toRange(anchor);
+    const id = this.nodeIds.create({ kind, seed, range });
     this.nodes.push({
       id,
       kind,
       label: this.shorten(label, 56),
-      range: this.toRange(anchor)
+      range
     });
     return id;
   }
@@ -654,15 +656,6 @@ class PythonFlowAnalyzer {
     });
   }
 
-  private createId(kind: ScriptFlowNodeKind, seed: string) {
-    const prefix = kind === "function" ? "fn" : kind === "tryCatch" ? "try" : kind;
-    const normalizedSeed = this.slugify(seed || kind);
-    const base = `${prefix}:${normalizedSeed}`;
-    const nextCount = (this.idCounters.get(base) ?? 0) + 1;
-    this.idCounters.set(base, nextCount);
-    return nextCount === 1 ? base : `${base}-${nextCount}`;
-  }
-
   private toRange(node: Node) {
     return {
       startLine: node.startPosition.row + 1,
@@ -680,12 +673,4 @@ class PythonFlowAnalyzer {
     return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
   }
 
-  private slugify(value: string) {
-    return (
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "node"
-    );
-  }
 }

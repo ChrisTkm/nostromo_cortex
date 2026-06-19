@@ -1,0 +1,6 @@
+not json
+{"version":2,"event":"run_start","run_id":"unsupported","timestamp":"2026-06-19T17:00:00.000Z","script_path":"C:/dev/Cortex/sample.ts"}
+{"version":1,"event":"mystery","run_id":"bad-event","timestamp":"2026-06-19T17:00:00.000Z","script_path":"C:/dev/Cortex/sample.ts"}
+{"version":1,"event":"span_end","timestamp":"2026-06-19T17:00:00.010Z","script_path":"C:/dev/Cortex/sample.ts","node_id":"sf1:fn:main:l1c1","span_id":"missing-run","duration_ms":42,"status":"ok"}
+{"version":1,"event":"run_start","run_id":"valid-run","timestamp":"2026-06-19T17:00:00.000Z","script_path":"C:/dev/Cortex/sample.ts"}
+{"version":1,"event":"span_end","run_id":"valid-run","timestamp":"2026-06-19T17:00:00.042Z","script_path":"C:/dev/Cortex/sample.ts","node_id":"sf1:fn:main:l1c1","span_id":"ok","duration_ms":42,"status":"ok"}

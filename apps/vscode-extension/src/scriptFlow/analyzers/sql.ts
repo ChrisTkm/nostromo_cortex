@@ -4,6 +4,7 @@ import path from "node:path";
 import { Parser, type AST, type LocationRange, type Select } from "node-sql-parser";
 
 import { appendNodeObservation } from "../observations.js";
+import { createScriptFlowNodeIdStrategy } from "../stableNodeId.js";
 import type { ScriptFlowAnalysis, ScriptFlowEdge, ScriptFlowEdgeKind, ScriptFlowNode, ScriptFlowNodeKind, ScriptFlowSnapshot } from "../types.js";
 
 type ScriptFlowAnalyzerInput = {
@@ -102,7 +103,7 @@ class SqlFlowAnalyzer {
   private readonly entryPoints: string[] = [];
   private readonly observations = new Set<string>();
   private readonly edgeKeys = new Set<string>();
-  private readonly idCounters = new Map<string, number>();
+  private readonly nodeIds = createScriptFlowNodeIdStrategy();
   private readonly cteNodeIds = new Map<string, string>();
   private readonly searchOffsets: Record<SearchCursorKey, number> = {
     cte: 0,
@@ -492,7 +493,7 @@ class SqlFlowAnalyzer {
     range?: ScriptFlowRange,
     meta?: Record<string, unknown>
   ) {
-    const id = this.createId(kind, seed);
+    const id = this.nodeIds.create({ kind, seed, range });
     this.nodes.push({
       id,
       kind,
@@ -501,15 +502,6 @@ class SqlFlowAnalyzer {
       ...(meta ? { meta } : {})
     });
     return id;
-  }
-
-  private createId(kind: ScriptFlowNodeKind, seed: string) {
-    const prefix = kind === "tryCatch" ? "try" : kind;
-    const normalizedSeed = this.slugify(seed || kind);
-    const base = `${prefix}:${normalizedSeed}`;
-    const nextCount = (this.idCounters.get(base) ?? 0) + 1;
-    this.idCounters.set(base, nextCount);
-    return nextCount === 1 ? base : `${base}-${nextCount}`;
   }
 
   private addFlowGap(id: string, message: string) {
@@ -554,14 +546,6 @@ class SqlFlowAnalyzer {
     return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
   }
 
-  private slugify(value: string) {
-    return (
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "node"
-    );
-  }
 }
 
 function hasSelectStar(select: Select) {
@@ -624,6 +608,14 @@ function buildUnsupportedSqlSnapshot(documentPath: string, source: string, error
   const fileName = path.basename(documentPath);
   const message = error instanceof Error ? error.message : String(error);
   const observations = extractParserObservations(message);
+  const nodeIds = createScriptFlowNodeIdStrategy();
+  const range = {
+    startLine: 1,
+    startCol: 1,
+    endLine: Math.max(1, source.split(/\r?\n/).length),
+    endCol: 1
+  };
+  const nodeId = nodeIds.create({ kind: "entry", seed: "unsupported-sql-syntax", range });
 
   return {
     metadata: {
@@ -634,15 +626,16 @@ function buildUnsupportedSqlSnapshot(documentPath: string, source: string, error
     },
     nodes: [
       {
-        id: "unsupported",
+        id: nodeId,
         kind: "entry",
         label: "Unsupported SQL syntax",
+        range,
         meta: { reason: "parser-failed" }
       }
     ],
     edges: [],
     analysis: {
-      entryPoints: ["unsupported"],
+      entryPoints: [nodeId],
       summary: [
         `${fileName}: SQL contiene sintaxis que node-sql-parser no soporta.`,
         "Casos típicos: PL/pgSQL function bodies (AS $$...$$), array types (uuid[], text[]), RETURNS TABLE, DO blocks, COPY, psql meta-commands.",

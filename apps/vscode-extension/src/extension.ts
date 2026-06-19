@@ -23,6 +23,7 @@ import { buildBrainSnapshot, createBrainCache } from "./brain/indexer.js";
 import type { BrainCache } from "./brain/indexer.js";
 import { createDebouncedRefresh } from "./brain/watcher.js";
 import type { BrainSnapshot } from "./brain/types.js";
+import type { ScriptFlowTraceParseResult } from "./scriptFlow/runtimeTraceParser.js";
 import {
   ExtensionTaskService,
   webviewPlanPatchToDocumentPatch,
@@ -36,6 +37,7 @@ import {
   sendError,
   sendSnapshot,
   sendUnsupported,
+  type ScriptFlowRuntimeLiveState,
 } from "./scriptFlow/bridge.js";
 import type { ScriptFlowSnapshot } from "./scriptFlow/types.js";
 import { DEFAULT_FILTER_STATE } from "./state.js";
@@ -86,11 +88,16 @@ type ScriptFlowDelivery =
   | {
       type: "snapshot";
       snapshot: ScriptFlowSnapshot;
+      runtimeOverlay?: ScriptFlowTraceParseResult;
+      runtimeLive?: ScriptFlowRuntimeLiveState;
+      traceCandidates?: string[];
+      tracePath?: string;
       parseMs: number;
       documentUri: vscode.Uri;
     }
   | { type: "error"; error: string }
   | { type: "unsupported"; language?: string };
+const SCRIPT_FLOW_RUNTIME_LIVE_THROTTLE_MS = 750;
 
 let activeService: ExtensionTaskService | undefined;
 const MONGO_URL_SECRET_KEY = "cortex.mongoUrl";
@@ -264,7 +271,13 @@ export async function activate(context: vscode.ExtensionContext) {
   let plansPanel: vscode.WebviewPanel | undefined;
   let plansPanelReady = false;
   let currentScriptFlowSnapshot: ScriptFlowSnapshot | undefined;
+  let currentScriptFlowRuntimeOverlay: ScriptFlowTraceParseResult | undefined;
+  let currentScriptFlowRuntimeLive: ScriptFlowRuntimeLiveState | undefined;
   let currentScriptFlowDocumentUri: vscode.Uri | undefined;
+  let currentScriptFlowTraceCandidates: string[] = [];
+  let currentScriptFlowTracePath: string | undefined;
+  let scriptFlowRuntimeWatchers: vscode.Disposable[] = [];
+  let scriptFlowRuntimeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let scriptFlowEditorViewColumn: vscode.ViewColumn | undefined;
   let currentGraphOrphans: Array<{ taskCode: string; missing: string }> = [];
 
@@ -288,7 +301,12 @@ export async function activate(context: vscode.ExtensionContext) {
   let pendingNotesMode: NotesPanelMode = "list";
   let pendingNotesSearch: string | undefined;
   let pendingScriptFlowRequest: ScriptFlowRequest = { scope: "file" };
-  context.subscriptions.push(cortexOutput, { dispose: disposeBrainWatcher });
+  context.subscriptions.push(cortexOutput, {
+    dispose: () => {
+      disposeBrainWatcher();
+      disposeScriptFlowRuntimeWatcher();
+    },
+  });
 
   async function postSnapshot(selectedTaskCode?: string) {
     await lazyInit();
@@ -579,7 +597,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     currentScriptFlowSnapshot = undefined;
+    currentScriptFlowRuntimeOverlay = undefined;
+    currentScriptFlowRuntimeLive = undefined;
     currentScriptFlowDocumentUri = undefined;
+    currentScriptFlowTraceCandidates = [];
+    currentScriptFlowTracePath = undefined;
+    disposeScriptFlowRuntimeWatcher();
     const delivery = await buildScriptFlowDelivery(request);
     if (scriptFlowPanel !== panel) {
       return;
@@ -587,13 +610,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (delivery.type === "snapshot") {
       currentScriptFlowSnapshot = delivery.snapshot;
+      currentScriptFlowRuntimeOverlay = delivery.runtimeOverlay;
+      currentScriptFlowRuntimeLive = delivery.runtimeLive;
       currentScriptFlowDocumentUri = delivery.documentUri;
-      await sendSnapshot(panel.webview, delivery.snapshot);
+      currentScriptFlowTraceCandidates = delivery.traceCandidates ?? [];
+      currentScriptFlowTracePath = delivery.tracePath;
+      await sendSnapshot(
+        panel.webview,
+        delivery.snapshot,
+        delivery.runtimeOverlay,
+        delivery.runtimeLive,
+      );
+      setupScriptFlowRuntimeWatcher(delivery.traceCandidates ?? []);
       await service.recordInteraction("script_flow_open", {
         lang: delivery.snapshot.metadata.language,
         nodeCount: delivery.snapshot.nodes.length,
         edgeCount: delivery.snapshot.edges.length,
         parseMs: delivery.parseMs,
+        runtimeRunId: delivery.runtimeOverlay?.selectedRunId,
+        runtimeWarnings: delivery.runtimeOverlay?.warnings.length ?? 0,
       });
       return;
     }
@@ -604,6 +639,118 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     await sendUnsupported(panel.webview, delivery.language);
+  }
+
+  function setupScriptFlowRuntimeWatcher(traceCandidates: string[]) {
+    disposeScriptFlowRuntimeWatcher();
+    if (traceCandidates.length === 0) {
+      return;
+    }
+
+    const watched = new Set<string>();
+    for (const candidate of traceCandidates) {
+      const directory = path.dirname(candidate);
+      const basename = path.basename(candidate);
+      const watcherKey = `${directory}:${basename}`;
+      if (watched.has(watcherKey)) {
+        continue;
+      }
+      watched.add(watcherKey);
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(directory), basename),
+      );
+      watcher.onDidCreate(() => scheduleScriptFlowRuntimeRefresh("created"));
+      watcher.onDidChange(() => scheduleScriptFlowRuntimeRefresh("changed"));
+      watcher.onDidDelete(() => scheduleScriptFlowRuntimeRefresh("deleted"));
+      scriptFlowRuntimeWatchers.push(watcher);
+    }
+  }
+
+  function disposeScriptFlowRuntimeWatcher() {
+    if (scriptFlowRuntimeRefreshTimer) {
+      clearTimeout(scriptFlowRuntimeRefreshTimer);
+      scriptFlowRuntimeRefreshTimer = undefined;
+    }
+    for (const watcher of scriptFlowRuntimeWatchers) {
+      watcher.dispose();
+    }
+    scriptFlowRuntimeWatchers = [];
+  }
+
+  function scheduleScriptFlowRuntimeRefresh(reason: string) {
+    if (scriptFlowRuntimeRefreshTimer) {
+      clearTimeout(scriptFlowRuntimeRefreshTimer);
+    }
+    scriptFlowRuntimeRefreshTimer = setTimeout(() => {
+      scriptFlowRuntimeRefreshTimer = undefined;
+      void refreshScriptFlowRuntimeOverlay(reason);
+    }, SCRIPT_FLOW_RUNTIME_LIVE_THROTTLE_MS);
+  }
+
+  async function refreshScriptFlowRuntimeOverlay(reason: string) {
+    const panel = scriptFlowPanel;
+    const snapshot = currentScriptFlowSnapshot;
+    if (!panel || !snapshot || currentScriptFlowTraceCandidates.length === 0) {
+      return;
+    }
+
+    const tracePath = findScriptFlowTracePathFromCandidates(
+      currentScriptFlowTraceCandidates,
+    );
+    if (!tracePath) {
+      currentScriptFlowTracePath = undefined;
+      currentScriptFlowRuntimeOverlay = undefined;
+      currentScriptFlowRuntimeLive = createScriptFlowRuntimeLiveState(
+        "missing",
+        undefined,
+        currentScriptFlowTraceCandidates.length,
+        "Waiting for a local companion trace file.",
+      );
+      await sendSnapshot(
+        panel.webview,
+        snapshot,
+        undefined,
+        currentScriptFlowRuntimeLive,
+      );
+      return;
+    }
+
+    try {
+      const { readScriptFlowTraceFile } = await import(
+        "./scriptFlow/runtimeTraceParser.js"
+      );
+      const overlay = await loadScriptFlowRuntimeOverlay(
+        tracePath,
+        readScriptFlowTraceFile,
+      );
+      if (scriptFlowPanel !== panel || currentScriptFlowSnapshot !== snapshot) {
+        return;
+      }
+      currentScriptFlowTracePath = tracePath;
+      currentScriptFlowRuntimeOverlay = overlay;
+      currentScriptFlowRuntimeLive = createScriptFlowRuntimeLiveState(
+        overlay ? "updated" : "watching",
+        tracePath,
+        currentScriptFlowTraceCandidates.length,
+        overlay
+          ? `Live trace ${reason}; overlay refreshed.`
+          : "Trace exists but has no accepted events yet.",
+      );
+      await sendSnapshot(panel.webview, snapshot, overlay, currentScriptFlowRuntimeLive);
+    } catch (error) {
+      currentScriptFlowRuntimeLive = createScriptFlowRuntimeLiveState(
+        "error",
+        tracePath,
+        currentScriptFlowTraceCandidates.length,
+        error instanceof Error ? error.message : String(error),
+      );
+      await sendSnapshot(
+        panel.webview,
+        snapshot,
+        currentScriptFlowRuntimeOverlay,
+        currentScriptFlowRuntimeLive,
+      );
+    }
   }
 
   async function refreshNotesPanel() {
@@ -1771,7 +1918,12 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       scriptFlowPanel = undefined;
       scriptFlowPanelReady = false;
       currentScriptFlowSnapshot = undefined;
+      currentScriptFlowRuntimeOverlay = undefined;
+      currentScriptFlowRuntimeLive = undefined;
       currentScriptFlowDocumentUri = undefined;
+      currentScriptFlowTraceCandidates = [];
+      currentScriptFlowTracePath = undefined;
+      disposeScriptFlowRuntimeWatcher();
       scriptFlowEditorViewColumn = undefined;
     });
     scriptFlowPanel.webview.onDidReceiveMessage(async (message) => {
@@ -4114,9 +4266,11 @@ async function buildScriptFlowDelivery(
   const [
     { resolveScriptFlowLanguage, analyzeScriptFlowDocument },
     { expandCrossFileImports },
+    { readScriptFlowTraceFile },
   ] = await Promise.all([
     import("./scriptFlow/analyzers/index.js"),
     import("./scriptFlow/crossFileResolver.js"),
+    import("./scriptFlow/runtimeTraceParser.js"),
   ]);
   const resolved = await resolveScriptFlowDocument(request);
   if (resolved.kind === "error") {
@@ -4183,9 +4337,32 @@ async function buildScriptFlowDelivery(
     if (request.scope !== "selection") {
       enrichScriptFlowWithDiagnostics(snapshot, document.uri);
     }
+    const traceCandidates =
+      request.scope === "selection"
+        ? []
+        : getScriptFlowTraceCandidates(documentPath);
+    const tracePath = findScriptFlowTracePathFromCandidates(traceCandidates);
+    const runtimeOverlay = tracePath
+      ? await loadScriptFlowRuntimeOverlay(tracePath, readScriptFlowTraceFile)
+      : undefined;
+    const runtimeLive =
+      request.scope === "selection"
+        ? undefined
+        : createScriptFlowRuntimeLiveState(
+            tracePath ? "watching" : "missing",
+            tracePath,
+            traceCandidates.length,
+            tracePath
+              ? "Watching local companion trace file."
+              : "Waiting for a local companion trace file.",
+          );
     return {
       type: "snapshot",
       snapshot,
+      runtimeOverlay,
+      runtimeLive,
+      traceCandidates,
+      tracePath,
       parseMs: Date.now() - startedAt,
       documentUri: document.uri,
     };
@@ -4195,6 +4372,59 @@ async function buildScriptFlowDelivery(
       error: String(error),
     };
   }
+}
+
+async function loadScriptFlowRuntimeOverlay(
+  tracePath: string,
+  readTraceFile: (filePath: string) => Promise<ScriptFlowTraceParseResult>,
+): Promise<ScriptFlowTraceParseResult | undefined> {
+  try {
+    const overlay = await readTraceFile(tracePath);
+    return overlay.acceptedLines > 0 ? overlay : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getScriptFlowTraceCandidates(documentPath: string) {
+  if (!documentPath) {
+    return [];
+  }
+
+  const directory = path.dirname(documentPath);
+  const parsed = path.parse(documentPath);
+  return [
+    path.join(directory, ".scriptflow.trace.jsonl"),
+    `${documentPath}.scriptflow.trace.jsonl`,
+    path.join(directory, `${parsed.name}.scriptflow.trace.jsonl`),
+  ];
+}
+
+function findScriptFlowTracePathFromCandidates(candidates: string[]) {
+  return candidates.find((candidate) => {
+    try {
+      return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function createScriptFlowRuntimeLiveState(
+  status: ScriptFlowRuntimeLiveState["status"],
+  tracePath: string | undefined,
+  candidateCount: number,
+  message: string,
+): ScriptFlowRuntimeLiveState {
+  return {
+    mode: "file-watch",
+    status,
+    throttleMs: SCRIPT_FLOW_RUNTIME_LIVE_THROTTLE_MS,
+    candidateCount,
+    updatedAt: new Date().toISOString(),
+    message,
+    ...(tracePath ? { tracePath } : {}),
+  };
 }
 
 function enrichScriptFlowWithDiagnostics(

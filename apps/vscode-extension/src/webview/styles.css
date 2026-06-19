@@ -3569,6 +3569,54 @@ body {
     var(--cortex-shadow);
 }
 
+.sf-atom-node--runtime {
+  position: relative;
+}
+
+.sf-atom-node--runtime-low {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-cyan) 44%, transparent),
+    0 10px 28px color-mix(in srgb, var(--accent-cyan) 14%, transparent),
+    var(--cortex-shadow);
+}
+
+.sf-atom-node--runtime-medium,
+.sf-atom-node--runtime-active {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--status-in-progress) 56%, transparent),
+    0 0 18px color-mix(in srgb, var(--status-in-progress) 18%, transparent),
+    var(--cortex-shadow);
+}
+
+.sf-atom-node--runtime-high {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--cortex-level-warn) 62%, transparent),
+    0 0 22px color-mix(in srgb, var(--cortex-level-warn) 22%, transparent),
+    var(--cortex-shadow);
+}
+
+.sf-atom-node--runtime-error {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--status-failed) 70%, transparent),
+    0 0 24px color-mix(in srgb, var(--status-failed) 24%, transparent),
+    var(--cortex-shadow);
+}
+
+.sf-atom-node--replay-active {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent-cyan) 70%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent-cyan) 26%, transparent),
+    var(--cortex-shadow);
+}
+
+.sf-atom-node--replay-error {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--status-failed) 76%, transparent),
+    0 0 30px color-mix(in srgb, var(--status-failed) 30%, transparent),
+    var(--cortex-shadow);
+}
+
 /* Nota de texto a la que apunta la flecha coloreada del flow-gap. */
 .sf-gap-note {
   --sf-gap-color: #ff3b6b;
@@ -3617,6 +3665,42 @@ body {
   height: 9px;
   border: 1px solid color-mix(in srgb, var(--cortex-text) 40%, transparent);
   background: var(--cortex-canvas-bg);
+}
+
+.sf-node__runtime {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sf-node__runtime-badge {
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 36%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-cyan) 10%, transparent);
+  color: var(--accent-cyan);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.sf-node__runtime-badge--active {
+  border-color: color-mix(in srgb, var(--status-in-progress) 52%, transparent);
+  background: color-mix(in srgb, var(--status-in-progress) 14%, transparent);
+  color: var(--status-in-progress);
+}
+
+.sf-node__runtime-badge--error {
+  border-color: color-mix(in srgb, var(--status-failed) 58%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+}
+
+.sf-node__runtime-badge--replay {
+  border-color: color-mix(in srgb, var(--accent-cyan) 58%, transparent);
+  background: color-mix(in srgb, var(--accent-cyan) 14%, transparent);
+  color: var(--accent-cyan);
 }
 
 .sf-node__footer {
@@ -3797,6 +3881,226 @@ body {
   white-space: nowrap;
 }
 
+.sf-runtime-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sf-runtime-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-cyan) 8%, transparent);
+  color: var(--accent-cyan);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.sf-runtime-live__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 70%, transparent);
+}
+
+.sf-runtime-live__label {
+  color: var(--cortex-text-strong);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sf-runtime-live__status,
+.sf-runtime-live__time {
+  color: currentColor;
+}
+
+.sf-runtime-live--missing {
+  border-color: color-mix(in srgb, var(--cortex-text-muted) 30%, transparent);
+  background: color-mix(in srgb, var(--cortex-text-muted) 8%, transparent);
+  color: var(--cortex-text-muted);
+}
+
+.sf-runtime-live--watching {
+  border-color: color-mix(in srgb, var(--status-in-progress) 42%, transparent);
+  background: color-mix(in srgb, var(--status-in-progress) 10%, transparent);
+  color: var(--status-in-progress);
+}
+
+.sf-runtime-live--updated .sf-runtime-live__dot {
+  animation: script-flow-live-pulse 1.6s ease-in-out infinite;
+}
+
+.sf-runtime-live--error {
+  border-color: color-mix(in srgb, var(--status-failed) 52%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+}
+
+.sf-runtime-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: min(100%, 520px);
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--status-in-progress) 24%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--status-in-progress) 8%, transparent),
+      color-mix(in srgb, var(--cortex-surface) 76%, transparent)
+    );
+}
+
+.sf-runtime-controls__selector,
+.sf-runtime-replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sf-runtime-controls__selector span,
+.sf-runtime-controls__meta,
+.sf-runtime-replay__count,
+.sf-runtime-replay__event {
+  color: var(--cortex-text-muted);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.sf-runtime-select {
+  max-width: 164px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--status-in-progress) 44%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--status-in-progress) 12%, var(--cortex-surface));
+  color: var(--status-in-progress);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  outline: none;
+}
+
+.sf-runtime-controls__meta {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 4%, transparent);
+  white-space: nowrap;
+}
+
+.sf-runtime-scrub {
+  width: 88px;
+  accent-color: var(--accent-cyan);
+}
+
+.sf-runtime-replay__event {
+  max-width: 96px;
+  overflow: hidden;
+  color: var(--accent-cyan);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-runtime-replay__event--span_error {
+  color: var(--status-failed);
+}
+
+.sf-runtime-summary__label,
+.sf-runtime-summary__pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-cyan) 8%, transparent);
+  color: var(--accent-cyan);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.sf-runtime-summary__label {
+  border-color: color-mix(in srgb, var(--cortex-node-function) 40%, transparent);
+  background: color-mix(in srgb, var(--cortex-node-function) 10%, transparent);
+  color: var(--cortex-node-function);
+}
+
+.sf-runtime-summary__pill--error,
+.sf-runtime-summary__pill--timeout {
+  border-color: color-mix(in srgb, var(--status-failed) 52%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+}
+
+.sf-runtime-summary__pill--active,
+.sf-runtime-summary__pill--running {
+  border-color: color-mix(in srgb, var(--status-in-progress) 52%, transparent);
+  background: color-mix(in srgb, var(--status-in-progress) 12%, transparent);
+  color: var(--status-in-progress);
+}
+
+.sf-runtime-legend {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 28%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--cortex-surface) 90%, transparent),
+      color-mix(in srgb, var(--cortex-bg-mid) 86%, transparent)
+    );
+  color: var(--cortex-text-muted);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  box-shadow: 0 12px 30px color-mix(in srgb, #000 28%, transparent);
+  pointer-events: none;
+}
+
+.sf-runtime-legend__eyebrow {
+  color: var(--accent-cyan);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sf-runtime-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-cyan) 70%, transparent);
+}
+
+.sf-runtime-legend__dot--medium {
+  background: var(--status-in-progress);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--status-in-progress) 70%, transparent);
+}
+
+.sf-runtime-legend__dot--high {
+  background: var(--cortex-level-warn);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--cortex-level-warn) 70%, transparent);
+}
+
 .script-flow-canvas .react-flow__edge.script-flow-edge--active:not(.script-flow-edge--loop) {
   color: var(--accent-cyan);
   --script-flow-edge-color: var(--accent-cyan);
@@ -3810,6 +4114,23 @@ body {
 .script-flow-canvas .react-flow__edge.script-flow-edge--gap {
   color: var(--script-flow-edge-color, #ff3b6b);
   --script-flow-edge-color: #ff3b6b;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--runtime {
+  color: var(--script-flow-edge-color, var(--accent-cyan));
+  --script-flow-edge-color: var(--accent-cyan);
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--runtime-medium {
+  --script-flow-edge-color: var(--status-in-progress);
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--runtime-high {
+  --script-flow-edge-color: var(--cortex-level-warn);
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--runtime-error {
+  --script-flow-edge-color: var(--status-failed);
 }
 
 .script-flow-canvas .react-flow__edge-textbg {
@@ -3867,6 +4188,26 @@ body {
   stroke-width: 16;
 }
 
+.script-flow-canvas .react-flow__edge.script-flow-edge--runtime .react-flow__edge-path {
+  stroke-dasharray: 4 7;
+  filter: drop-shadow(
+    0 0 5px color-mix(in srgb, var(--script-flow-edge-color) 72%, transparent)
+  );
+  animation:
+    script-flow-edge-flow 2.8s linear infinite,
+    script-flow-edge-pulse 2s ease-in-out infinite;
+}
+
+.script-flow-canvas .react-flow__edge.script-flow-edge--replay .react-flow__edge-path {
+  stroke-dasharray: 3 5;
+  filter: drop-shadow(
+    0 0 7px color-mix(in srgb, var(--script-flow-edge-color) 82%, transparent)
+  );
+  animation:
+    script-flow-edge-flow 1.8s linear infinite,
+    script-flow-edge-pulse 1.4s ease-in-out infinite;
+}
+
 @keyframes script-flow-edge-flow {
   to {
     stroke-dashoffset: -24;
@@ -3886,6 +4227,18 @@ body {
     filter: drop-shadow(
       0 0 6px color-mix(in srgb, var(--script-flow-edge-color) 88%, transparent)
     );
+  }
+}
+
+@keyframes script-flow-live-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
   }
 }
 
