@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   SCRIPT_FLOW_NODE_KINDS,
@@ -37,9 +37,29 @@ type MessageGroup = {
   items: MessageItem[];
 };
 
+type MessageFilter =
+  | "all"
+  | "error"
+  | "warning"
+  | "flow-gap"
+  | "diagnostic"
+  | "inline";
+
+type MessageFilterStats = Record<MessageFilter, number>;
+
+const MESSAGE_FILTERS: Array<{ value: MessageFilter; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "error", label: "Errores" },
+  { value: "warning", label: "Warnings" },
+  { value: "flow-gap", label: "Flow gaps" },
+  { value: "diagnostic", label: "Diagnósticos" },
+  { value: "inline", label: "Inline" },
+];
+
 export function AnalysisDrawer(props: AnalysisDrawerProps) {
   const { activeNodeId, isOpen, mode, nodes, onClose, onSelectNode } = props;
   const itemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
 
   const groups = useMemo<NodeGroup[]>(() => {
     const byKind = new Map<ScriptFlowNodeKind, ScriptFlowNode[]>();
@@ -81,6 +101,24 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
       }));
   }, [nodes]);
 
+  const messageStats = useMemo(
+    () => countMessageFilters(flattenMessageGroups(messageGroups)),
+    [messageGroups],
+  );
+
+  const filteredMessageGroups = useMemo(
+    () =>
+      messageGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) =>
+            messageMatchesFilter(item, messageFilter),
+          ),
+        }))
+        .filter((group) => group.items.length > 0),
+    [messageFilter, messageGroups],
+  );
+
   useEffect(() => {
     if (!isOpen || !activeNodeId) {
       return;
@@ -103,7 +141,7 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
       </div>
       <h2 className="drawer-header__title">
         {mode === "messages"
-          ? `${messageGroups.reduce((sum, group) => sum + group.items.length, 0)} mensajes`
+          ? `${messageStats.all} mensajes`
           : `${nodes.length} nodos`}
       </h2>
     </>
@@ -116,17 +154,31 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
   );
 
   const hasMessages = messageGroups.length > 0;
+  const hasFilteredMessages = filteredMessageGroups.length > 0;
 
   return (
     <DrawerShell actions={actions} header={header} isOpen={isOpen} onClose={onClose}>
       {mode === "messages" ? (
         hasMessages ? (
-          <MessageGroups
-            activeNodeId={activeNodeId}
-            groups={messageGroups}
-            itemRefs={itemRefs}
-            onSelectNode={onSelectNode}
-          />
+          <>
+            <MessageFilters
+              stats={messageStats}
+              value={messageFilter}
+              onChange={setMessageFilter}
+            />
+            {hasFilteredMessages ? (
+              <MessageGroups
+                activeNodeId={activeNodeId}
+                groups={filteredMessageGroups}
+                itemRefs={itemRefs}
+                onSelectNode={onSelectNode}
+              />
+            ) : (
+              <div className="drawer-empty">
+                No hay mensajes para este filtro.
+              </div>
+            )}
+          </>
         ) : (
           <div className="drawer-empty">Este script no tiene mensajes.</div>
         )
@@ -167,6 +219,31 @@ export function AnalysisDrawer(props: AnalysisDrawerProps) {
   );
 }
 
+function MessageFilters(props: {
+  stats: MessageFilterStats;
+  value: MessageFilter;
+  onChange: (value: MessageFilter) => void;
+}) {
+  return (
+    <div className="sf-message-filters" aria-label="Filtrar mensajes">
+      {MESSAGE_FILTERS.map((filter) => (
+        <button
+          className={`sf-message-filter${
+            props.value === filter.value ? " is-active" : ""
+          } sf-message-filter--${filter.value}`}
+          disabled={props.stats[filter.value] === 0}
+          key={filter.value}
+          onClick={() => props.onChange(filter.value)}
+          type="button"
+        >
+          <span>{filter.label}</span>
+          <strong>{props.stats[filter.value]}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MessageGroups(props: {
   activeNodeId: string | null;
   groups: MessageGroup[];
@@ -184,29 +261,13 @@ function MessageGroups(props: {
             </div>
             <div className="drawer-list drawer-list--stack">
               {group.items.map((item) => (
-                <button
-                  className={`drawer-link sf-message-link${
-                    props.activeNodeId === item.node.id ? " is-active" : ""
-                  } sf-message-link--${item.observation.severity}`}
+                <MessageButton
+                  activeNodeId={props.activeNodeId}
+                  item={item}
+                  itemRefs={props.itemRefs}
                   key={item.key}
-                  onClick={() => props.onSelectNode(item.node.id)}
-                  ref={bindItemRef(props.itemRefs, item.key)}
-                  title={`${item.node.label}\n${item.observation.message}`}
-                  type="button"
-                >
-                  <span className="sf-message-link__meta">
-                    <span className="sf-message-link__kind">
-                      {KIND_LABELS[item.node.kind]}
-                    </span>
-                    {typeof item.observation.line === "number" ? (
-                      <span>L{item.observation.line}</span>
-                    ) : null}
-                  </span>
-                  <span className="sf-message-link__message">
-                    {item.observation.message}
-                  </span>
-                  <span className="sf-message-link__node">{item.node.label}</span>
-                </button>
+                  onSelectNode={props.onSelectNode}
+                />
               ))}
             </div>
           </section>
@@ -214,6 +275,137 @@ function MessageGroups(props: {
       ))}
     </div>
   );
+}
+
+function MessageButton(props: {
+  activeNodeId: string | null;
+  item: MessageItem;
+  itemRefs: { current: Map<string, HTMLButtonElement> };
+  onSelectNode: (nodeId: string) => void;
+}) {
+  const { item } = props;
+  const fixHint = getFixHint(item.observation);
+  return (
+    <button
+      className={`drawer-link sf-message-link${
+        props.activeNodeId === item.node.id ? " is-active" : ""
+      } sf-message-link--${item.observation.severity}`}
+      onClick={() => props.onSelectNode(item.node.id)}
+      ref={bindItemRef(props.itemRefs, item.key)}
+      title={`${item.node.label}\n${item.observation.message}`}
+      type="button"
+    >
+      <span className="sf-message-link__meta">
+        <span className="sf-message-link__kind">
+          {KIND_LABELS[item.node.kind]}
+        </span>
+        {typeof item.observation.line === "number" ? (
+          <span>L{item.observation.line}</span>
+        ) : null}
+      </span>
+      <span className="sf-message-link__message">
+        {item.observation.message}
+      </span>
+      {fixHint ? (
+        <span className="sf-message-link__hint">
+          <span className="sf-message-link__hint-label">Hint</span>
+          {fixHint}
+        </span>
+      ) : null}
+      <span className="sf-message-link__node">{item.node.label}</span>
+    </button>
+  );
+}
+
+function flattenMessageGroups(groups: MessageGroup[]) {
+  return groups.flatMap((group) => group.items);
+}
+
+function countMessageFilters(items: MessageItem[]): MessageFilterStats {
+  return items.reduce<MessageFilterStats>(
+    (counts, item) => {
+      counts.all += 1;
+      if (item.observation.severity === "error") {
+        counts.error += 1;
+      }
+      if (item.observation.severity === "warning") {
+        counts.warning += 1;
+      }
+      if (item.observation.kind === "flow-gap") {
+        counts["flow-gap"] += 1;
+      }
+      if (item.observation.kind === "diagnostic") {
+        counts.diagnostic += 1;
+      }
+      if (item.observation.kind === "inline") {
+        counts.inline += 1;
+      }
+      return counts;
+    },
+    {
+      all: 0,
+      error: 0,
+      warning: 0,
+      "flow-gap": 0,
+      diagnostic: 0,
+      inline: 0,
+    },
+  );
+}
+
+function messageMatchesFilter(item: MessageItem, filter: MessageFilter) {
+  switch (filter) {
+    case "all":
+      return true;
+    case "error":
+    case "warning":
+      return item.observation.severity === filter;
+    case "flow-gap":
+    case "diagnostic":
+    case "inline":
+      return item.observation.kind === filter;
+  }
+}
+
+function getFixHint(observation: ScriptFlowAutoObservation) {
+  const message = observation.message.toLowerCase();
+  if (message.includes("no explicit return")) {
+    return "Agrega un return explícito en todos los caminos de salida.";
+  }
+  if (message.includes("no explicit else")) {
+    return "Cubre el caso contrario con else, early return o una salida explícita.";
+  }
+  if (message.includes("no default path")) {
+    return "Agrega default o documenta por qué todos los casos ya están cubiertos.";
+  }
+  if (message.includes("unreachable")) {
+    return "Mueve o elimina el bloque que quedó después de una salida terminal.";
+  }
+  if (message.includes("catch block is empty")) {
+    return "Registra, relanza o maneja el error para que no se pierda silencio.";
+  }
+  if (message.includes("loop body is empty") || message.includes("pass-only")) {
+    return "Agrega trabajo real al loop o explica la espera con una condición clara.";
+  }
+  if (message.includes("broad except") || message.includes("baseexception")) {
+    return "Captura una excepción más específica y deja visible el manejo esperado.";
+  }
+  if (message.includes("unused cte")) {
+    return "Usa el CTE en la consulta final o elimínalo si quedó obsoleto.";
+  }
+  if (message.includes("select *")) {
+    return "Enumera columnas para evitar acoplar el flujo a cambios de esquema.";
+  }
+  if (message.includes("cartesian")) {
+    return "Agrega una condición ON/WHERE si el cruce no es intencional.";
+  }
+  if (observation.severity === "warning") {
+    return "Revisa si este patrón es intencional y deja explícita la intención.";
+  }
+  if (observation.severity === "error") {
+    return "Corrige este punto antes de confiar en el flujo resultante.";
+  }
+  return "Úsalo como nota de revisión para mejorar legibilidad o mantenimiento.";
 }
 
 function NodeSignalSummary(props: { node: ScriptFlowNode }) {

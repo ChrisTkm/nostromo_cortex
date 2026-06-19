@@ -1,10 +1,11 @@
-import type { MutableRefObject } from "react";
+import type { KeyboardEventHandler, MutableRefObject } from "react";
 import "./Search.css";
 
 interface SearchProps {
   className?: string;
   inputRef?: MutableRefObject<HTMLInputElement | null>;
   onChange(value: string): void;
+  onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   placeholder?: string;
   value: string;
 }
@@ -13,6 +14,7 @@ export function Search({
   className,
   inputRef,
   onChange,
+  onKeyDown,
   placeholder = "Search...",
   value,
 }: SearchProps) {
@@ -40,6 +42,7 @@ export function Search({
       <input
         className="atom-search__input"
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         ref={(element) => {
           if (inputRef) {

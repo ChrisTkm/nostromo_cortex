@@ -3287,6 +3287,62 @@ body {
   min-width: 0;
 }
 
+.sf-message-summary,
+.sf-message-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sf-message-summary {
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.sf-message-summary__pill,
+.sf-message-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid color-mix(in srgb, var(--cortex-border) 78%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, white 4%, transparent);
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sf-message-summary__pill {
+  padding: 0 8px;
+  font-family: var(--cortex-font-mono);
+  font-weight: 400;
+}
+
+.sf-message-summary__pill--error {
+  border-color: color-mix(in srgb, var(--status-failed) 42%, transparent);
+  color: var(--status-failed);
+}
+
+.sf-message-summary__pill--warning {
+  border-color: color-mix(in srgb, var(--cortex-level-warn) 42%, transparent);
+  color: var(--cortex-level-warn);
+}
+
+.sf-message-summary__pill--info {
+  border-color: color-mix(in srgb, var(--cortex-level-info) 38%, transparent);
+  color: var(--cortex-level-info);
+}
+
+.sf-message-summary__pill--gap {
+  border-color: color-mix(in srgb, #ff3b6b 46%, transparent);
+  color: #ff3b6b;
+}
+
 .script-flow-surface {
   position: relative;
   min-height: 0;
@@ -3601,6 +3657,67 @@ body {
   gap: 8px;
 }
 
+.sf-message-filters {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cortex-border) 58%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--cortex-surface) 96%, transparent),
+      color-mix(in srgb, var(--cortex-bg-mid) 92%, transparent)
+    );
+}
+
+.sf-message-filter {
+  min-width: 0;
+  padding: 0 8px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.sf-message-filter:hover:not(:disabled),
+.sf-message-filter.is-active {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--cortex-node-function) 48%, transparent);
+  background: color-mix(in srgb, var(--cortex-node-function) 12%, transparent);
+  color: var(--cortex-text-strong);
+}
+
+.sf-message-filter:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.sf-message-filter strong {
+  color: inherit;
+  font-family: var(--cortex-font-mono);
+}
+
+.sf-message-filter--error.is-active,
+.sf-message-filter--error:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--status-failed) 58%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 13%, transparent);
+}
+
+.sf-message-filter--warning.is-active,
+.sf-message-filter--warning:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--cortex-level-warn) 58%, transparent);
+  background: color-mix(in srgb, var(--cortex-level-warn) 13%, transparent);
+}
+
+.sf-message-filter--flow-gap.is-active,
+.sf-message-filter--flow-gap:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #ff3b6b 62%, transparent);
+  background: color-mix(in srgb, #ff3b6b 12%, transparent);
+}
+
 .sf-message-link {
   display: grid;
   gap: 4px;
@@ -3647,6 +3764,28 @@ body {
   color: var(--cortex-text-strong);
   font-size: var(--cortex-text-sm);
   line-height: var(--cortex-line-height);
+}
+
+.sf-message-link__hint {
+  display: grid;
+  gap: 3px;
+  margin-top: 2px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--cortex-node-function) 22%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cortex-node-function) 8%, transparent);
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  line-height: 1.35;
+}
+
+.sf-message-link__hint-label {
+  color: var(--cortex-node-function);
+  font-family: var(--cortex-font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .sf-message-link__node {
@@ -3865,6 +4004,11 @@ body {
 
   .script-flow-second-bar__search {
     width: 100%;
+  }
+
+  .script-flow-second-bar__actions,
+  .sf-message-summary {
+    justify-content: flex-start;
   }
 
   .sf-footer__left,

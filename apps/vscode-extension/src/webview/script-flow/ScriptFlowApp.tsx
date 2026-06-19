@@ -28,6 +28,7 @@ import {
   isScriptFlowSnapshot,
   SCRIPT_FLOW_NODE_KINDS,
   type ScriptFlowAutoObservation,
+  type ScriptFlowAutoObservationSeverity,
   type ScriptFlowNode,
   type ScriptFlowNodeKind,
   type ScriptFlowSnapshot,
@@ -61,6 +62,13 @@ const ACTIVE_FLOW_COLOR = "var(--accent-cyan)";
 const EDGE_LABEL_COLOR = "var(--status-in-progress)";
 const LOOP_FLOW_COLOR = "var(--cortex-node-loop)";
 const INACTIVE_FLOW_COLOR = "#526279";
+
+type MessageSummary = Record<
+  ScriptFlowAutoObservationSeverity | "flow-gap",
+  number
+> & {
+  total: number;
+};
 
 type ScriptFlowViewState =
   | {
@@ -131,6 +139,15 @@ export function ScriptFlowApp() {
     null,
   );
   const [showMiniMap, setShowMiniMap] = useState(true);
+  const [problemOnly, setProblemOnly] = useState(() => {
+    const persisted = vscode.getState();
+    return (
+      Boolean(persisted) &&
+      typeof persisted === "object" &&
+      "problemOnly" in persisted &&
+      (persisted as { problemOnly?: unknown }).problemOnly === true
+    );
+  });
 
   const kindCounts = useMemo(() => {
     if (state.status !== "snapshot") {
@@ -157,6 +174,7 @@ export function ScriptFlowApp() {
 
     const q = searchQuery.toLowerCase();
     return state.snapshot.nodes
+      .filter((node) => !problemOnly || hasNodeMessages(node))
       .map((node, index) => ({
         nodeId: node.id,
         index,
@@ -166,7 +184,7 @@ export function ScriptFlowApp() {
       }))
       .filter((m) => m.score > 0)
       .sort((a, b) => b.score - a.score || a.index - b.index);
-  }, [searchQuery, state]);
+  }, [problemOnly, searchQuery, state]);
 
   useEffect(() => {
     setSearchQuery("");
@@ -189,8 +207,9 @@ export function ScriptFlowApp() {
       selectedNodeId,
       orientation,
       searchMatches,
+      problemOnly,
     );
-  }, [selectedNodeId, state, orientation, searchMatches]);
+  }, [selectedNodeId, state, orientation, searchMatches, problemOnly]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 800px)");
@@ -226,8 +245,23 @@ export function ScriptFlowApp() {
   }, []);
 
   useEffect(() => {
-    vscode.setState({ view: state, orientation });
-  }, [state, orientation]);
+    vscode.setState({ view: state, orientation, problemOnly });
+  }, [state, orientation, problemOnly]);
+
+  useEffect(() => {
+    if (state.status !== "snapshot" || !problemOnly || !selectedNodeId) {
+      return;
+    }
+    const selectedNode = state.snapshot.nodes.find(
+      (node) => node.id === selectedNodeId,
+    );
+    if (!selectedNode || hasNodeMessages(selectedNode)) {
+      return;
+    }
+    setSelectedNodeId(
+      state.snapshot.nodes.find((node) => hasNodeMessages(node))?.id ?? null,
+    );
+  }, [problemOnly, selectedNodeId, state]);
 
   useEffect(() => {
     if (state.status !== "snapshot" || !flowInstance || !selectedNodeId) {
@@ -298,8 +332,23 @@ export function ScriptFlowApp() {
     setActiveMatchIndex(Math.max(0, searchMatches.length - 1));
   }, [activeMatchIndex, searchMatches.length]);
 
+  const selectActiveSearchMatch = () => {
+    if (!searchQuery || searchMatches.length === 0) {
+      return;
+    }
+    const matchId = searchMatches[activeMatchIndex]?.nodeId;
+    if (!matchId) {
+      return;
+    }
+    setSelectedNodeId(matchId);
+    sendSelectNode(vscode, matchId);
+  };
+
   const snapshot = state.status === "snapshot" ? state.snapshot : null;
-  const messageCount = snapshot ? countNodeMessages(snapshot.nodes) : 0;
+  const messageSummary = snapshot
+    ? summarizeNodeMessages(snapshot.nodes)
+    : createEmptyMessageSummary();
+  const messageCount = messageSummary.total;
 
   const header = (
     <Header
@@ -338,12 +387,34 @@ export function ScriptFlowApp() {
             setSearchQuery(value);
             setActiveMatchIndex(0);
           }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") {
+              return;
+            }
+            event.preventDefault();
+            selectActiveSearchMatch();
+          }}
           placeholder="Buscar nodos por nombre o tipo"
           value={searchQuery}
         />
       }
       status={
         <div className="script-flow-second-bar__actions">
+          <MessageSummaryPills summary={messageSummary} />
+          <Button
+            className={problemOnly ? "is-active" : undefined}
+            disabled={messageCount === 0}
+            intent="change"
+            onClick={() => setProblemOnly((current) => !current)}
+            size="small"
+            title={
+              messageCount > 0
+                ? "Mostrar solo nodos con mensajes"
+                : "Sin mensajes para filtrar"
+            }
+          >
+            Solo problemas
+          </Button>
           <Button
             className={drawerMode === "messages" ? "is-active" : undefined}
             disabled={messageCount === 0}
@@ -599,13 +670,57 @@ function getPreferredNodeId(snapshot: ScriptFlowSnapshot) {
   return snapshot.analysis.entryPoints[0] ?? snapshot.nodes[0]?.id ?? null;
 }
 
-function countNodeMessages(nodes: ScriptFlowNode[]) {
-  return nodes.reduce((count, node) => {
-    const observations = Array.isArray(node.meta?.autoObservations)
-      ? (node.meta.autoObservations as ScriptFlowAutoObservation[])
-      : [];
-    return count + observations.length;
-  }, 0);
+function MessageSummaryPills(props: { summary: MessageSummary }) {
+  const { summary } = props;
+  return (
+    <div className="sf-message-summary" aria-label="Resumen de mensajes">
+      <span className="sf-message-summary__pill sf-message-summary__pill--error">
+        Errores {summary.error}
+      </span>
+      <span className="sf-message-summary__pill sf-message-summary__pill--warning">
+        Warnings {summary.warning}
+      </span>
+      <span className="sf-message-summary__pill sf-message-summary__pill--info">
+        Info {summary.info}
+      </span>
+      <span className="sf-message-summary__pill sf-message-summary__pill--gap">
+        Gaps {summary["flow-gap"]}
+      </span>
+    </div>
+  );
+}
+
+function createEmptyMessageSummary(): MessageSummary {
+  return {
+    total: 0,
+    error: 0,
+    warning: 0,
+    info: 0,
+    "flow-gap": 0,
+  };
+}
+
+function summarizeNodeMessages(nodes: ScriptFlowNode[]) {
+  return nodes.reduce<MessageSummary>((summary, node) => {
+    for (const observation of readNodeObservations(node)) {
+      summary.total += 1;
+      summary[observation.severity] += 1;
+      if (observation.kind === "flow-gap") {
+        summary["flow-gap"] += 1;
+      }
+    }
+    return summary;
+  }, createEmptyMessageSummary());
+}
+
+function readNodeObservations(node: ScriptFlowNode) {
+  return Array.isArray(node.meta?.autoObservations)
+    ? (node.meta.autoObservations as ScriptFlowAutoObservation[])
+    : [];
+}
+
+function hasNodeMessages(node: ScriptFlowNode) {
+  return readNodeObservations(node).length > 0;
 }
 
 function resolveSelectableNodeId(node: AnyFlowNode) {
@@ -623,9 +738,14 @@ function buildFlowModel(
   selectedNodeId: string | null,
   orientation: "LR" | "TB",
   searchMatches: Array<{ nodeId: string }>,
+  problemOnly: boolean,
 ) {
+  const sourceNodes = problemOnly
+    ? snapshot.nodes.filter((node) => hasNodeMessages(node))
+    : snapshot.nodes;
+  const visibleNodeIds = new Set(sourceNodes.map((node) => node.id));
   const searchHitIds = new Set(searchMatches.map((m) => m.nodeId));
-  const nodes: Array<Node<FlowNodeData>> = snapshot.nodes.map((node) => ({
+  const nodes: Array<Node<FlowNodeData>> = sourceNodes.map((node) => ({
     id: node.id,
     type: "scriptFlow",
     selected: node.id === selectedNodeId,
@@ -657,12 +777,12 @@ function buildFlowModel(
   }));
 
   const entryIds = new Set(
-    snapshot.nodes
+    sourceNodes
       .filter((node) => node.kind === "entry")
       .map((node) => node.id),
   );
   const selectedNode = selectedNodeId
-    ? snapshot.nodes.find((node) => node.id === selectedNodeId)
+    ? sourceNodes.find((node) => node.id === selectedNodeId)
     : undefined;
   // Only scope-highlight when a function (or the entry/main process) is selected:
   // those nodes own a body subgraph. Selecting a lone if/loop dims nothing.
@@ -672,7 +792,10 @@ function buildFlowModel(
       ? collectScopeEdges(snapshot, selectedNode.id)
       : null;
 
-  const edges: Edge[] = snapshot.edges.map((edge, index) => {
+  const visibleEdges = snapshot.edges.filter(
+    (edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to),
+  );
+  const edges: Edge[] = visibleEdges.map((edge, index) => {
     const isLoop = edge.label === "loop";
     const isEntry = entryIds.has(edge.from);
     const isHot = scopeEdges
@@ -729,12 +852,10 @@ function buildFlowModel(
   // pointing at the open path. Warnings stay full-opacity even while a function
   // scope dims the rest — an unclosed section should never fade into the back.
   const gapNodes: Array<Node<GapNodeData>> = [];
-  for (const node of snapshot.nodes) {
-    const gaps = Array.isArray(node.meta?.autoObservations)
-      ? (node.meta.autoObservations as ScriptFlowAutoObservation[]).filter(
-          (obs) => obs.kind === "flow-gap",
-        )
-      : [];
+  for (const node of sourceNodes) {
+    const gaps = readNodeObservations(node).filter(
+      (obs) => obs.kind === "flow-gap",
+    );
     if (gaps.length === 0) {
       continue;
     }
