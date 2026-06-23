@@ -26,6 +26,7 @@ describe("createScriptFlowTracer", () => {
       await tracer.span(
         {
           nodeId: "sf1:fn:main:l1c1",
+          entityId: "sample.ts#main",
           spanId: "span-main",
         },
         async () => "ok",
@@ -33,6 +34,7 @@ describe("createScriptFlowTracer", () => {
 
       const loop = tracer.createLoopAggregator({
         nodeId: "sf1:loop:for-item:l4c3",
+        entityId: "sample.ts#main",
         spanId: "span-loop",
         flushEveryIterations: 3,
       });
@@ -43,6 +45,7 @@ describe("createScriptFlowTracer", () => {
         tracer.span(
           {
             nodeId: "sf1:try:catch:l8c3",
+            entityId: "sample.ts#main",
             spanId: "span-error",
           },
           () => {
@@ -62,9 +65,16 @@ describe("createScriptFlowTracer", () => {
         processIds: ["test"],
       });
       expect(result.selectedRun?.nodes["sf1:fn:main:l1c1"]).toMatchObject({
+        entityIds: ["sample.ts#main"],
         count: 1,
         lastStatus: "ok",
       });
+      expect(result.selectedRun?.entityIds).toEqual(["sample.ts#main"]);
+      expect(result.selectedRun?.nodesByEntityId["sample.ts#main"]).toEqual([
+        "sf1:fn:main:l1c1",
+        "sf1:loop:for-item:l4c3",
+        "sf1:try:catch:l8c3",
+      ]);
       expect(result.selectedRun?.nodes["sf1:loop:for-item:l4c3"]?.loop).toMatchObject({
         iterations: 3,
         sampleCount: 2,

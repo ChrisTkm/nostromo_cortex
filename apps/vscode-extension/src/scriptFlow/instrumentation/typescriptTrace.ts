@@ -18,6 +18,7 @@ export interface ScriptFlowTracerOptions {
 
 export interface ScriptFlowSpanOptions {
   nodeId: string;
+  entityId?: string;
   spanId?: string;
   parentSpanId?: string;
   metadata?: Record<string, unknown>;
@@ -25,6 +26,7 @@ export interface ScriptFlowSpanOptions {
 
 export interface ScriptFlowLoopOptions {
   nodeId: string;
+  entityId?: string;
   spanId?: string;
   parentSpanId?: string;
   flushEveryIterations?: number;
@@ -88,6 +90,7 @@ export class ScriptFlowTracer {
     const startedAt = performance.now();
     this.write({
       event: "span_start",
+      entity_id: options.entityId,
       node_id: options.nodeId,
       parent_span_id: options.parentSpanId,
       span_id: spanId,
@@ -98,6 +101,7 @@ export class ScriptFlowTracer {
       const result = await fn();
       this.write({
         event: "span_end",
+        entity_id: options.entityId,
         node_id: options.nodeId,
         parent_span_id: options.parentSpanId,
         span_id: spanId,
@@ -108,6 +112,7 @@ export class ScriptFlowTracer {
     } catch (error) {
       this.write({
         event: "span_error",
+        entity_id: options.entityId,
         node_id: options.nodeId,
         parent_span_id: options.parentSpanId,
         span_id: spanId,
@@ -140,6 +145,7 @@ export class ScriptFlowTracer {
     }
     this.write({
       event: "loop_sample",
+      entity_id: options.entityId,
       node_id: options.nodeId,
       parent_span_id: options.parentSpanId,
       span_id: options.spanId,

@@ -62,6 +62,7 @@ class ScriptFlowTracer:
         node_id: str,
         span_id: str | None = None,
         parent_span_id: str | None = None,
+        entity_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Iterator[None]:
         span_id = span_id or self._next_span_id(node_id)
@@ -69,6 +70,7 @@ class ScriptFlowTracer:
         self.write(
             {
                 "event": "span_start",
+                "entity_id": entity_id,
                 "node_id": node_id,
                 "parent_span_id": parent_span_id,
                 "span_id": span_id,
@@ -81,6 +83,7 @@ class ScriptFlowTracer:
             self.write(
                 {
                     "event": "span_error",
+                    "entity_id": entity_id,
                     "node_id": node_id,
                     "parent_span_id": parent_span_id,
                     "span_id": span_id,
@@ -97,6 +100,7 @@ class ScriptFlowTracer:
             self.write(
                 {
                     "event": "span_end",
+                    "entity_id": entity_id,
                     "node_id": node_id,
                     "parent_span_id": parent_span_id,
                     "span_id": span_id,
@@ -110,6 +114,7 @@ class ScriptFlowTracer:
         node_id: str,
         span_id: str | None = None,
         parent_span_id: str | None = None,
+        entity_id: str | None = None,
         flush_every_iterations: int = 1000,
         flush_every_ms: int = 2000,
         metadata: dict[str, Any] | None = None,
@@ -117,6 +122,7 @@ class ScriptFlowTracer:
         loop = ScriptFlowLoopAggregator(
             tracer=self,
             node_id=node_id,
+            entity_id=entity_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
             flush_every_iterations=flush_every_iterations,
@@ -135,6 +141,7 @@ class ScriptFlowTracer:
         max_ms: float,
         span_id: str | None = None,
         parent_span_id: str | None = None,
+        entity_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
         if iterations <= 0 or sample_count <= 0:
@@ -142,6 +149,7 @@ class ScriptFlowTracer:
         self.write(
             {
                 "event": "loop_sample",
+                "entity_id": entity_id,
                 "node_id": node_id,
                 "parent_span_id": parent_span_id,
                 "span_id": span_id,
@@ -184,6 +192,7 @@ class ScriptFlowTracer:
 class ScriptFlowLoopAggregator:
     tracer: ScriptFlowTracer
     node_id: str
+    entity_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
     flush_every_iterations: int = 1000
@@ -220,6 +229,7 @@ class ScriptFlowLoopAggregator:
             return
         self.tracer.emit_loop_sample(
             node_id=self.node_id,
+            entity_id=self.entity_id,
             span_id=self.span_id,
             parent_span_id=self.parent_span_id,
             iterations=self._iterations,

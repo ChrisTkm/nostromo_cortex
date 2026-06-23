@@ -32,6 +32,7 @@ export interface ScriptFlowTraceBaseEvent {
   language?: string;
   machine_id?: string;
   process_id?: string | number;
+  entity_id?: string;
   node_id?: string;
   span_id?: string;
   parent_span_id?: string;

@@ -29,6 +29,7 @@ Live ingestion MVP:
 ## Goals
 
 - Correlate runtime events with static Script Flow nodes through `node_id`.
+- Correlate the same runtime events with Domain Graph entities through optional `entity_id`.
 - Keep the format small enough for long-running scripts and large loops.
 - Support local and remote executions without assuming the extension host owns the process.
 - Separate static hints, such as flow gaps, from runtime evidence, such as a node that actually errored or took 1.2s.
@@ -65,6 +66,7 @@ Rules:
 | `parent_span_id` | no | string | Parent span if nested. |
 | `machine_id` | no | string | Stable machine/agent label. Avoid secrets and hostnames if privacy matters. |
 | `process_id` | no | number/string | OS PID, container PID, worker ID, or remote process ID. |
+| `entity_id` | no | string | Stable Domain Graph entity ID, usually `relative/path.ext#symbol`. |
 | `duration_ms` | event-specific | number | Wall-clock duration in milliseconds. |
 | `status` | event-specific | string | `ok`, `error`, `cancelled`, `timeout`, or `running`. |
 | `counters` | no | object | Numeric aggregates such as loop counts. |
@@ -159,7 +161,7 @@ Required fields:
 Example:
 
 ```json
-{"version":1,"event":"span_start","run_id":"01JZ8E5S3R7Q7VM96E6R4H9PNV","timestamp":"2026-06-19T17:00:00.120Z","script_path":"C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts","node_id":"function:loadOrders:12:1","span_id":"span-0001","metadata":{"label":"loadOrders"}}
+{"version":1,"event":"span_start","run_id":"01JZ8E5S3R7Q7VM96E6R4H9PNV","timestamp":"2026-06-19T17:00:00.120Z","script_path":"C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts","entity_id":"apps/vscode-extension/fixtures/script-flow/sample.ts#loadOrders","node_id":"sf1:fn:loadorders:l12c1","span_id":"span-0001","metadata":{"label":"loadOrders"}}
 ```
 
 ### `span_end`
@@ -181,7 +183,7 @@ Required fields:
 Example:
 
 ```json
-{"version":1,"event":"span_end","run_id":"01JZ8E5S3R7Q7VM96E6R4H9PNV","timestamp":"2026-06-19T17:00:00.980Z","script_path":"C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts","node_id":"function:loadOrders:12:1","span_id":"span-0001","duration_ms":860,"status":"ok","counters":{"calls":3}}
+{"version":1,"event":"span_end","run_id":"01JZ8E5S3R7Q7VM96E6R4H9PNV","timestamp":"2026-06-19T17:00:00.980Z","script_path":"C:/dev/Cortex/apps/vscode-extension/fixtures/script-flow/sample.ts","entity_id":"apps/vscode-extension/fixtures/script-flow/sample.ts#loadOrders","node_id":"sf1:fn:loadorders:l12c1","span_id":"span-0001","duration_ms":860,"status":"ok","counters":{"calls":3}}
 ```
 
 ### `span_error`
@@ -319,6 +321,22 @@ Examples:
 - `sf1:fn:loadorders:l12c1`
 - `sf1:loop:for-const-order-of-orders:l18c3`
 - `sf1:cte:active-users:l4c6`
+
+`entity_id` is separate and targets the wider Domain Graph. Use a stable ID that the static domain indexer and the runtime tracer can both emit:
+
+```text
+<workspace-relative-path>
+<workspace-relative-path>#<symbol>
+```
+
+Examples:
+
+- `apps/jobs/rebuildOrders.py`
+- `apps/jobs/rebuildOrders.py#main`
+- `apps/orders/orderService.ts#loadOrders`
+- `db/reporting.sql#active_users`
+
+When an event belongs to a loop, branch, catch block, SQL statement, or other fine-grained Script Flow node inside a function, keep `node_id` specific and set `entity_id` to the nearest stable domain entity, usually the enclosing function or file. This lets Script Flow paint exact runtime badges while Domain Graph paints the higher-level route.
 
 The `script_hash` field remains separate from `node_id`. Do not include content hash inside `node_id`, because a tiny unrelated edit would churn every runtime mapping. Readers should compare `script_hash` against the current `ScriptFlowSnapshot.metadata.hash` when available and show stale/unmatched evidence when hashes diverge.
 

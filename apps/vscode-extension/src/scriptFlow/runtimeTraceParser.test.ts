@@ -17,6 +17,7 @@ describe("parseScriptFlowTraceJsonl", () => {
 
     const callNode = result.selectedRun?.nodes["sf1:call:fetch-orders:l3c3"];
     expect(callNode).toMatchObject({
+      entityIds: ["sample.ts#fetchOrders"],
       count: 2,
       totalMs: 150,
       avgMs: 75,
@@ -42,6 +43,12 @@ describe("parseScriptFlowTraceJsonl", () => {
       avgMs: 0.22,
       maxMs: 9
     });
+    expect(loopNode?.entityIds).toEqual(["sample.ts#processOrders"]);
+    expect(result.selectedRun?.entityIds).toEqual(["sample.ts#fetchOrders", "sample.ts#processOrders"]);
+    expect(result.selectedRun?.nodesByEntityId).toMatchObject({
+      "sample.ts#fetchOrders": ["sf1:call:fetch-orders:l3c3"],
+      "sample.ts#processOrders": ["sf1:loop:for-order-of-orders:l4c3"],
+    });
 
     const errorNode = result.selectedRun?.nodes["sf1:try:except:l8c3"];
     expect(errorNode?.errorCount).toBe(1);
@@ -66,6 +73,7 @@ describe("parseScriptFlowTraceJsonl", () => {
       "span_start"
     ]);
     expect(result.selectedRun?.events[0]).toMatchObject({
+      entityId: "sample.ts#fetchOrders",
       nodeId: "sf1:call:fetch-orders:l3c3",
       spanId: "span-call",
       runId: "run-new"

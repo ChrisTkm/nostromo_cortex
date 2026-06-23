@@ -35,6 +35,7 @@ export interface ScriptFlowRuntimeError {
 export interface ScriptFlowRuntimeActiveSpan {
   spanId: string;
   parentSpanId?: string;
+  entityId?: string;
   nodeId: string;
   startedAt: string;
   lastSeenAt: string;
@@ -46,6 +47,7 @@ export interface ScriptFlowRuntimeReplayEvent {
   timestamp: string;
   event: "span_start" | "span_end" | "span_error";
   runId: string;
+  entityId?: string;
   nodeId: string;
   spanId?: string;
   parentSpanId?: string;
@@ -57,6 +59,7 @@ export interface ScriptFlowRuntimeReplayEvent {
 
 export interface ScriptFlowRuntimeNodeAggregate {
   nodeId: string;
+  entityIds: string[];
   eventCount: number;
   count: number;
   totalMs: number;
@@ -101,6 +104,8 @@ export interface ScriptFlowRuntimeRunAggregate {
   durationMs?: number;
   eventCount: number;
   nodeCount: number;
+  entityIds: string[];
+  nodesByEntityId: Record<string, string[]>;
   machineIds: string[];
   processIds: Array<string | number>;
   counters: Record<string, number>;
@@ -120,14 +125,21 @@ export interface ScriptFlowTraceParseResult {
   skippedLines: number;
 }
 
-interface MutableRun extends Omit<ScriptFlowRuntimeRunAggregate, "nodes" | "activeSpans" | "nodeCount" | "machineIds" | "processIds"> {
+interface MutableRun
+  extends Omit<
+    ScriptFlowRuntimeRunAggregate,
+    "nodes" | "activeSpans" | "nodeCount" | "entityIds" | "nodesByEntityId" | "machineIds" | "processIds"
+  > {
   nodeMap: Map<string, MutableNode>;
+  entityIdSet: Set<string>;
+  nodesByEntityId: Map<string, Set<string>>;
   activeSpanMap: Map<string, ScriptFlowRuntimeActiveSpan>;
   machineIdSet: Set<string>;
   processIdSet: Map<string, string | number>;
 }
 
 interface MutableNode extends Omit<ScriptFlowRuntimeNodeAggregate, "activeSpans"> {
+  entityIdSet: Set<string>;
   activeSpanMap: Map<string, ScriptFlowRuntimeActiveSpan>;
 }
 
@@ -309,6 +321,8 @@ function getOrCreateRun(runs: Map<string, MutableRun>, event: ScriptFlowTraceEve
       eventCount: 0,
       counters: {},
       nodeMap: new Map(),
+      entityIdSet: new Set(),
+      nodesByEntityId: new Map(),
       activeSpanMap: new Map(),
       machineIdSet: new Set(),
       processIdSet: new Map(),
@@ -327,6 +341,7 @@ function applyEvent(run: MutableRun, event: ScriptFlowTraceEvent) {
   run.lastTimestamp = maxIso(run.lastTimestamp, event.timestamp);
   if (event.machine_id) run.machineIdSet.add(event.machine_id);
   if (event.process_id !== undefined) run.processIdSet.set(String(event.process_id), event.process_id);
+  if (event.entity_id) run.entityIdSet.add(event.entity_id);
   mergeCounters(run.counters, event.counters);
 
   if (event.event === "run_start") {
@@ -347,6 +362,15 @@ function applyEvent(run: MutableRun, event: ScriptFlowTraceEvent) {
   }
 
   const node = getOrCreateNode(run, event.node_id);
+  if (event.entity_id) {
+    node.entityIdSet.add(event.entity_id);
+    let nodeIds = run.nodesByEntityId.get(event.entity_id);
+    if (!nodeIds) {
+      nodeIds = new Set();
+      run.nodesByEntityId.set(event.entity_id, nodeIds);
+    }
+    nodeIds.add(event.node_id);
+  }
   node.eventCount += 1;
   node.lastTimestamp = maxIso(node.lastTimestamp, event.timestamp);
   if (event.status) {
@@ -387,6 +411,7 @@ function getOrCreateNode(run: MutableRun, nodeId: string) {
   if (!node) {
     node = {
       nodeId,
+      entityIds: [],
       eventCount: 0,
       count: 0,
       totalMs: 0,
@@ -394,6 +419,7 @@ function getOrCreateNode(run: MutableRun, nodeId: string) {
       maxMs: 0,
       errorCount: 0,
       errors: [],
+      entityIdSet: new Set(),
       activeSpanMap: new Map(),
       loop: {
         iterations: 0,
@@ -426,6 +452,7 @@ function applySpanStart(run: MutableRun, node: MutableNode, event: ScriptFlowSpa
   const activeSpan: ScriptFlowRuntimeActiveSpan = {
     spanId: event.span_id,
     parentSpanId: event.parent_span_id,
+    entityId: event.entity_id,
     nodeId: event.node_id,
     startedAt: event.timestamp,
     lastSeenAt: event.timestamp,
@@ -486,6 +513,9 @@ function applyExternalCall(node: MutableNode, event: ScriptFlowExternalCallEvent
 
 function finalizeRun(run: MutableRun): ScriptFlowRuntimeRunAggregate {
   const nodes = Object.fromEntries(Array.from(run.nodeMap.values()).map((node) => [node.nodeId, finalizeNode(node)]));
+  const nodesByEntityId = Object.fromEntries(
+    Array.from(run.nodesByEntityId.entries()).map(([entityId, nodeIds]) => [entityId, Array.from(nodeIds)])
+  );
   const activeSpans = Array.from(run.activeSpanMap.values());
   return {
     runId: run.runId,
@@ -499,6 +529,8 @@ function finalizeRun(run: MutableRun): ScriptFlowRuntimeRunAggregate {
     durationMs: run.durationMs,
     eventCount: run.eventCount,
     nodeCount: Object.keys(nodes).length,
+    entityIds: Array.from(run.entityIdSet),
+    nodesByEntityId,
     machineIds: Array.from(run.machineIdSet),
     processIds: Array.from(run.processIdSet.values()),
     counters: run.counters,
@@ -519,6 +551,7 @@ function toReplayEvent(index: number, event: ScriptFlowSpanStartEvent | ScriptFl
     timestamp: event.timestamp,
     event: event.event,
     runId: event.run_id,
+    entityId: event.entity_id,
     nodeId: event.node_id,
     spanId: event.span_id,
     parentSpanId: event.parent_span_id,
@@ -537,6 +570,7 @@ function sortReplayEvents(left: ScriptFlowRuntimeReplayEvent, right: ScriptFlowR
 function finalizeNode(node: MutableNode): ScriptFlowRuntimeNodeAggregate {
   return {
     nodeId: node.nodeId,
+    entityIds: Array.from(node.entityIdSet),
     eventCount: node.eventCount,
     count: node.count,
     totalMs: node.totalMs,

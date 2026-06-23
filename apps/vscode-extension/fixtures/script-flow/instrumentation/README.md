@@ -14,9 +14,11 @@ Workflow:
 
 1. Open the final instrumented script in Script Flow.
 2. Copy the node ID from the node you want to measure.
-3. Pass that ID explicitly to `span(...)` or the loop aggregator.
-4. Run the script normally from your shell or job runner.
-5. Reopen or refresh Script Flow; the companion trace is picked up from the
+3. Choose an optional domain `entity_id`, usually `relative/path.ext#symbol`.
+4. Pass the node ID explicitly to `span(...)` or the loop aggregator; pass
+   `entity_id` too when you want Domain Graph replay.
+5. Run the script normally from your shell or job runner.
+6. Reopen or refresh Script Flow; the companion trace is picked up from the
    same folder when named `<script>.scriptflow.trace.jsonl`.
 
 Keep loop telemetry aggregated. Do not emit one event per iteration in hot loops.

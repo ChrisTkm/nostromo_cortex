@@ -10,6 +10,7 @@ tracer = ScriptFlowTracer(
 NODE_SUMMARIZE = "sf1:fn:summarize_scores:l24c1"
 NODE_LOOP = "sf1:loop:for-score-in-scores:l37c9"
 NODE_EXCEPT = "sf1:except:except-valueerror:l42c13"
+ENTITY_SUMMARIZE = "apps/vscode-extension/fixtures/script-flow/instrumented_sample.py#summarize_scores"
 
 
 def normalize_score(score):
@@ -23,7 +24,7 @@ def log_invalid(score):
 
 
 def summarize_scores(scores):
-    with tracer.span(NODE_SUMMARIZE, span_id="span-summarize"):
+    with tracer.span(NODE_SUMMARIZE, span_id="span-summarize", entity_id=ENTITY_SUMMARIZE):
         total = 0
 
         if not scores:
@@ -33,6 +34,7 @@ def summarize_scores(scores):
             NODE_LOOP,
             span_id="span-loop",
             parent_span_id="span-summarize",
+            entity_id=ENTITY_SUMMARIZE,
             flush_every_iterations=1000,
         )
         for score in scores:
@@ -44,6 +46,7 @@ def summarize_scores(scores):
                     NODE_EXCEPT,
                     span_id=f"span-invalid-{score}",
                     parent_span_id="span-summarize",
+                    entity_id=ENTITY_SUMMARIZE,
                 ):
                     log_invalid(score)
         loop.flush("loop_exit")

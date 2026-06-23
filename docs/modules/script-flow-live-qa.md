@@ -35,6 +35,7 @@ The parser test `runtimeTraceE2e.test.ts` validates all four.
    - `sample.scriptflow.trace.jsonl`
 5. Confirm the second bar shows the Live state as `watching` or `updated`.
 6. Confirm runtime badges appear only for nodes whose `node_id` matches the trace.
+7. If the trace includes `entity_id`, confirm the parsed run keeps `entityIds` and `nodesByEntityId` for Domain Graph replay.
 7. Use the run selector when the trace has multiple `run_id` values.
 8. Use Play/Pause/Reset/Scrub to replay `span_start`, `span_end`, and `span_error` events.
 9. Export Markdown from the footer when static messages exist.
@@ -56,6 +57,7 @@ apps/vscode-extension/fixtures/script-flow/instrumentation/scriptflow_trace.py
 Workflow:
 
 1. Instrument the script with explicit `node_id` values copied from Script Flow.
+2. Add `entity_id` when the event belongs to a stable domain entity, such as `relative/path.py#function_name`.
 2. Run the script normally from a terminal, job runner, or remote worker.
 3. Write the trace next to the analyzed script or into a mounted/synced folder.
 4. Refresh Script Flow or let the file watcher update the overlay.

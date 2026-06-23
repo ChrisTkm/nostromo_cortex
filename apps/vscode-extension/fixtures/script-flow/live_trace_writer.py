@@ -15,6 +15,7 @@ DEFAULT_TRACE_PATH = FIXTURE_DIR / "sample.py.scriptflow.trace.jsonl"
 NODE_SUMMARIZE = "sf1:fn:summarize-scores:l1c1"
 NODE_LOOP = "sf1:loop:for-score-in-scores:l7c5"
 NODE_EXCEPT = "sf1:except:except-valueerror:l8c9"
+ENTITY_SUMMARIZE = "apps/vscode-extension/fixtures/script-flow/sample.py#summarize_scores"
 
 
 def main() -> None:
@@ -58,7 +59,7 @@ def main() -> None:
     tracer.start_run({"invocation": "python live_trace_writer.py"})
     time.sleep(args.delay)
 
-    with tracer.span(NODE_SUMMARIZE, span_id="span-summarize"):
+    with tracer.span(NODE_SUMMARIZE, span_id="span-summarize", entity_id=ENTITY_SUMMARIZE):
         print("[script-flow-live] summarize_scores span started")
         time.sleep(args.delay)
 
@@ -66,6 +67,7 @@ def main() -> None:
             NODE_LOOP,
             span_id="span-loop",
             parent_span_id="span-summarize",
+            entity_id=ENTITY_SUMMARIZE,
             flush_every_iterations=1000,
             metadata={"demo": True},
         )
@@ -80,6 +82,7 @@ def main() -> None:
                 NODE_EXCEPT,
                 span_id="span-except",
                 parent_span_id="span-summarize",
+                entity_id=ENTITY_SUMMARIZE,
                 metadata={"handled": True},
             ):
                 print("[script-flow-live] emitting handled ValueError")

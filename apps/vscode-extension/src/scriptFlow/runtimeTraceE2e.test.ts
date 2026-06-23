@@ -20,9 +20,13 @@ describe("Script Flow Live E2E runtime fixtures", () => {
       nodeCount: 1,
     });
     expect(result.selectedRun?.nodes["sf1:fn:accumulate:l1c1"]).toMatchObject({
+      entityIds: ["apps/vscode-extension/fixtures/script-flow/sample.ts#accumulate"],
       count: 1,
       totalMs: 42,
       lastStatus: "ok",
+    });
+    expect(result.selectedRun?.nodesByEntityId).toMatchObject({
+      "apps/vscode-extension/fixtures/script-flow/sample.ts#accumulate": ["sf1:fn:accumulate:l1c1"],
     });
     expect(result.selectedRun?.events.map((event) => event.event)).toEqual([
       "span_start",
