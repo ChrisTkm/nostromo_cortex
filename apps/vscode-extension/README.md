@@ -4,7 +4,7 @@ Cortex es un **knowledge cockpit local-first para ingeniería**: combina grafo d
 
 En términos de categoría, Cortex vive en la intersección de:
 
-- **Knowledge graph local** para documentación `.md`/`.mdx`, tags, referencias y conceptos.
+- **Knowledge graph local** para documentación `.md`/`.mdx`, archivos por extensión, tags, referencias y conceptos.
 - **Project intelligence / execution graph** para planes, tareas dependientes, estados, bloqueos y ciclos.
 - **Developer operations cockpit** para notas operativas, logs, recordatorios, archivo y telemetría.
 - **Documentation architecture tool** para detectar documentos huérfanos, referencias rotas y zonas poco conectadas del conocimiento técnico.
@@ -35,7 +35,7 @@ Cortex expone **8 módulos** (webviews) más un sidebar:
 | **Notes** | `cortex.openNotes` | Notas markdown con búsqueda en vivo, tags, pinned, recordatorios one-shot y vínculo opcional a tarea o plan. |
 | **Logs** | `cortex.openLogs` | Logs de ejecución agrupados por `execution_id`, filtro por tag, eventos anidados y fallback para logs legacy. |
 | **Archive** | `cortex.openArchive` | Planes archivados con sus tareas congeladas, búsqueda y exportación. |
-| **Brain** | `cortex.openBrain` | Escaneo local de `.md`/`.mdx` y grafo de relaciones por links, tags, referencias y cuentas contables. Sin dependencia de Mongo. |
+| **Brain** | `cortex.openBrain` | Escaneo local de carpetas: `.md`/`.mdx` con relaciones, y otros archivos por nombre/extensión. Sin dependencia de Mongo. |
 | **Script Flow** | `cortex.openScriptFlow` | Análisis estático de scripts TS/Python/SQL: panel lateral con AST, métricas y drawer analítico. |
 
 Además: sidebar **Task Navigator** (`cortex.openTasks`) con árbol de tareas agrupadas por plan, y **Plan Editor** (se abre desde Graph o Plans) para edición completa de metadata y tareas.
@@ -82,7 +82,7 @@ VS Code Extension Host (Node)
           |-- Notes         (React + Markdown editor)
           |-- Logs          (React + listado paginado)
           |-- Archive       (React + planes archivados)
-          |-- Brain         (React Flow + scan local .md/.mdx)
+          |-- Brain         (React Flow + scan local de carpetas)
           '-- Script Flow   (TS / Python / SQL)
 ```
 

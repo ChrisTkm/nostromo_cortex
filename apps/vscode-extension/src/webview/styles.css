@@ -3120,6 +3120,7 @@ body {
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
     "vista nodos"
+    "vista tipos"
     "vista flechas";
   align-items: center;
   gap: 6px 12px;
@@ -3142,6 +3143,10 @@ body {
   grid-area: nodos;
 }
 
+.brain-filters__tipos {
+  grid-area: tipos;
+}
+
 .brain-filters__flechas {
   grid-area: flechas;
 }
@@ -3158,6 +3163,31 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+.brain-footer-tools,
+.brain-file-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brain-file-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cortex-text-muted);
+  font-size: var(--cortex-text-xs);
+  font-weight: 700;
+}
+
+.brain-file-legend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.28);
 }
 
 .brain-empty {

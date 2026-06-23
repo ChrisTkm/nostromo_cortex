@@ -42,6 +42,7 @@ export interface MongoNoteStoreOptions {
 type MongoClientLike = Pick<MongoClient, "connect" | "db" | "close">;
 
 const LEGACY_TASK_INDEX_NAMES = ["tasks_code_unique", "tasks_status_created_at", "tasks_tags", "tasks_plan_code"] as const;
+const LEGACY_ACTION_PLAN_INDEX_NAMES = ["code_unique"] as const;
 const LEGACY_NOTE_INDEX_NAMES = ["notes_created_at", "notes_tags"] as const;
 
 export class SharedMongoClient {
@@ -342,8 +343,9 @@ export class MongoActionPlanStore {
 
   async ensureIndexes(): Promise<void> {
     const collection = await this.collection();
+    await dropLegacyIndexes(collection, LEGACY_ACTION_PLAN_INDEX_NAMES);
     await collection.createIndexes([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      { key: { code: 1 }, name: "code_unique", unique: true, partialFilterExpression: { code: { $type: "string" } } },
       { key: { status: 1 }, name: "status_idx" },
       { key: { project: 1 }, name: "project_idx" },
       { key: { product: 1, release: 1 }, name: "product_release_idx" }

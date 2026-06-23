@@ -46,6 +46,8 @@ describe("buildBrainSnapshot", () => {
     filesRef.current = [];
     sourcesRef.current = new Map<string, string>();
     starlightDirRef.current = true;
+    mtimeRef.current = new Map<string, number>();
+    readFileCallCountRef.current = 0;
   });
 
   it("resolves Starlight absolute href routes when scanning the project root", async () => {
@@ -563,6 +565,34 @@ describe("buildBrainSnapshot", () => {
     expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "folder:docs" && e.to === "folder:docs/guide")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
     expect(snapshot.edges.some((e) => e.label === "downstream" && e.from === "folder:docs/guide" && e.to === "doc:docs/guide/page.mdx")).toBe(true);
+  });
+
+  it("indexes non-markdown files by name and extension without reading their contents", async () => {
+    const rootUri = { fsPath: "C:\\project" } as any;
+    const pagePath = "C:\\project\\docs\\guide\\page.mdx";
+    const pdfPath = "C:\\project\\docs\\guide\\brief.pdf";
+    const sheetPath = "C:\\project\\docs\\guide\\budget.xlsx";
+    const textPath = "C:\\project\\docs\\guide\\notes.txt";
+    filesRef.current = [
+      { fsPath: pagePath },
+      { fsPath: pdfPath },
+      { fsPath: sheetPath },
+      { fsPath: textPath },
+    ];
+    sourcesRef.current.set(pagePath, ["---", "title: Page", "---", "", "# Page"].join("\n"));
+
+    const snapshot = await buildBrainSnapshot(rootUri);
+
+    expect(snapshot.stats.fileCount).toBe(4);
+    expect(readFileCallCountRef.current).toBe(1);
+    expect(snapshot.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "file:docs/guide/brief.pdf", kind: "file", label: "brief.pdf", fileType: ".pdf" }),
+        expect.objectContaining({ id: "file:docs/guide/budget.xlsx", kind: "file", label: "budget.xlsx", fileType: ".xlsx" }),
+        expect.objectContaining({ id: "file:docs/guide/notes.txt", kind: "file", label: "notes.txt", fileType: ".txt" }),
+      ]),
+    );
+    expect(snapshot.edges.some((e) => e.label === "upstream" && e.from === "folder:docs/guide" && e.to === "file:docs/guide/brief.pdf")).toBe(true);
   });
 
   it("uses index docs as folder nodes when directories have index docs", async () => {

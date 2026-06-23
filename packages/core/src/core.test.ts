@@ -840,9 +840,36 @@ describe("shared mongo client support", () => {
     await planStore.ensureIndexes();
 
     expect(planClient.collectionApi.createIndexes).toHaveBeenCalledWith([
-      { key: { code: 1 }, name: "code_unique", unique: true },
+      {
+        key: { code: 1 },
+        name: "code_unique",
+        unique: true,
+        partialFilterExpression: { code: { $type: "string" } },
+      },
       { key: { status: 1 }, name: "status_idx" },
+      { key: { project: 1 }, name: "project_idx" },
+      { key: { product: 1, release: 1 }, name: "product_release_idx" },
     ]);
+  });
+
+  it("drops the legacy action plan code index before recreating the supported set", async () => {
+    const planClient = createSharedClient([]) as unknown as SharedMongoClient;
+    const planStore = new MongoActionPlanStore({
+      mongoUrl: "mongodb://unused",
+      dbName: "cortex",
+      collectionName: "action_plans",
+      sharedClient: planClient,
+    });
+
+    await planStore.ensureIndexes();
+
+    expect(planClient.collectionApi.dropIndex).toHaveBeenCalledWith("code_unique");
+    expect(
+      planClient.collectionApi.dropIndex.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      planClient.collectionApi.createIndexes.mock.invocationCallOrder[0] ??
+        Number.POSITIVE_INFINITY,
+    );
   });
 
   it("drops legacy task indexes before recreating the supported set", async () => {

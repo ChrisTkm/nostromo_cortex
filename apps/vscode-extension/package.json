@@ -430,7 +430,7 @@
           "type": "number",
           "default": 800,
           "minimum": 1,
-          "description": "Maximum number of .md/.mdx files scanned by Cortex Brain."
+          "description": "Maximum number of files scanned by Cortex Brain."
         },
         "cortex.brainRootPath": {
           "type": "string",

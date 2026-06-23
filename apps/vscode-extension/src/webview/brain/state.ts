@@ -6,6 +6,7 @@ export type PersistedBrainState = {
   selectedNodeId?: string | null;
   visibleKinds?: Array<BrainNode["kind"]>;
   visibleEdges?: string[];
+  visibleFileTypes?: string[];
   showMiniMap?: boolean;
 };
 

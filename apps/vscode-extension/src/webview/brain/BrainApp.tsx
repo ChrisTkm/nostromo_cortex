@@ -55,6 +55,7 @@ type GraphNodeData = {
   label: string;
   subtitle?: string;
   badge?: string;
+  fileType?: string;
   layer?: string;
   count?: number;
   issue?: BrainIssueKind;
@@ -63,7 +64,7 @@ type GraphNodeData = {
 const vscode = window.acquireVsCodeApi();
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
-const GRAPH_KINDS = ["folder", "doc", "tag", "account", "external"] as const;
+const GRAPH_KINDS = ["folder", "doc", "file", "tag", "account", "external"] as const;
 const EDGE_FILTERS = [
   "link",
   "upstream",
@@ -102,8 +103,8 @@ const VISIBLE_EDGE_FILTERS = SHOW_DOMAIN_RELATIONS
 /** Kinds de nodo según el flag de dominio. */
 const VISIBLE_KIND_FILTERS = SHOW_DOMAIN_RELATIONS
   ? GRAPH_KINDS
-  : (["folder", "doc", "tag", "external"] as const);
-const DEFAULT_VISIBLE_KINDS = ["folder", "doc"] as const;
+  : (["folder", "doc", "file", "tag", "external"] as const);
+const DEFAULT_VISIBLE_KINDS = ["folder", "doc", "file"] as const;
 
 const nodeTypes = { brain: BrainNodeComponent };
 type EdgeFilter = (typeof EDGE_FILTERS)[number];
@@ -134,6 +135,19 @@ const ISSUE_LABEL: Record<BrainIssueKind, string> = {
   "self-reference": "Self-references",
   orphan: "Orphans",
 };
+
+const FILE_TYPE_COLORS: Record<string, string> = {
+  ".pdf": "#f43f5e",
+  ".xlsx": "#22c55e",
+  ".xls": "#16a34a",
+  ".docx": "#60a5fa",
+  ".doc": "#3b82f6",
+  ".txt": "#f59e0b",
+  ".csv": "#14b8a6",
+  ".json": "#a78bfa",
+};
+
+const DEFAULT_FILE_COLOR = "#e2e8f0";
 function isEdgeFilter(value: string): value is EdgeFilter {
   return EDGE_FILTERS.includes(value as EdgeFilter);
 }
@@ -185,6 +199,10 @@ export function BrainApp() {
         ])
       : [],
   );
+  const [visibleFileTypes, setVisibleFileTypes] = useState<string[]>(
+    persisted?.visibleFileTypes ??
+      (persisted?.snapshot ? collectFileTypes(persisted.snapshot) : []),
+  );
   const [showMiniMap, setShowMiniMap] = useState(
     persisted?.showMiniMap ?? true,
   );
@@ -212,6 +230,9 @@ export function BrainApp() {
         setVisibleEdges((current) =>
           reconcileVisibleEdges(current, [...VISIBLE_EDGE_FILTERS]),
         );
+        setVisibleFileTypes((current) =>
+          reconcileVisibleFileTypes(current, message.snapshot, true),
+        );
         return;
       }
       if (message?.type === "brain:error") {
@@ -232,6 +253,7 @@ export function BrainApp() {
       selectedNodeId,
       visibleKinds,
       visibleEdges,
+      visibleFileTypes,
       showMiniMap,
     } satisfies PersistedBrainState);
   }, [
@@ -240,6 +262,7 @@ export function BrainApp() {
     showMiniMap,
     snapshot,
     visibleEdges,
+    visibleFileTypes,
     visibleKinds,
   ]);
 
@@ -251,6 +274,7 @@ export function BrainApp() {
             deferredQuery,
             visibleKinds,
             visibleEdges,
+            visibleFileTypes,
             hiddenNodeIds,
             selectedNodeId,
           )
@@ -261,6 +285,7 @@ export function BrainApp() {
       snapshot,
       selectedNodeId,
       visibleEdges,
+      visibleFileTypes,
       visibleKinds,
     ],
   );
@@ -280,6 +305,11 @@ export function BrainApp() {
         : new Map<BrainNode["kind"], BrainNode[]>(),
     [snapshot],
   );
+  const fileTypes = useMemo(
+    () => (snapshot ? collectFileTypes(snapshot) : []),
+    [snapshot],
+  );
+  const selectedFileTypes = visibleFileTypes;
 
   const activePreset = useMemo(() => {
     const kindSet = new Set(visibleKinds);
@@ -293,6 +323,8 @@ export function BrainApp() {
       edgeSet.has("downstream")
     )
       return "folder";
+    if (kindSet.size === 1 && kindSet.has("file") && edgeSet.size === 0)
+      return "files";
     if (
       setEquals(kindSet, new Set(VISIBLE_KIND_FILTERS)) &&
       setEquals(edgeSet, new Set(REF_PRESET_EDGES))
@@ -347,7 +379,7 @@ export function BrainApp() {
     }
   }
 
-  function setPreset(preset: "docs" | "folder" | "refs" | "full") {
+  function setPreset(preset: "docs" | "folder" | "files" | "refs" | "full") {
     if (preset === activePreset) {
       // Toggle off → restaura vista default (ambos kinds, sin flechas)
       setVisibleKinds([...DEFAULT_VISIBLE_KINDS]);
@@ -364,6 +396,11 @@ export function BrainApp() {
     if (preset === "folder") {
       setVisibleKinds(["folder"]);
       setVisibleEdges(["upstream", "downstream"]);
+      return;
+    }
+    if (preset === "files") {
+      setVisibleKinds(["file"]);
+      setVisibleEdges([]);
       return;
     }
     if (preset === "refs") {
@@ -449,6 +486,14 @@ export function BrainApp() {
               Folder
             </Button>
             <Button
+              className={activePreset === "files" ? "is-active" : undefined}
+              intent="change"
+              onClick={() => setPreset("files")}
+              size="small"
+            >
+              Files
+            </Button>
+            <Button
               className={activePreset === "refs" ? "is-active" : undefined}
               intent="change"
               onClick={() => setPreset("refs")}
@@ -465,6 +510,29 @@ export function BrainApp() {
               Full
             </Button>
           </div>
+
+          {fileTypes.length > 0 ? (
+            <div className="brain-group brain-filters__tipos" aria-label="Tipos">
+              <span className="brain-group__label">Tipos</span>
+              <MultiSelect
+                label="Ext"
+                onAll={() => setVisibleFileTypes([...fileTypes])}
+                onNone={() => setVisibleFileTypes([])}
+                onToggle={(fileType) =>
+                  setVisibleFileTypes((current) =>
+                    current.includes(fileType)
+                      ? current.filter((item) => item !== fileType)
+                      : [...current, fileType],
+                  )
+                }
+                options={fileTypes.map((fileType) => ({
+                  value: fileType,
+                  label: fileType,
+                }))}
+                selected={selectedFileTypes}
+              />
+            </div>
+          ) : null}
 
           {/* Columna 2, fila 1 — Nodos: qué kinds se muestran */}
           <div className="brain-group brain-filters__nodos" aria-label="Nodos">
@@ -543,7 +611,7 @@ export function BrainApp() {
           <Metric>{snapshot.stats.fileCount} files</Metric>
           <Metric>{snapshot.edges.length} edges</Metric>
           {snapshot.issues.some((issue) => issue.kind === "truncated") ? (
-            <Metric title="Scan reached cortex.brainMaxFiles. Some .md/.mdx files were not analyzed.">
+            <Metric title="Scan reached cortex.brainMaxFiles. Some files were not analyzed.">
               Scan truncado ({snapshot.stats.fileCount}/+)
             </Metric>
           ) : null}
@@ -554,14 +622,17 @@ export function BrainApp() {
         </div>
       }
       right={
-        <Button
-          className={showMiniMap ? "is-active" : undefined}
-          intent="change"
-          onClick={() => setShowMiniMap((current) => !current)}
-          size="small"
-        >
-          MiniMap
-        </Button>
+        <div className="brain-footer-tools">
+          <FileTypeLegend fileTypes={fileTypes} />
+          <Button
+            className={showMiniMap ? "is-active" : undefined}
+            intent="change"
+            onClick={() => setShowMiniMap((current) => !current)}
+            size="small"
+          >
+            MiniMap
+          </Button>
+        </div>
       }
     />
   ) : undefined;
@@ -608,7 +679,7 @@ export function BrainApp() {
                   zoomable
                   nodeStrokeWidth={3}
                   nodeColor={(node) =>
-                    colorForKind((node.data as GraphNodeData).kind)
+                    colorForGraphNode(node.data as GraphNodeData)
                   }
                 />
               ) : null}
@@ -625,7 +696,7 @@ export function BrainApp() {
             <h2>Sin nodos visibles</h2>
             <p>
               {snapshot.stats.fileCount === 0
-                ? "La carpeta seleccionada no contiene archivos .md o .mdx para analizar."
+                ? "La carpeta seleccionada no contiene archivos para analizar."
                 : "No hay nodos que coincidan con los filtros actuales."}
             </p>
             <Button intent="change" onClick={() => setPreset("docs")}>
@@ -641,7 +712,7 @@ export function BrainApp() {
             </h2>
             <p>
               {error ??
-                "Elegí una carpeta de documentación local y Cortex escaneará enlaces .md/.mdx, tags, cuentas y rutas."}
+                "Elegí una carpeta local y Cortex mostrará documentos Markdown, archivos y relaciones por carpetas."}
             </p>
             <Button
               intent="action"
@@ -662,11 +733,11 @@ function BrainNodeComponent({
 }: NodeProps<Node<GraphNodeData>>) {
   return (
     <AtomNode
-      accent={colorForKind(data.kind)}
+      accent={colorForGraphNode(data)}
       className={`brain-atom-node${data.issue ? ` brain-atom-node--${data.issue}` : ""}`}
       code={
         <span className="brain-node__kind">
-          {data.badge ?? data.layer ?? data.kind}
+          {data.badge ?? data.layer ?? data.fileType ?? data.kind}
         </span>
       }
       corner={
@@ -686,6 +757,31 @@ function BrainNodeComponent({
       <Handle position={Position.Left} type="target" />
       <Handle position={Position.Right} type="source" />
     </AtomNode>
+  );
+}
+
+function FileTypeLegend({ fileTypes }: { fileTypes: string[] }) {
+  const visibleTypes = fileTypes.slice(0, 8);
+  if (visibleTypes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="brain-file-legend" aria-label="File type colors">
+      {visibleTypes.map((fileType) => (
+        <span className="brain-file-legend__item" key={fileType}>
+          <span
+            className="brain-file-legend__swatch"
+            style={{ background: colorForFileType(fileType) }}
+          />
+          {fileType}
+        </span>
+      ))}
+      {fileTypes.length > visibleTypes.length ? (
+        <span className="brain-file-legend__item">
+          +{fileTypes.length - visibleTypes.length}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -722,6 +818,7 @@ function BrainInspector({
     { label: "Tipo", value: typeLabel },
     { label: "ID", value: node.id },
     { label: "Título", value: node.title },
+    { label: "Extensión", value: node.fileType },
     { label: "Ruta", value: node.route },
     { label: "Archivo", value: node.path },
     { label: "Dominio", value: node.domain },
@@ -753,7 +850,7 @@ function BrainInspector({
       <Button className="is-active" intent="change" size="small">
         Inspector
       </Button>
-      {node.kind === "doc" ? (
+      {(node.kind === "doc" || node.kind === "file") ? (
         <Button
           intent="change"
           onClick={() =>
@@ -849,6 +946,9 @@ function labelForNodeKind(node: BrainNode) {
   if (node.kind === "doc") {
     return "Documento";
   }
+  if (node.kind === "file") {
+    return node.fileType ? `Archivo ${node.fileType}` : "Archivo";
+  }
   if (node.kind === "tag") {
     return "Tag";
   }
@@ -870,6 +970,9 @@ function summaryForNode(node: BrainNode) {
   if (node.kind === "doc") {
     return "Documento Markdown detectado por Brain.";
   }
+  if (node.kind === "file") {
+    return "Archivo detectado por nombre y extensión.";
+  }
   if (node.kind === "tag") {
     return "Etiqueta extraída del frontmatter de los documentos.";
   }
@@ -884,11 +987,13 @@ function buildFlow(
   query: string,
   visibleKinds: Array<BrainNode["kind"]>,
   visibleEdges: EdgeFilter[],
+  visibleFileTypes: string[],
   hiddenNodeIds: string[],
   selectedNodeId: string | null,
 ) {
   const visible = new Set(visibleKinds);
   const visibleEdgeSet = new Set(visibleEdges);
+  const visibleFileTypeSet = new Set(visibleFileTypes);
   const hidden = new Set(hiddenNodeIds);
   const degree = buildDegreeMap(snapshot, visibleEdgeSet);
   const issueByNode = new Map<string, BrainIssueKind>();
@@ -901,12 +1006,13 @@ function buildFlow(
   const matchingNodeIds = new Set(
     snapshot.nodes
       .filter((node) => visible.has(node.kind))
+      .filter((node) => node.kind !== "file" || visibleFileTypeSet.has(node.fileType ?? "(no ext)"))
       .filter((node) => !hidden.has(node.id))
       .filter((node) => {
         if (!query) {
           return true;
         }
-        return `${node.label} ${node.route ?? ""} ${node.description ?? ""} ${(node.tags ?? []).join(" ")}`
+        return `${node.label} ${node.route ?? ""} ${node.description ?? ""} ${node.fileType ?? ""} ${(node.tags ?? []).join(" ")}`
           .toLowerCase()
           .includes(query);
       })
@@ -933,8 +1039,11 @@ function buildFlow(
         subtitle:
           node.kind === "doc"
             ? (node.docKind ?? compactRoute(node.route))
+            : node.kind === "file"
+              ? node.fileType
             : node.kind,
         badge: node.badge,
+        fileType: node.fileType,
         layer: node.layer,
         count: degree.get(node.id) ?? 0,
         issue: issueByNode.get(node.id),
@@ -973,6 +1082,28 @@ function buildFlow(
     }));
 
   return computeLayout(nodes, edges);
+}
+
+function collectFileTypes(snapshot: BrainSnapshot) {
+  return [
+    ...new Set(
+      snapshot.nodes
+        .filter((node) => node.kind === "file")
+        .map((node) => node.fileType ?? "(no ext)"),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+function reconcileVisibleFileTypes(
+  current: ReadonlyArray<string>,
+  snapshot: BrainSnapshot,
+  defaultToAll = false,
+) {
+  const available = new Set(collectFileTypes(snapshot));
+  const reconciled = current.filter((fileType) => available.has(fileType));
+  return reconciled.length > 0 || !defaultToAll
+    ? reconciled
+    : [...available].sort((left, right) => left.localeCompare(right));
 }
 
 function computeLayout(nodes: Array<Node<GraphNodeData>>, edges: Edge[]) {
@@ -1158,6 +1289,8 @@ function colorForKind(kind: BrainNode["kind"]) {
       return "#a78bfa";
     case "doc":
       return "#38bdf8";
+    case "file":
+      return DEFAULT_FILE_COLOR;
     case "tag":
       return "#22c55e";
     case "account":
@@ -1165,6 +1298,19 @@ function colorForKind(kind: BrainNode["kind"]) {
     case "external":
       return "#94a3b8";
   }
+}
+
+function colorForGraphNode(node: GraphNodeData) {
+  return node.kind === "file"
+    ? colorForFileType(node.fileType)
+    : colorForKind(node.kind);
+}
+
+function colorForFileType(fileType?: string) {
+  if (!fileType) {
+    return DEFAULT_FILE_COLOR;
+  }
+  return FILE_TYPE_COLORS[fileType.toLowerCase()] ?? DEFAULT_FILE_COLOR;
 }
 
 function edgeFilterFor(edge: BrainEdge): EdgeFilter {

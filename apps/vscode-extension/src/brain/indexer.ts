@@ -20,6 +20,20 @@ type ParsedDoc = {
   accounts: string[];
 };
 
+type IndexedFile = {
+  id: string;
+  uri: vscode.Uri;
+  route: string;
+  title: string;
+  fileType: string;
+};
+
+type TreeEntry = {
+  id: string;
+  uri: vscode.Uri;
+  title: string;
+};
+
 type LinkRef = {
   href: string;
   relation: "link" | "upstream" | "downstream" | "references" | "standards";
@@ -58,7 +72,7 @@ export async function buildBrainSnapshot(
   const accountPattern = options.accountPattern ?? null;
   const synthesizeMode = options.synthesizeTree ?? "auto";
   const startedAt = Date.now();
-  const pattern = new vscode.RelativePattern(rootUri, "**/*.{md,mdx}");
+  const pattern = new vscode.RelativePattern(rootUri, "**/*");
   const rawFiles = await vscode.workspace.findFiles(pattern, "**/{node_modules,.git,dist,build,.astro,.next}/**", maxFiles + 1);
   const truncated = rawFiles.length > maxFiles;
   const files = rawFiles.slice(0, maxFiles).sort((left, right) =>
@@ -69,6 +83,7 @@ export async function buildBrainSnapshot(
 
   const cache = options.cache;
   const docs: ParsedDoc[] = [];
+  const indexedFiles: IndexedFile[] = [];
   const routeToDocId = new Map<string, string>();
   const stemToDocIds = new Map<string, string[]>();
 
@@ -91,10 +106,15 @@ export async function buildBrainSnapshot(
 
   for (let offset = 0; offset < files.length; offset += SCAN_BATCH_SIZE) {
     const batch = files.slice(offset, offset + SCAN_BATCH_SIZE);
-    const parsed = await Promise.all(batch.map(parseOrCached));
-    for (let index = 0; index < batch.length; index += 1) {
-      const uri = batch[index]!;
-      const doc = parsed[index]!;
+    const markdownFiles = batch.filter((uri) => isMarkdownFile(uri.fsPath));
+    const parsed = await Promise.all(markdownFiles.map(parseOrCached));
+    const parsedByPath = new Map(parsed.map((doc) => [doc.uri.fsPath, doc]));
+    for (const uri of batch) {
+      const doc = parsedByPath.get(uri.fsPath);
+      if (!doc) {
+        indexedFiles.push(parseFile(rootUri, uri));
+        continue;
+      }
       docs.push(doc);
       for (const route of routeAliasesForFile(rootUri, uri)) {
         addRouteAlias(routeToDocId, route, doc.id);
@@ -175,8 +195,20 @@ export async function buildBrainSnapshot(
     }
   }
 
+  for (const file of indexedFiles) {
+    nodes.set(file.id, {
+      id: file.id,
+      kind: "file",
+      label: file.title,
+      path: file.uri.fsPath,
+      route: file.route,
+      title: file.title,
+      fileType: file.fileType
+    });
+  }
+
   if (synthesizeTree) {
-    synthesizeTreeEdges(docs, nodes, edges, rootUri);
+    synthesizeTreeEdges([...docs, ...indexedFiles], nodes, edges, rootUri);
   }
 
   // Huérfanos: doc sin ninguna arista de árbol (upstream/downstream), es
@@ -209,7 +241,7 @@ export async function buildBrainSnapshot(
     issues.push({
       kind: "truncated",
       nodeId: "__workspace__",
-      detail: `Scanned ${files.length} of more .md/.mdx files. Increase cortex.brainMaxFiles to scan more.`
+      detail: `Scanned ${files.length} files. Increase cortex.brainMaxFiles to scan more.`
     });
   }
 
@@ -227,13 +259,25 @@ export async function buildBrainSnapshot(
     edges: [...edges.values()],
     issues,
     stats: {
-      fileCount: docs.length,
+      fileCount: docs.length + indexedFiles.length,
       tagCount: [...nodes.values()].filter((node) => node.kind === "tag").length,
       accountCount: [...nodes.values()].filter((node) => node.kind === "account").length,
       orphanCount,
       unresolvedCount: unresolved.size,
       elapsedMs: Date.now() - startedAt
     }
+  };
+}
+
+function parseFile(rootUri: vscode.Uri, uri: vscode.Uri): IndexedFile {
+  const relativePath = normalizePath(path.relative(rootUri.fsPath, uri.fsPath));
+  const fileType = path.extname(uri.fsPath).toLowerCase() || "(no ext)";
+  return {
+    id: `file:${relativePath}`,
+    uri,
+    route: `/${relativePath}`.replace(/\/+/g, "/"),
+    title: path.basename(uri.fsPath),
+    fileType
   };
 }
 
@@ -452,7 +496,7 @@ function edgeEndpoints(from: string, to: string, relation: LinkRef["relation"]):
 // Cuando una carpeta tiene index.{md,mdx}, ese documento actúa como nodo de
 // carpeta. Cuando no existe, se crea un nodo sintético kind=folder.
 function synthesizeTreeEdges(
-  docs: ParsedDoc[],
+  entries: TreeEntry[],
   nodes: Map<string, BrainNode>,
   edges: Map<string, BrainEdge>,
   rootUri: vscode.Uri
@@ -463,23 +507,23 @@ function synthesizeTreeEdges(
     label: string;
   };
   type DocLocation = {
-    doc: ParsedDoc;
+    entry: TreeEntry;
     dir: string;
     isIndex: boolean;
   };
 
   const rootPath = normalizePath(rootUri.fsPath);
-  const dirToIndex = new Map<string, ParsedDoc>();
+  const dirToIndex = new Map<string, TreeEntry>();
   const locations: DocLocation[] = [];
 
-  for (const doc of docs) {
-    const absPath = normalizePath(doc.uri.fsPath);
+  for (const entry of entries) {
+    const absPath = normalizePath(entry.uri.fsPath);
     const isIndex = /\/index\.(md|mdx)$/i.test(absPath);
     const lastSlash = absPath.lastIndexOf("/");
     const dir = lastSlash >= 0 ? absPath.slice(0, lastSlash) : absPath;
-    locations.push({ doc, dir, isIndex });
+    locations.push({ entry, dir, isIndex });
     if (isIndex) {
-      dirToIndex.set(dir, doc);
+      dirToIndex.set(dir, entry);
     }
   }
 
@@ -553,8 +597,8 @@ function synthesizeTreeEdges(
       continue;
     }
     const parent = ensureDirectoryNode(loc.dir);
-    addEdge(edges, parent.id, loc.doc.id, "link", "upstream");
-    addEdge(edges, parent.id, loc.doc.id, "link", "downstream");
+    addEdge(edges, parent.id, loc.entry.id, "link", "upstream");
+    addEdge(edges, parent.id, loc.entry.id, "link", "downstream");
   }
 }
 
@@ -640,6 +684,10 @@ function titleFromPath(filePath: string) {
     .filter(Boolean)
     .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function isMarkdownFile(filePath: string) {
+  return /\.(md|mdx)$/i.test(filePath);
 }
 
 function normalizeTag(value: string) {

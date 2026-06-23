@@ -1310,10 +1310,10 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
         const node = currentBrainSnapshot?.nodes.find(
           (candidate) => candidate.id === message.nodeId,
         );
-        if (node?.kind === "doc" && node.path) {
+        if ((node?.kind === "doc" || node?.kind === "file") && node.path) {
           if (!isPathWithinRoot(node.path, currentBrainRoot)) {
             service.logger.warn(
-              "brain:openNode rejected: path outside current MDX root",
+              "brain:openNode rejected: path outside current Brain root",
               {
                 nodeId: message.nodeId,
                 path: node.path,
@@ -1322,13 +1322,19 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
             );
             return;
           }
-          const document = await vscode.workspace.openTextDocument(
-            vscode.Uri.file(node.path),
-          );
-          await vscode.window.showTextDocument(
-            document,
-            vscode.ViewColumn.Beside,
-          );
+          const uri = vscode.Uri.file(node.path);
+          if (node.kind === "doc") {
+            const document = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(
+              document,
+              vscode.ViewColumn.Beside,
+            );
+            return;
+          }
+          await vscode.commands.executeCommand("vscode.open", uri, {
+            viewColumn: vscode.ViewColumn.Beside,
+            preview: false,
+          });
         }
       }
     });
@@ -2908,9 +2914,26 @@ Older logs without \`execution_id\` are valid. The Logs webview renders them in 
       if (!picked) return;
 
       const extPath = context.extensionUri.fsPath;
-      const mcpDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "index.js");
-      const mcpBundledPath = path.join(extPath, "dist", "mcp-server", "index.js");
-      const mcpPath = fs.existsSync(mcpDevPath) ? mcpDevPath : fs.existsSync(mcpBundledPath) ? mcpBundledPath : null;
+      const mcpDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "cli.cjs");
+      const mcpBundledPath = path.join(extPath, "dist", "mcp-server", "cli.cjs");
+      const legacyMcpCliDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "cli.js");
+      const legacyMcpCliBundledPath = path.join(extPath, "dist", "mcp-server", "cli.js");
+      const legacyMcpDevPath = path.resolve(extPath, "..", "mcp-server", "dist", "index.js");
+      const legacyMcpBundledPath = path.join(extPath, "dist", "mcp-server", "index.js");
+      const mcpPath =
+        fs.existsSync(mcpDevPath)
+          ? mcpDevPath
+          : fs.existsSync(mcpBundledPath)
+            ? mcpBundledPath
+            : fs.existsSync(legacyMcpCliDevPath)
+              ? legacyMcpCliDevPath
+              : fs.existsSync(legacyMcpCliBundledPath)
+                ? legacyMcpCliBundledPath
+                : fs.existsSync(legacyMcpDevPath)
+                  ? legacyMcpDevPath
+                  : fs.existsSync(legacyMcpBundledPath)
+                    ? legacyMcpBundledPath
+                    : null;
 
       if (!mcpPath) {
         void vscode.window.showErrorMessage(

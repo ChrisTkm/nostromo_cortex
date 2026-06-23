@@ -80,7 +80,7 @@ Construir y ejecutar:
 
 ```bash
 pnpm --filter @cortex/mcp-server build
-node apps/mcp-server/dist/index.js
+node apps/mcp-server/dist/cli.cjs
 ```
 
 ## Extensión VS Code
@@ -124,7 +124,7 @@ Añadir a `~/.claude/settings.json`:
   "mcpServers": {
     "cortex": {
       "command": "node",
-      "args": ["C:/dev/Cortex/apps/mcp-server/dist/index.js"],
+      "args": ["C:/dev/Cortex/apps/mcp-server/dist/cli.cjs"],
       "env": {
         "MONGO_URL": "mongodb://127.0.0.1:27017",
         "MONGO_DB_NAME": "nostromo_cortex",
@@ -146,7 +146,7 @@ Añadir a `~/.cursor/mcp.json`:
   "mcpServers": {
     "cortex": {
       "command": "node",
-      "args": ["C:/dev/Cortex/apps/mcp-server/dist/index.js"],
+      "args": ["C:/dev/Cortex/apps/mcp-server/dist/cli.cjs"],
       "env": {
         "MONGO_URL": "mongodb://127.0.0.1:27017",
         "MONGO_DB_NAME": "nostromo_cortex",

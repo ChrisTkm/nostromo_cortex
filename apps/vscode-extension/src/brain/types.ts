@@ -1,4 +1,4 @@
-export type BrainNodeKind = "doc" | "folder" | "tag" | "account" | "external";
+export type BrainNodeKind = "doc" | "file" | "folder" | "tag" | "account" | "external";
 
 export type BrainEdgeKind = "link" | "tag" | "account" | "unresolved";
 
@@ -26,6 +26,7 @@ export type BrainNode = {
   domain?: string;
   layer?: string;
   docKind?: string;
+  fileType?: string;
   badge?: string;
   tags?: string[];
   isOrphan?: boolean;
