@@ -179,7 +179,7 @@ const aiAgentSchema = z.object({
 
 const agentRunSchema = z.object({
   _id: z.unknown().optional(),
-  id: z.string().min(1),
+  id: z.string().min(1).optional(),
   agent_slug: z.string().min(1),
   model_id: z.string().optional().nullable(),
   started_at: z.union([z.string(), z.date()]),
@@ -188,6 +188,7 @@ const agentRunSchema = z.object({
   task_codes: z.array(z.string()).default([]),
   plan_codes: z.array(z.string()).default([]),
   files_touched: z.array(z.string()).default([]),
+  files: z.array(z.string()).default([]),
   commits: z.array(z.string()).default([]),
   tokens_in: z.number().nonnegative().optional().nullable(),
   tokens_out: z.number().nonnegative().optional().nullable(),
@@ -342,9 +343,14 @@ export function normalizeAiAgentDocument(input: AiAgentDocument): AiAgentRecord 
 
 export function normalizeAgentRunDocument(input: AgentRunDocument): AgentRunRecord {
   const parsed = agentRunSchema.parse(input);
+  const id = parsed.id?.trim() || (parsed._id ? String(parsed._id) : "");
+  if (!id) {
+    throw new Error("agent_runs.id is required unless Mongo _id is present");
+  }
+  const filesTouched = dedupeSorted([...parsed.files_touched, ...parsed.files]);
   return {
     ...(parsed._id ? { id: String(parsed._id) } : {}),
-    id: parsed.id,
+    id,
     agentSlug: parsed.agent_slug.trim(),
     ...(parsed.model_id ? { modelId: parsed.model_id.trim() } : {}),
     startedAt: normalizeIsoDate(parsed.started_at),
@@ -352,7 +358,7 @@ export function normalizeAgentRunDocument(input: AgentRunDocument): AgentRunReco
     ...(typeof parsed.duration_ms === "number" ? { durationMs: parsed.duration_ms } : {}),
     taskCodes: [...parsed.task_codes],
     planCodes: [...parsed.plan_codes],
-    filesTouched: [...parsed.files_touched],
+    filesTouched,
     commits: [...parsed.commits],
     ...(typeof parsed.tokens_in === "number" ? { tokensIn: parsed.tokens_in } : {}),
     ...(typeof parsed.tokens_out === "number" ? { tokensOut: parsed.tokens_out } : {}),

@@ -161,7 +161,9 @@ Añadir a `~/.cursor/mcp.json`:
 
 ## Registro del MCP en opencode
 
-El repo incluye `opencode.json` en la raíz con dos servers MCP locales: `cortex` (tools de dominio: `task_list`, `graph_snapshot`, `record_run`, `query_runs`, etc. — requiere build previo con `pnpm --filter @cortex/mcp-server build`) y `mongodb` (el oficial `mongodb-mcp-server` vía npx, CRUD genérico sobre `nostromo_cortex` que usan las skills `/tareas` y `/plan`). opencode los carga automáticamente al abrir `C:/dev/Cortex` — verificar con `/mcp` que aparezcan ambos.
+El repo incluye `opencode.json` en la raíz con dos servers MCP locales: `cortex` (tools de dominio: `task_list`, `task_start`, `task_complete`, `record_run`, `query_runs`, etc. — requiere build previo con `pnpm --filter @cortex/mcp-server build`) y `mongodb` (el oficial `mongodb-mcp-server` vía npx, CRUD genérico sobre `nostromo_cortex` que usan las skills `/tareas` y `/plan`). opencode los carga automáticamente al abrir `C:/dev/Cortex` — verificar con `/mcp` que aparezcan ambos.
+
+Para cerrar una tarea ejecutada por una IA, usar siempre `task_complete`. Esa tool marca la task `DONE`/`FAILED`, recalcula el plan y registra o completa el run de Ledger. No insertar directo en `agent_runs`: el schema persistido usa `id` autogenerado y `files_touched`; el MCP acepta `files` como input y lo normaliza.
 
 ### Tool `record_run`
 

@@ -79,6 +79,25 @@ describe("normalizeAgentRunDocument", () => {
     ).toThrow();
   });
 
+  it("uses Mongo _id for legacy runs without id", () => {
+    const result = normalizeAgentRunDocument({
+      ...VALID_RUN,
+      _id: "mongo-run-001",
+      id: undefined as never
+    });
+
+    expect(result.id).toBe("mongo-run-001");
+  });
+
+  it("merges legacy files into filesTouched", () => {
+    const result = normalizeAgentRunDocument({
+      ...VALID_RUN,
+      files: ["src/legacy.ts", "src/main.ts"]
+    } as unknown as AgentRunDocument);
+
+    expect(result.filesTouched).toEqual(["src/legacy.ts", "src/main.ts"]);
+  });
+
   it("rejects negative tokens", () => {
     expect(() =>
       normalizeAgentRunDocument({

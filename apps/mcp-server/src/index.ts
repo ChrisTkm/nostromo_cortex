@@ -45,6 +45,11 @@ function dedupe(values: Array<string | undefined | null>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b));
 }
 
+function stringArrayField(record: Record<string, unknown> | null | undefined, field: string): string[] {
+  const value = record?.[field];
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
 function parseDateInput(value: string | undefined, fallback: Date): Date {
   if (!value) return fallback;
   const parsed = new Date(value);
@@ -168,17 +173,12 @@ async function main() {
       : input.taskCodes?.length
       ? await db.collection("agent_runs").findOne({ task_codes: { $in: input.taskCodes } })
       : null;
-    const taskCodes = dedupe([
-      ...((existing?.task_codes as string[] | undefined) ?? []),
-      ...(input.taskCodes ?? [])
-    ]);
+    const taskCodes = dedupe([...stringArrayField(existing, "task_codes"), ...(input.taskCodes ?? [])]);
     const taskContext = await resolveRunTaskContext(
       taskCodes,
-      dedupe([
-        ...((existing?.plan_codes as string[] | undefined) ?? []),
-        ...(input.planCodes ?? [])
-      ])
+      dedupe([...stringArrayField(existing, "plan_codes"), ...(input.planCodes ?? [])])
     );
+    const runId = input.id ?? (typeof existing?.id === "string" && existing.id.trim() ? existing.id : `run-${randomUUID()}`);
     const startedAt = parseDateInput(
       input.startedAt ??
         (existing?.started_at ? new Date(existing.started_at as string | Date).toISOString() : undefined) ??
@@ -192,7 +192,7 @@ async function main() {
           : null
         : parseDateInput(input.endedAt, now);
     const patch: AgentRunDocument = {
-      id: input.id ?? `run-${randomUUID()}`,
+      id: runId,
       agent_slug: input.agentSlug,
       ...(input.modelId ? { model_id: input.modelId } : existing?.model_id ? { model_id: existing.model_id as string } : {}),
       started_at: startedAt.toISOString(),
@@ -201,13 +201,11 @@ async function main() {
       task_codes: taskCodes,
       plan_codes: taskContext.planCodes,
       files_touched: dedupe([
-        ...((existing?.files_touched as string[] | undefined) ?? []),
+        ...stringArrayField(existing, "files_touched"),
+        ...stringArrayField(existing, "files"),
         ...(input.files ?? [])
       ]),
-      commits: dedupe([
-        ...((existing?.commits as string[] | undefined) ?? []),
-        ...(input.commits ?? [])
-      ]),
+      commits: dedupe([...stringArrayField(existing, "commits"), ...(input.commits ?? [])]),
       ...(typeof input.tokensIn === "number" ? { tokens_in: input.tokensIn } : {}),
       ...(typeof input.tokensOut === "number" ? { tokens_out: input.tokensOut } : {}),
       status: input.status,
@@ -215,9 +213,22 @@ async function main() {
     };
 
     if (existing) {
-      const existingId = (existing.id as string) ?? patch.id;
       const { id: _patchId, ...update } = patch;
-      await updateRun(db, existingId, update);
+      if (typeof existing.id === "string" && existing.id.trim()) {
+        await updateRun(db, existing.id, update);
+      } else {
+        await db.collection("agent_runs").updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              id: runId,
+              ...update,
+              updated_at: new Date().toISOString()
+            },
+            $unset: { files: "" }
+          }
+        );
+      }
     } else {
       await insertRun(db, patch);
     }

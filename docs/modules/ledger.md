@@ -63,15 +63,17 @@ Collection Mongo `agent_runs` en `nostromo_cortex`. Una fila por sesión. Se mut
 
 ## Captura
 
-Un run se crea cuando arranca la sesión y se cierra cuando termina. Dos vías, ambas livianas:
+Un run se crea cuando arranca la sesión y se cierra cuando termina. La vía canónica para agentes es `task_start` → `task_complete`; `record_run` queda como compatibilidad para reportes manuales que no deben cambiar el estado de una tarea.
 
 1. **MCP tool `task_start`** (`apps/mcp-server`): cuando una IA toma una task, llama con `{code, agent_slug, model_id?}`. El server setea `tasks.status = IN_PROGRESS`, `tasks.agent`, `tasks.started_at`, recalcula el plan y crea/actualiza un run `running`.
 2. **MCP tool `task_complete`** (`apps/mcp-server`): cuando termina, llama con `{code, agent_slug, run_id?, files, commits, tokens_in?, tokens_out?, notes, status}`. El server setea `tasks.status = DONE|FAILED`, `tasks.completed_at`, recalcula/cierra el plan si corresponde y registra/cierra el run en Ledger.
-3. **MCP tool `record_run`** (`apps/mcp-server`): compatibilidad y reportes manuales. Acepta `{id?, agent_slug, model_id?, started_at?, ended_at?, task_codes, plan_codes?, tokens_in?, tokens_out?, files, commits, notes, status}` y calcula `duration_ms` cuando puede.
+3. **MCP tool `record_run`** (`apps/mcp-server`): compatibilidad y reportes manuales. Acepta `{id?, agent_slug, model_id?, started_at?, ended_at?, task_codes, plan_codes?, tokens_in?, tokens_out?, files, commits, notes, status}` y calcula `duration_ms` cuando puede. No marca tasks como `DONE`.
 4. **Extensión VS Code `saveTask`**: cuando una task cambia de cualquier estado a `DONE`, crea automáticamente un run simple `completed` con `agent_slug`, `task_codes: [code]`, `plan_codes`, `started_at/ended_at` y arrays vacíos para `files_touched`/`commits`. Antes de insertar busca `agent_runs` por `task_codes: code`; si existe, lo actualiza. Regla de producto: 1 task cerrada manualmente = máximo 1 run automático.
 5. **Hook Stop de Claude Code** (`~/.claude/settings.json`): un script local invoca el mismo contrato al cerrar Claude Code. Sirve para self-tracking del propio Claude.
 
 Ledger **no** intercepta llamadas API, no parsea logs, no lee SQLite de telemetry. El agente es responsable de reportarse — y si no se reporta, no aparece. Trade-off consciente: simplicidad sobre cobertura.
+
+Los agentes no deben escribir directamente en `agent_runs`. El schema público usa `id` autogenerado y `files_touched`; la API MCP acepta `files` y lo normaliza. Inserciones directas con `files` o sin `id` son legacy/rotas: Cortex intenta repararlas al leer o al recibir `task_complete`/`record_run`, pero el contrato correcto es usar MCP.
 
 ## MCP tools
 
@@ -81,7 +83,7 @@ Para que cualquier agente IA pueda consultar el histórico antes de empezar:
 | ------------------------------------ | --------------------------------------------------------------------------- |
 | `task_start(code, agent_slug, ...)`   | Marca una task `IN_PROGRESS`, asigna agente, pone `started_at` y crea run.  |
 | `task_complete(code, agent_slug, ...)`| Marca una task `DONE`/`FAILED`, pone `completed_at` y cierra run.           |
-| `record_run(...)`                    | Inserta o cierra un run manual/compatibilidad.                              |
+| `record_run(...)`                    | Inserta o actualiza un run manual/compatibilidad; no cambia estado de task. |
 | `query_runs(agent?, since?, limit?)` | Lista de runs filtrada.                                                     |
 | `agent_stats(agent_slug)`            | `{total_runs, total_tasks_done, avg_duration_h, agg_tokens, success_rate}`. |
 
